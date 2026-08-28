@@ -1,0 +1,13 @@
+{
+  "name": "nyc-dev-diligence",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "NYC development due-diligence — address in, underwriting picture out.",
+  "devDependencies": {
+    "@netlify/functions": "^2.8.1"
+  },
+  "dependencies": {
+    "esbuild": "^0.28.2"
+  }
+}
