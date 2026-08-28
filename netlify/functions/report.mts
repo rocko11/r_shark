@@ -11,9 +11,13 @@ const json = (body: unknown, status = 200) =>
 export default async (req: Request, _ctx: Context) => {
   try {
     const url = new URL(req.url);
-    const bbl = url.searchParams.get("bbl");
     const bin = url.searchParams.get("bin");
     const address = url.searchParams.get("address");
+
+    // BBLs can arrive as a float string from PLUTO ("1010740014.00000000").
+    // Strip any decimal and pad to 10 digits before validating.
+    const rawBbl = url.searchParams.get("bbl");
+    const bbl = rawBbl ? rawBbl.split(".")[0].padStart(10, "0") : null;
 
     if (bbl) {
       if (!/^\d{10}$/.test(bbl)) return json({ found: false, error: "BBL must be 10 digits." }, 400);

@@ -50,12 +50,15 @@ export default async (req: Request, _ctx: Context) => {
         let signal: "opportunity" | "constrained" | "neutral" = "neutral";
         if (r.landmark?.trim() || r.histdist?.trim()) signal = "constrained";
         else if (resid && built !== null && built < resid * 0.6) signal = "opportunity";
+        // PLUTO's bbl comes back as a float string ("1010740014.00000000").
+        // Normalize to a clean 10-digit string or the report endpoint rejects it.
+        const bbl = String(r.bbl ?? "").split(".")[0].padStart(10, "0");
         return {
-          bbl: r.bbl, address: r.address || r.bbl, lat: la, lng: ln,
+          bbl, address: r.address || bbl, lat: la, lng: ln,
           units_res: num(r.unitsres), bldg_class: r.bldgclass,
           built_far: built, resid_far: resid, lot_area: num(r.lotarea),
           year_built: num(r.yearbuilt), owner: r.ownername,
-          is_self: r.bbl === self, signal,
+          is_self: String(r.bbl ?? "").split(".")[0].padStart(10, "0") === String(self).split(".")[0].padStart(10, "0"), signal,
         };
       })
       .filter(Boolean);
