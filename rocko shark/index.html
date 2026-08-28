@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Site Report — NYC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62.5..125,400..700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Drafting linen and Sanborn atlas minerals. Colors carry meaning:
+     iron = masonry/existing, slate = available, ochre = conditional. */
+  --paper:#E6E4DB;
+  --paper-2:#EFEDE6;
+  --ink:#15171A;
+  --ink-2:#4A4E52;
+  --rule:#B4B2A7;
+  --rule-2:#CFCCC1;
+  --iron:#9E3323;      /* existing / critical */
+  --slate:#38596B;     /* available / as-of-right */
+  --ochre:#B57F1E;     /* conditional / warning */
+  --moss:#4C6B4F;      /* ok */
+
+  --display:"Archivo",system-ui,sans-serif;
+  --body:"Archivo",system-ui,-apple-system,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--body);
+  font-size:15px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  /* faint drafting grid */
+  background-image:
+    linear-gradient(var(--rule-2) 1px,transparent 1px),
+    linear-gradient(90deg,var(--rule-2) 1px,transparent 1px);
+  background-size:44px 44px;
+  background-position:-1px -1px;
+}
+.wrap{max-width:1000px;margin:0 auto;padding:28px 20px 96px}
+
+/* ---------- masthead ---------- */
+.mast{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+      border-bottom:2px solid var(--ink);padding-bottom:10px;margin-bottom:26px}
+.mast h1{font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:.02em;
+         font-variation-settings:"wdth" 118;text-transform:uppercase;margin:0}
+.mast .sub{font-family:var(--mono);font-size:11px;color:var(--ink-2);
+           text-transform:uppercase;letter-spacing:.09em}
+
+/* ---------- search ---------- */
+.search{position:relative;margin-bottom:14px}
+.search label{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.09em;
+              text-transform:uppercase;color:var(--ink-2);margin-bottom:6px}
+.search input{
+  width:100%;padding:14px 15px;font-family:var(--mono);font-size:16px;
+  background:var(--paper-2);color:var(--ink);
+  border:1.5px solid var(--ink);border-radius:0;outline:none;
+}
+.search input:focus{box-shadow:0 0 0 3px rgba(56,89,107,.28)}
+.search input::placeholder{color:#8D8B82}
+.ac{position:absolute;top:100%;left:0;right:0;z-index:20;background:var(--paper-2);
+    border:1.5px solid var(--ink);border-top:none;max-height:280px;overflow:auto}
+.ac button{display:block;width:100%;text-align:left;background:none;border:none;
+  border-bottom:1px solid var(--rule-2);padding:10px 14px;cursor:pointer;
+  font-family:var(--mono);font-size:13px;color:var(--ink)}
+.ac button:hover,.ac button:focus{background:var(--paper);outline:none}
+.hint{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);letter-spacing:.02em}
+
+/* ---------- empty state ---------- */
+.empty{margin-top:52px;border-left:2px solid var(--rule);padding-left:20px;max-width:60ch}
+.empty h2{font-family:var(--display);font-size:15px;text-transform:uppercase;
+          letter-spacing:.04em;margin:0 0 8px}
+.empty p{color:var(--ink-2);margin:0 0 8px}
+
+/* ---------- title block ---------- */
+.titleblock{border:2px solid var(--ink);background:var(--paper-2);margin-bottom:26px}
+.tb-head{padding:16px 18px;border-bottom:2px solid var(--ink)}
+.tb-head .addr{font-family:var(--display);font-weight:700;font-size:clamp(21px,4.4vw,32px);
+               font-variation-settings:"wdth" 122;line-height:1.05;text-transform:uppercase;
+               letter-spacing:-.005em;margin:0}
+.tb-head .boro{font-family:var(--mono);font-size:12px;letter-spacing:.12em;
+               text-transform:uppercase;color:var(--ink-2);margin-top:6px}
+.tb-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr))}
+.cell{padding:9px 12px;border-right:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.cell:last-child{border-right:none}
+.cell .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.11em;
+         text-transform:uppercase;color:var(--ink-2);display:block}
+.cell .v{font-family:var(--mono);font-size:14px;font-weight:500;margin-top:2px;
+         word-break:break-word}
+
+/* ---------- sections ---------- */
+section{margin-bottom:34px}
+.sec-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px;
+          border-bottom:1px solid var(--ink);padding-bottom:5px}
+.sec-head h2{font-family:var(--display);font-size:13px;font-weight:700;
+             font-variation-settings:"wdth" 115;text-transform:uppercase;
+             letter-spacing:.07em;margin:0}
+.sec-head .count{font-family:var(--mono);font-size:11px;color:var(--ink-2);margin-left:auto}
+
+/* ---------- flags: redline markup ---------- */
+.flag{display:flex;gap:12px;padding:11px 13px;background:var(--paper-2);
+      border-left:4px solid var(--rule);margin-bottom:7px}
+.flag.critical{border-left-color:var(--iron)}
+.flag.warning{border-left-color:var(--ochre)}
+.flag .sev{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+           padding-top:3px;white-space:nowrap;color:var(--ink-2)}
+.flag.critical .sev{color:var(--iron)}
+.flag.warning .sev{color:var(--ochre)}
+.flag .t{font-weight:600;font-size:14.5px}
+.flag .d{color:var(--ink-2);font-size:13.5px;margin-top:3px}
+.flag .src{font-family:var(--mono);font-size:10px;color:#8D8B82;margin-top:5px;
+           letter-spacing:.05em;text-transform:uppercase}
+.clear{border-left:4px solid var(--moss);background:var(--paper-2);padding:11px 13px;
+       font-size:14px;color:var(--ink-2)}
+
+/* ---------- FAR diagram ---------- */
+.diagram{background:var(--paper-2);border:1px solid var(--rule);padding:16px 14px 10px}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--mono);font-size:10.5px;
+        letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);
+        margin-top:10px;padding-top:10px;border-top:1px solid var(--rule-2)}
+.legend i{display:inline-block;width:13px;height:11px;margin-right:6px;vertical-align:-1px;
+          border:1px solid var(--ink)}
+.assump{margin-top:12px;font-size:13px;color:var(--ink-2)}
+.assump summary{font-family:var(--mono);font-size:11px;letter-spacing:.07em;
+                text-transform:uppercase;cursor:pointer;color:var(--slate)}
+.assump ul{margin:8px 0 0;padding-left:18px}
+.assump li{margin-bottom:4px}
+
+/* ---------- data tables ---------- */
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+   text-align:left;color:var(--ink-2);border-bottom:1px solid var(--ink);padding:5px 8px 5px 0}
+td{padding:7px 8px 7px 0;border-bottom:1px solid var(--rule-2);vertical-align:top}
+td.num,th.num{font-family:var(--mono);text-align:right;padding-right:0}
+.tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;
+     border:1px solid var(--rule);padding:1px 5px;white-space:nowrap}
+.tag.now{border-color:var(--slate);color:var(--slate)}
+.tag.bis{border-color:var(--ink-2);color:var(--ink-2)}
+.tag.open{border-color:var(--iron);color:var(--iron)}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;
+       background:var(--rule);border:1px solid var(--rule)}
+.stat{background:var(--paper-2);padding:12px 13px}
+.stat .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+         color:var(--ink-2);display:block}
+.stat .v{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:3px}
+.stat .v.bad{color:var(--iron)}
+
+.gap{border:1px dashed var(--ochre);background:rgba(181,127,30,.07);padding:12px 14px;
+     font-size:13.5px;color:var(--ink-2)}
+
+footer{border-top:1px solid var(--rule);margin-top:40px;padding-top:14px;
+       font-family:var(--mono);font-size:10.5px;color:#8D8B82;line-height:1.7}
+
+.err{border-left:4px solid var(--iron);background:var(--paper-2);padding:13px 15px}
+.loading{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+         color:var(--ink-2);padding:36px 0}
+button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
+  color:var(--slate);text-decoration:underline;cursor:pointer;padding:0}
+
+.legend i.hatched{background:repeating-linear-gradient(45deg,var(--iron) 0 1.4px,var(--paper) 1.4px 5px)}
+
+@media (max-width:600px){
+  .cell{border-right:none}
+  .flag{flex-direction:column;gap:3px}
+  /* Tables become stacked records — a 5-column table at 390px is unreadable. */
+  table.stack thead{display:none}
+  table.stack tr{display:block;border-bottom:1px solid var(--rule);padding:9px 0}
+  table.stack td{display:block;border:none;padding:1px 0;text-align:left}
+  table.stack td.num{text-align:left;font-size:15px;font-weight:600}
+  table.stack td[data-l]::before{content:attr(data-l);font-family:var(--mono);
+    font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);
+    display:block;margin-top:5px}
+}
+@media (prefers-reduced-motion:no-preference){
+  .grow{transform-origin:left;animation:grow .55s cubic-bezier(.2,.8,.3,1) both}
+  @keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="mast">
+    <h1>Site Report</h1>
+    <span class="sub">NYC · five boroughs</span>
+  </div>
+
+  <div class="search">
+    <label for="q">Property address or 10-digit BBL</label>
+    <input id="q" autocomplete="off" spellcheck="false"
+           placeholder="350 5th Ave Manhattan">
+    <div class="ac" id="ac" hidden></div>
+  </div>
+  <p class="hint" id="hint">Enter to run. Data is public record; verify before acting.</p>
+
+  <div id="out"></div>
+
+  <footer>
+    Sources: DCP PLUTO · DOB (BIS + DOB NOW) · DOB ECB · HPD · ACRIS.
+    Informational only, not a zoning analysis. Confirm every figure with a licensed
+    architect or land use counsel before acting.
+  </footer>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const out = $("#out"), q = $("#q"), ac = $("#ac"), hint = $("#hint");
+const fmt = n => n == null || n === "" ? "—" : Number(n).toLocaleString("en-US");
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---------- search ---------- */
+let acTimer;
+q.addEventListener("input", () => {
+  clearTimeout(acTimer);
+  const v = q.value.trim();
+  if (v.length < 3) { ac.hidden = true; return; }
+  acTimer = setTimeout(async () => {
+    try {
+      const r = await fetch("/api/autocomplete?q=" + encodeURIComponent(v));
+      const items = await r.json();
+      if (!items.length) { ac.hidden = true; return; }
+      ac.innerHTML = items.map(i =>
+        `<button data-label="${esc(i.label)}">${esc(i.label)}</button>`).join("");
+      ac.hidden = false;
+    } catch { ac.hidden = true; }
+  }, 180);
+});
+ac.addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  q.value = b.dataset.label; ac.hidden = true; run();
+});
+q.addEventListener("keydown", e => {
+  if (e.key === "Enter") { ac.hidden = true; run(); }
+  if (e.key === "Escape") ac.hidden = true;
+});
+document.addEventListener("click", e => {
+  if (!e.target.closest(".search")) ac.hidden = true;
+});
+
+async function run() {
+  const v = q.value.trim();
+  if (!v) return;
+  out.innerHTML = `<p class="loading">Pulling PLUTO, DOB, ECB, HPD, ACRIS…</p>`;
+  try {
+    const isBBL = /^\d{10}$/.test(v);
+    const url = isBBL ? `/api/report?bbl=${v}` : `/api/report?address=${encodeURIComponent(v)}`;
+    const r = await fetch(url);
+    const body = await r.text();
+    let d;
+    try { d = JSON.parse(body); }
+    catch {
+      // A non-JSON body means the API itself fell over, not a bad address.
+      out.innerHTML = `<div class="err"><strong>The API returned an error.</strong><br>
+        HTTP ${r.status}. Check the server log — most often a missing
+        SOCRATA_APP_TOKEN in Netlify, or a dataset whose schema moved. Hit
+        <code>/api/canary</code> to find out which.</div>`;
+      return;
+    }
+    if (!r.ok || d.found === false) {
+      const e = String(d.error || d.detail || "");
+      // Distinguish "this lot has no record" from "we couldn't reach the
+      // geocoder" — they need completely different fixes.
+      const unreachable = /HTTPStatusError|ConnectError|Timeout|403|429|502|503/.test(e);
+      out.innerHTML = `<div class="err"><strong>${
+        unreachable ? "Address lookup is unreachable." : "No record for that address."
+      }</strong><br>${
+        unreachable
+          ? "The geocoding service didn't respond. Check network access to " +
+            "geosearch.planninglabs.nyc and api.nyc.gov, then try again."
+          : esc(e || "Try a street address with the borough, or a 10-digit BBL.")
+      }${/condo|PLUTO record/i.test(e)
+          ? "<br>Condo unit lots hold almost no data — use the building's billing BBL."
+          : ""}
+      <div class="src" style="margin-top:8px">${esc(e.slice(0,160))}</div></div>`;
+      return;
+    }
+    render(d);
+  } catch (err) {
+    out.innerHTML = `<div class="err"><strong>Request failed.</strong><br>
+      ${esc(err.message)}. Check the API is running and the Socrata token is set in Netlify.</div>`;
+  }
+}
+
+/* ---------- FAR section diagram (the signature) ----------
+   Existing floor area drawn with masonry hatching, the drafting convention for
+   solid material. Available area open, with a dimension arrow. UAP scenarios
+   dashed, because they are conditional on providing affordable housing. */
+function diagram(dev) {
+  const scen = (dev.scenarios || []).filter(s => s.buildable_sf > 0);
+  if (!scen.length || !dev.lot_area) return "";
+  const built = dev.existing_floor_area || 0;
+  const max = Math.max(...scen.map(s => s.buildable_sf), built) * 1.06;
+  // Narrow screens get a narrower viewBox so text scales up relative to the
+  // drawing instead of shrinking to nothing.
+  // On narrow screens the scenario label sits above its bar instead of beside
+  // it — a left label column wide enough for "Community facility" would leave
+  // no room to draw anything.
+  const narrow = window.innerWidth < 620;
+  const L = narrow ? 4 : 128, R = narrow ? 56 : 66, W = narrow ? 360 : 640;
+  const rowH = narrow ? 60 : 40, top = narrow ? 58 : 26;
+  const fs = narrow ? 1.3 : 1;
+  const H = top + scen.length * rowH + 26;
+  const x = v => L + (v / max) * (W - L - R);
+
+  // var() is unreliable inside SVG presentation attributes, so read the tokens
+  // once from the cascade and use literal values in the drawing.
+  const css = getComputedStyle(document.documentElement);
+  const C = {
+    ink: css.getPropertyValue("--ink").trim(),
+    ink2: css.getPropertyValue("--ink-2").trim(),
+    rule2: css.getPropertyValue("--rule-2").trim(),
+    iron: css.getPropertyValue("--iron").trim(),
+    slate: css.getPropertyValue("--slate").trim(),
+    ochre: css.getPropertyValue("--ochre").trim(),
+  };
+  const MONO = "IBM Plex Mono, ui-monospace, monospace";
+
+  // On narrow, the scale sits at the very top of the frame so the first row's
+  // label has clear air beneath it.
+  const axisY = narrow ? 12 : top - 13;
+  const tickTop = narrow ? 18 : top - 8;
+  const p10 = Math.pow(10, Math.floor(Math.log10(max)));
+  const step = p10 / (max / p10 > 4 ? 1 : 2);
+  const ticks = [];
+  for (let t = 0; t <= max; t += step) {
+    ticks.push(`<line x1="${x(t)}" y1="${tickTop}" x2="${x(t)}" y2="${H-20}"
+        stroke="${C.rule2}" stroke-width="1"/>
+      <text x="${x(t)}" y="${axisY}" font-family="${MONO}" font-size="${8.5*fs}"
+        fill="${C.ink2}" text-anchor="middle">${t/1000 >= 1 ? (t/1000)+"k" : t}</text>`);
+  }
+
+  const rows = scen.map((s, i) => {
+    const y = top + i * rowH, h = narrow ? 24 : 21;
+    const cond = /UAP/i.test(s.name);
+    const accent = cond ? C.ochre : C.slate;
+    const bw = Math.max(x(built) - L, 0);
+    const tw = x(s.buildable_sf) - L;
+    const short = s.unused_sf < 0;
+    const label = esc(s.name.replace(/ \(.*\)/, ""));
+    const labelBlock = narrow
+      ? `<text x="${L}" y="${y-8}" font-family="${MONO}" font-size="${10*fs}"
+           fill="${C.ink}">${label}<tspan fill="${C.ink2}">  FAR ${s.far}</tspan></text>`
+      : `<text x="${L-9}" y="${y+14}" font-family="${MONO}" font-size="${10*fs}"
+           fill="${C.ink}" text-anchor="end">${label}</text>
+         <text x="${L-9}" y="${y+25}" font-family="${MONO}" font-size="${8.5*fs}"
+           fill="${C.ink2}" text-anchor="end">FAR ${s.far}</text>`;
+    return `
+      ${labelBlock}
+      <rect class="grow" x="${L}" y="${y}" width="${tw}" height="${h}"
+        fill="none" stroke="${accent}" stroke-width="1.5"
+        ${cond ? 'stroke-dasharray="5 3"' : ""}/>
+      <rect class="grow" x="${L}" y="${y}" width="${Math.min(bw, tw)}" height="${h}"
+        fill="url(#hatch)" stroke="${C.iron}" stroke-width="1.5"/>
+      ${short ? `
+        <text x="${narrow ? W-4 : tw + L + 8}" y="${narrow ? y-8 : y+15}"
+          font-family="${MONO}" font-size="${(narrow?9.5:10)*fs}" fill="${C.iron}"
+          text-anchor="${narrow ? "end" : "start"}"
+          >over by ${fmt(Math.abs(s.unused_sf))} sf</text>`
+      : `
+        <line x1="${x(built)+3}" y1="${y+h/2}" x2="${x(s.buildable_sf)-3}" y2="${y+h/2}"
+          stroke="${accent}" stroke-width="1"
+          marker-start="url(#${cond?"ao1":"as1"})" marker-end="url(#${cond?"ao2":"as2"})"/>
+        <text x="${narrow ? W-4 : Math.max(x(built), L) + (x(s.buildable_sf)-Math.max(x(built),L))/2}"
+          y="${narrow ? y-8 : y-3}" font-family="${MONO}" font-size="${9.5*fs}" fill="${accent}"
+          text-anchor="${narrow ? "end" : (x(s.buildable_sf)-x(built) < 90 ? "end" : "middle")}"
+          >+${fmt(s.unused_sf)} sf</text>`}
+      ${short || narrow ? "" : `<text x="${L + tw + 8}" y="${y+15}"
+        font-family="${MONO}" font-size="${9.5*fs}"
+        fill="${C.ink2}">${fmt(s.buildable_sf)}</text>`}`;
+  }).join("");
+
+  // Markers can't inherit the referencing line's color reliably, so define a
+  // pair per accent rather than leaning on currentColor.
+  const marker = (id, d, fill) =>
+    `<marker id="${id}" markerWidth="7" markerHeight="7" refX="${d==="l"?6:1}" refY="3.5"
+       orient="auto" markerUnits="userSpaceOnUse">
+       <path d="${d==="l"?"M7,0 L7,7 L1,3.5 z":"M0,0 L0,7 L6,3.5 z"}" fill="${fill}"/></marker>`;
+
+  return `
+  <div class="diagram">
+    <svg viewBox="0 0 ${W} ${H}" width="100%" role="img"
+      aria-label="Permitted floor area by scenario compared with existing built area">
+      <defs>
+        <pattern id="hatch" width="7" height="7" patternTransform="rotate(45)"
+          patternUnits="userSpaceOnUse">
+          <line x1="0" y1="0" x2="0" y2="7" stroke="${C.iron}" stroke-width="1.25"/>
+        </pattern>
+        ${marker("as1","l",C.slate)}${marker("as2","r",C.slate)}
+        ${marker("ao1","l",C.ochre)}${marker("ao2","r",C.ochre)}
+      </defs>
+      ${ticks.join("")}
+      <line x1="${L}" y1="${tickTop}" x2="${L}" y2="${H-20}" stroke="${C.ink}" stroke-width="1.5"/>
+      ${rows}
+      <text x="${W-R}" y="${H-6}" font-family="${MONO}" font-size="${8.5*fs}"
+        fill="${C.ink2}" text-anchor="end">gross floor area, sf</text>
+    </svg>
+    <div class="legend">
+      <span><i class="hatched" style="border-color:var(--iron)"></i>existing, built</span>
+      <span><i style="border-color:var(--slate)"></i>as of right</span>
+      <span><i style="border-color:var(--ochre);border-style:dashed"></i>with affordability (UAP)</span>
+    </div>
+  </div>`;
+}
+
+/* ---------- render ---------- */
+function render(d) {
+  lastReport = d;
+  const id = d.identity || {}, dev = d.development || {}, v = d.violations || {};
+  const dob = d.dob || {}, acris = d.acris || {};
+  const flags = dev.flags || [];
+
+  const cell = (k, val) => `<div class="cell"><span class="k">${k}</span>
+    <span class="v">${val ?? "—"}</span></div>`;
+
+  const titleblock = `
+  <div class="titleblock">
+    <div class="tb-head">
+      <h2 class="addr">${esc(id.address || d.bbl)}</h2>
+      <div class="boro">${esc(id.borough || "")} · Block ${id.block} · Lot ${id.lot}</div>
+    </div>
+    <div class="tb-grid">
+      ${cell("BBL", `<span style="letter-spacing:.05em">${esc(d.bbl)}</span>`)}
+      ${cell("BIN", esc(d.bin || "—"))}
+      ${cell("Zoning", esc((dev.zoning_districts||[]).join(" / ") || "—"))}
+      ${cell("Lot area", fmt(dev.lot_area) + " sf")}
+      ${cell("Built", fmt(dev.existing_floor_area) + " sf")}
+      ${cell("Built FAR", dev.built_far ?? "—")}
+    </div>
+    <div class="tb-grid">
+      ${cell("Year built", esc(id.year_built))}
+      ${cell("Floors", esc(id.num_floors))}
+      ${cell("Res. units", esc(id.units_residential))}
+      ${cell("Frontage", id.lot_frontage ? id.lot_frontage + " ft" : "—")}
+      ${cell("Bldg class", esc(id.building_class))}
+      ${cell("Owner of record", esc(id.owner_of_record))}
+    </div>
+  </div>`;
+
+  const flagsHtml = flags.length ? flags.map(f => `
+    <div class="flag ${f.severity}">
+      <span class="sev">${f.severity}</span>
+      <div><div class="t">${esc(f.title)}</div>
+        <div class="d">${esc(f.detail)}</div>
+        <div class="src">${esc(f.source)}</div></div>
+    </div>`).join("")
+    : `<div class="clear">Nothing flagged from the datasets checked. That is not
+       a clean bill of health — title, survey, and environmental work still apply.</div>`;
+
+  const assumptions = (dev.scenarios || [])
+    .flatMap(s => (s.assumptions || []).map(a => `${s.name}: ${a}`))
+    .concat(dev.caveats || []);
+
+  const filings = (dob.filings || []).slice(0, 12);
+  const filingsHtml = filings.length ? `
+    <table class="stack"><thead><tr>
+      <th>Filed</th><th>Type</th><th>Description</th><th>Status</th><th>Source</th>
+    </tr></thead><tbody>
+    ${filings.map(f => `<tr>
+      <td style="white-space:nowrap;font-family:var(--mono);font-size:12px">${esc((f.date||"").slice(0,10))}</td>
+      <td><strong>${esc(f.job_type || "—")}</strong></td>
+      <td data-l="Description">${esc((f.description || "").slice(0, 110))}</td>
+      <td data-l="Status" style="color:var(--ink-2)">${esc(f.status || "—")}</td>
+      <td><span class="tag ${f.system === "DOB NOW" ? "now" : "bis"}">${esc(f.system)}</span></td>
+    </tr>`).join("")}</tbody></table>`
+    : `<p class="hint">No filings on this BIN in either BIS or DOB NOW.</p>`;
+
+  const ecbOpen = v.ecb_open_count || 0;
+  const stats = `
+  <div class="stats">
+    <div class="stat"><span class="k">DOB penalties</span>
+      <span class="v">${fmt(v.dob_civil_penalty_count)}</span></div>
+    <div class="stat"><span class="k">ECB open</span>
+      <span class="v ${ecbOpen ? "bad" : ""}">${fmt(ecbOpen)}</span></div>
+    <div class="stat"><span class="k">ECB balance due</span>
+      <span class="v ${v.ecb_balance_due_total ? "bad" : ""}">$${fmt(v.ecb_balance_due_total)}</span></div>
+    <div class="stat"><span class="k">HPD class C</span>
+      <span class="v ${v.hpd_class_c ? "bad" : ""}">${fmt(v.hpd_class_c)}</span></div>
+    <div class="stat"><span class="k">HPD total</span>
+      <span class="v">${fmt(v.hpd_total)}</span></div>
+  </div>
+  ${v.dob_raw_count_before_dedup > v.dob_civil_penalty_count
+    ? `<p class="hint" style="margin-top:8px">Deduped ${v.dob_raw_count_before_dedup - v.dob_civil_penalty_count}
+       record(s) appearing in both the BIS and DOB NOW penalty datasets.</p>` : ""}`;
+
+  const docs = (acris.documents || []).slice(0, 10);
+  const acrisHtml = acris.available === false ? `
+    <div class="gap"><strong>No ACRIS coverage here.</strong> ACRIS excludes Staten Island —
+      deeds, mortgages, zoning lot agreements and liens for this lot sit with the
+      Richmond County Clerk. Ownership and encumbrance history below is incomplete.</div>`
+    : docs.length ? `
+    <table class="stack"><thead><tr>
+      <th>Date</th><th>Document</th><th>From → To</th><th class="num">Amount</th>
+    </tr></thead><tbody>
+    ${docs.map(x => `<tr>
+      <td style="white-space:nowrap;font-family:var(--mono);font-size:12px">${esc((x.document_date||"").slice(0,10))}</td>
+      <td><strong>${esc(x.doc_type)}</strong></td>
+      <td data-l="From → To" style="font-size:12.5px">${esc((x.grantors||[]).join(", ").slice(0,44) || "—")}
+        <span style="color:var(--rule)">→</span>
+        ${esc((x.grantees||[]).join(", ").slice(0,44) || "—")}</td>
+      <td class="num" data-l="Amount">${x.document_amount && +x.document_amount > 0 ? "$"+fmt(x.document_amount) : "—"}</td>
+    </tr>`).join("")}</tbody></table>`
+    : `<p class="hint">No recorded documents found for this lot.</p>`;
+
+  out.innerHTML = `
+    ${titleblock}
+
+    <section>
+      <div class="sec-head"><h2>What could kill this deal</h2>
+        <span class="count">${flags.length} flagged</span></div>
+      ${flagsHtml}
+    </section>
+
+    <section>
+      <div class="sec-head"><h2>Development rights</h2>
+        <span class="count">FAR basis only</span></div>
+      ${diagram(dev)}
+      ${assumptions.length ? `
+      <details class="assump"><summary>Assumptions and limits (${assumptions.length})</summary>
+        <ul>${assumptions.map(a => `<li>${esc(a)}</li>`).join("")}</ul>
+      </details>` : ""}
+    </section>
+
+    <section>
+      <div class="sec-head"><h2>Violations</h2>
+        <span class="count">DOB · ECB · HPD</span></div>
+      ${stats}
+    </section>
+
+    <section>
+      <div class="sec-head"><h2>DOB filings</h2>
+        <span class="count">${fmt(dob.filing_count)} total · ${fmt(dob.permits_issued)} permits</span></div>
+      ${filingsHtml}
+    </section>
+
+    <section>
+      <div class="sec-head"><h2>Recorded documents</h2>
+        <span class="count">${acris.available === false ? "unavailable" : fmt(acris.document_count) + " on file"}</span></div>
+      ${acrisHtml}
+    </section>
+
+    <p class="hint">Generated ${esc((d.generated_at||"").slice(0,16).replace("T"," "))} UTC
+      ${d.provenance?.sources_failed && Object.keys(d.provenance.sources_failed).length
+        ? ` · ${Object.keys(d.provenance.sources_failed).length} source(s) unavailable: ${esc(Object.keys(d.provenance.sources_failed).join(", "))}`
+        : " · all sources responded"}</p>`;
+  window.scrollTo({top: 0, behavior: "smooth"});
+  lastReport = d;
+}
+
+let lastReport = null, rzTimer;
+addEventListener("resize", () => {
+  clearTimeout(rzTimer);
+  rzTimer = setTimeout(() => { if (lastReport) render(lastReport); }, 250);
+});
+
+/* empty state */
+out.innerHTML = `
+  <div class="empty">
+    <h2>Start with an address</h2>
+    <p>Every lot resolves to a BBL, then pulls PLUTO, both DOB filing systems,
+       ECB and HPD violations, and the ACRIS record — and works out what you can
+       actually build on it.</p>
+    <p>Try <button class="link" onclick="q.value='350 5th Ave Manhattan';run()">350 5th Ave</button>,
+       <button class="link" onclick="q.value='1 Bedford Ave Brooklyn';run()">1 Bedford Ave</button>,
+       or paste a BBL.</p>
+  </div>`;
+</script>
+</body>
+</html>
