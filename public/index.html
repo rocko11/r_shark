@@ -189,6 +189,25 @@ footer{border-top:1px solid var(--rule);margin-top:40px;padding-top:14px;
   border-radius:50%;margin-right:5px;vertical-align:-1px}
 
 .err{border-left:4px solid var(--iron);background:var(--paper-2);padding:13px 15px}
+/* title / ownership / liens */
+.owntag{display:inline-block;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;
+  text-transform:uppercase;padding:2px 6px;border:1px solid currentColor;border-radius:2px;
+  vertical-align:2px;margin-left:6px;font-weight:600}
+.owntag-city{color:var(--iron)}
+.owntag-public{color:var(--ochre)}
+.owntag-mixed{color:var(--ochre)}
+.owntag-exempt_unclear{color:var(--ink-2)}
+.ownblock{border:1px solid var(--rule);background:var(--paper-2);padding:12px 14px;margin-bottom:8px}
+.ownrow{display:flex;gap:12px;padding:3px 0;font-size:13px}
+.ownk{font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);min-width:110px}
+.ownv{flex:1}
+.ownnote{font-size:11.5px;color:var(--ink-2);line-height:1.5;margin:6px 0 4px;font-style:italic}
+.edwrap,.lpwrap{border:1px solid var(--ochre);background:rgba(197,155,74,.07);padding:11px 14px;margin:12px 0}
+.lpwrap{border-color:var(--iron);background:rgba(158,51,35,.06)}
+.edhead{font-family:var(--display);font-weight:700;font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.edrow{font-size:13px;padding:2px 0;font-family:var(--mono)}
+.lien-open{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--iron);font-weight:600}
+.lien-ok{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}
 .loading{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;
          color:var(--ink-2);padding:36px 0}
 button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
@@ -470,7 +489,7 @@ function render(d) {
       ${cell("Res. units", esc(id.units_residential))}
       ${cell("Frontage", id.lot_frontage ? id.lot_frontage + " ft" : "—")}
       ${cell("Bldg class", esc(id.building_class))}
-      ${cell("Owner of record", esc(id.owner_of_record))}
+      ${cell("Owner of record", `${esc(id.owner_of_record)}${id.ownership_type && id.ownership_type.category!=="private" ? ` <span class="owntag owntag-${id.ownership_type.category}">${esc(id.ownership_type.label)}</span>` : ""}`)}
     </div>
   </div>`;
 
@@ -539,6 +558,80 @@ function render(d) {
     </tr>`).join("")}</tbody></table>`
     : `<p class="hint">No recorded documents found for this lot.</p>`;
 
+  // ---- Title, ownership & liens section ----
+  const T = d.title || { available: false };
+  const own = T.ownership;
+  const openLiens = (T.liens || []).filter(x => !x.discharged);
+  const clearedLiens = (T.liens || []).filter(x => x.discharged);
+  const eds = T.e_designations || [];
+  const lps = T.lis_pendens || [];
+  const eases = T.easements || [];
+  const money = (n) => n ? "$" + fmt(n) : "—";
+
+  const titleHtml = T.available === false ? `
+    <div class="gap"><strong>No ACRIS coverage here.</strong> ${esc(T.reason || "Staten Island records sit with the Richmond County Clerk.")} Ownership and lien history can't be pulled for this lot.</div>`
+    : `
+    ${own && own.current_owner ? `
+    <div class="ownblock">
+      <div class="ownrow"><span class="ownk">Owner of record</span>
+        <span class="ownv"><strong>${esc(own.current_owner)}</strong>${(own.current_owner_all||[]).length>1?` <span class="pop-k">+${own.current_owner_all.length-1} more</span>`:""}</span></div>
+      ${own.acquired?`<div class="ownrow"><span class="ownk">Acquired</span><span class="ownv">${esc((own.acquired||"").slice(0,10))}${own.acquired_price?` · ${money(own.acquired_price)}`:""}</span></div>`:""}
+      ${(own.seller_to_current||[]).length?`<div class="ownrow"><span class="ownk">From</span><span class="ownv">${esc(own.seller_to_current.join(", ").slice(0,60))}</span></div>`:""}
+    </div>
+    <p class="ownnote">${esc(own.note)}</p>
+    ${id.ownership_type && id.ownership_type.developer_note ? `<div class="lpwrap" style="border-color:var(--iron)"><div class="edhead" style="color:var(--iron)">${esc(id.ownership_type.label)}</div><p class="ownnote" style="margin:0">${esc(id.ownership_type.developer_note)}</p></div>` : ""}
+    ${(own.history||[]).length?`
+    <details class="assump" open><summary>Sales &amp; transfer history (${own.history.length} deeds)</summary>
+      <table class="stack"><tbody>
+      ${own.history.map(h=>`<tr>
+        <td style="white-space:nowrap;font-family:var(--mono);font-size:12px">${esc((h.date||"").slice(0,10))}</td>
+        <td style="font-size:12.5px">${esc((h.from||[]).join(", ").slice(0,40)||"—")} <span style="color:var(--rule)">→</span> ${esc((h.to||[]).join(", ").slice(0,40)||"—")}</td>
+        <td class="num">${h.arms_length && h.price?money(h.price):h.price?`<span class="pop-k">${money(h.price)}</span>`:"—"}</td>
+        <td data-l="Type" style="font-size:10.5px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.04em;color:${'\${h.arms_length?"var(--ink-2)":"var(--ochre)"}'}">${h.arms_length?"sale":"non-sale"}</td>
+      </tr>`).join("")}
+      </tbody></table>
+      <p class="ownnote">Prices are deed "consideration" amounts from ACRIS. Transfers marked <em>non-sale</em> are $0 or nominal — usually family or LLC restructures, correction deeds, or gifts — and should not be read as market prices.</p>
+    </details>`:""}`
+    : `<p class="hint">No recorded deed found — ownership can't be confirmed from ACRIS for this lot.</p>`}
+
+    ${eds.length?`
+    <div class="edwrap">
+      <div class="edhead">⚠ (E) Designation — environmental requirement on this lot</div>
+      ${eds.map(e=>`<div class="edrow"><strong>${esc(e.type||"Environmental (E)")}</strong>${e.enumber?` · E-${esc(e.enumber)}`:""}${e.ceqr_number?` · CEQR ${esc(e.ceqr_number)}`:""}</div>`).join("")}
+      <p class="ownnote">Requires environmental testing and often remediation/mitigation (hazmat, air, or noise) before a new building can be occupied. Pull the full (E) requirements before underwriting.</p>
+    </div>`:""}
+
+    ${lps.length?`
+    <div class="lpwrap">
+      <div class="edhead" style="color:var(--iron)">⚠ Lis pendens — foreclosure / title litigation notice</div>
+      ${lps.map(l=>`<div class="edrow">${esc((l.date||"").slice(0,10)||l.year||"")}${(l.plaintiff||[]).length?` · plaintiff ${esc(l.plaintiff.join(", ").slice(0,50))}`:""}</div>`).join("")}
+      <p class="ownnote">A lawsuit affecting title was filed. This does <em>not</em> state the outcome — verify current status in the NY courts SCROLL system.</p>
+    </div>`:""}
+
+    <div class="sec-head" style="margin-top:20px"><h3 style="font-family:var(--display);font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:0">Liens</h3>
+      <span class="count">${openLiens.length} open · ${clearedLiens.length} discharged</span></div>
+    ${(T.liens||[]).length? `
+    <table class="stack"><thead><tr><th>Type</th><th>Recorded</th><th>Creditor</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>
+    ${(T.liens||[]).slice(0,14).map(l=>`<tr>
+      <td data-l="Type"><strong>${esc(l.kind)}</strong></td>
+      <td data-l="Recorded" style="white-space:nowrap;font-family:var(--mono);font-size:12px">${esc((l.date||"").slice(0,10)||l.year||"—")}</td>
+      <td data-l="Creditor" style="font-size:12.5px">${esc((l.creditor||[]).join(", ").slice(0,36)||"—")}</td>
+      <td class="num" data-l="Amount">${money(l.amount)}</td>
+      <td data-l="Status">${l.discharged?`<span class="lien-ok">discharged</span>`:`<span class="lien-open">open</span>`}</td>
+    </tr>`).join("")}
+    </tbody></table>
+    <p class="ownnote">"Open" means no matching discharge was found in ACRIS — not a guarantee the lien is live, nor that others don't exist. Mortgages are normal and expected. Only a title search is definitive.</p>`
+    : `<p class="hint">No mortgages, mechanic's, tax, judgment or UCC liens found recorded for this lot.</p>`}
+
+    ${eases.length?`
+    <div class="sec-head" style="margin-top:18px"><h3 style="font-family:var(--display);font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:0">Recorded easements</h3><span class="count">${eases.length}</span></div>
+    <table class="stack"><tbody>
+    ${eases.map(e=>`<tr><td><strong>${esc(e.doc_type||"Easement")}</strong></td><td style="font-family:var(--mono);font-size:12px">${esc((e.date||"").slice(0,10)||e.year||"—")}</td><td style="font-size:12.5px">${esc((e.parties||[]).join(", ").slice(0,50)||"—")}</td></tr>`).join("")}
+    </tbody></table>
+    <p class="ownnote">Recorded easements only. Many easements live in the deed language or survey and never appear as a separate ACRIS document — a survey is the only way to be sure.</p>`
+    :`<p class="ownnote" style="margin-top:14px">No separately-recorded easements found. This does not rule out easements described in the deed or shown only on a survey.</p>`}
+    `;
+
   // Coordinates come from PLUTO (identity) or, on an address search, the resolved
   // candidate. Either lets us centre the block map.
   const lat = id.latitude ?? d.resolution?.chosen?.latitude ?? null;
@@ -567,6 +660,12 @@ function render(d) {
       <div class="sec-head"><h2>What could kill this deal</h2>
         <span class="count">${flags.length} flagged</span></div>
       ${flagsHtml}
+    </section>
+
+    <section>
+      <div class="sec-head"><h2>Title, ownership &amp; liens</h2>
+        <span class="count">${T.available===false?"unavailable":"ACRIS · recorded record"}</span></div>
+      ${titleHtml}
     </section>
 
     <section>

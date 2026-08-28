@@ -40,6 +40,12 @@ export const DATASETS: Record<string, Dataset> = {
   acris_doc_codes: { slug: "acris_doc_codes", socrataId: "7isb-wh4c", key: "none",
     verified: false, canaryField: "doc_type" },
 
+  // E-designations: CEQR environmental requirements (hazmat / air / noise) on a
+  // tax lot. Keyed borough/block/lot like ACRIS legals. A real cost line.
+  e_designations: { slug: "e_designations", socrataId: "jsrs-ggnx", key: "bbl_parts",
+    verified: false, canaryField: "enumber",
+    notes: "Fields: enumber, ceqr_number, borough, block, lot, e_designatio (type: Hazmat/Air/Noise)." },
+
   // DOB filings
   dob_now_jobs: { slug: "dob_now_jobs", socrataId: "w9ak-ipjd", key: "bin",
     verified: true, canaryField: "job_filing_number", binField: "bin", orderBy: "filing_date DESC" },

@@ -91,6 +91,7 @@ export function developmentRights(pluto: any): Derived {
 interface FlagInput {
   ecb?: any[]; dobViolations?: any[]; hpdViolations?: any[];
   acrisDocs?: any[]; acrisAvailable?: boolean; derived?: Derived;
+  title?: any; eDesignations?: any[];
 }
 
 export function redFlags(pluto: any, inp: FlagInput = {}): Flag[] {
@@ -167,13 +168,73 @@ export function redFlags(pluto: any, inp: FlagInput = {}): Flag[] {
         "transferred and spent. PLUTO will not reflect this. Read the ZLDA and any amendments before " +
         "relying on any air rights figure.", source: "ACRIS" });
   }
-  if ([...docTypes].some((t) => t.includes("LIS PENDEN"))) {
-    flags.push({ code: "LIS_PENDENS", severity: "critical", title: "Lis pendens recorded",
-      detail: "Active litigation affecting title.", source: "ACRIS" });
+  // Title-analysis-driven flags: open lis pendens, open liens (with amounts),
+  // and E-designations. Falls back to nothing if the analysis isn't present.
+  const title = inp.title;
+  if (title && title.available) {
+    const usd = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
+
+    const openLP = (title.lis_pendens || []);
+    if (openLP.length) {
+      const latest = openLP[0];
+      const who = (latest.plaintiff || []).filter(Boolean).slice(0, 1).join("");
+      flags.push({ code: "LIS_PENDENS", severity: "critical", title: "Lis pendens on record",
+        detail: `A foreclosure or title lawsuit was filed${latest.year ? " (" + latest.year + ")" : ""}` +
+          `${who ? ", plaintiff " + who : ""}. This does not state the outcome — check the NY courts ` +
+          "SCROLL system for whether it is active, dismissed, or proceeding to auction.", source: "ACRIS" });
+    }
+
+    const open = (title.liens || []).filter((l: any) => !l.discharged);
+    const openMech = open.filter((l: any) => l.kind === "Mechanic's lien");
+    const openTax = open.filter((l: any) => /tax lien/i.test(l.kind));
+    const openJudg = open.filter((l: any) => l.kind === "Judgment lien");
+    if (openMech.length) {
+      const amt = openMech.reduce((s: number, l: any) => s + (l.amount || 0), 0);
+      flags.push({ code: "MECHANICS_LIEN", severity: "critical",
+        title: `${openMech.length} mechanic's lien${openMech.length > 1 ? "s" : ""} with no recorded discharge`,
+        detail: `Unpaid-contractor claim against the property${amt ? ", totaling " + usd(amt) : ""}. ` +
+          "Must be cleared or bonded before a clean sale. No satisfaction was found in ACRIS — confirm with a title search.",
+        source: "ACRIS" });
+    }
+    if (openTax.length) {
+      const amt = openTax.reduce((s: number, l: any) => s + (l.amount || 0), 0);
+      flags.push({ code: "TAX_LIEN", severity: "critical",
+        title: `${openTax.length} tax lien${openTax.length > 1 ? "s" : ""} with no recorded release`,
+        detail: `Federal or other recorded tax lien${amt ? " totaling " + usd(amt) : ""}. Attaches to the ` +
+          "property and must be satisfied at closing. Verify current payoff.", source: "ACRIS" });
+    }
+    if (openJudg.length) {
+      flags.push({ code: "JUDGMENT_LIEN", severity: "warning",
+        title: `${openJudg.length} judgment lien${openJudg.length > 1 ? "s" : ""} recorded`,
+        detail: "A money judgment recorded against an owner can attach to the property. No satisfaction found — verify.",
+        source: "ACRIS" });
+    }
+    // Any other open liens (mortgages excluded from flagging — normal) get a soft note.
+    const otherOpen = open.filter((l: any) =>
+      l.kind !== "Mechanic's lien" && !/tax lien/i.test(l.kind) && l.kind !== "Judgment lien" && l.kind !== "Mortgage");
+    if (otherOpen.length) {
+      flags.push({ code: "OTHER_LIEN", severity: "warning",
+        title: `${otherOpen.length} other recorded lien${otherOpen.length > 1 ? "s" : ""}`,
+        detail: "UCC or other encumbrance with no recorded discharge. Review in the title section below.", source: "ACRIS" });
+    }
+
+    if ((title.easements || []).length) {
+      flags.push({ code: "EASEMENT", severity: "warning",
+        title: `${title.easements.length} recorded easement${title.easements.length > 1 ? "s" : ""}`,
+        detail: "Recorded easement or right-of-way affecting the lot. Note: many easements exist only in the deed " +
+          "or survey and won't appear here — a survey is the only way to be sure.", source: "ACRIS" });
+    }
   }
-  if ([...docTypes].some((t) => t.includes("LIEN"))) {
-    flags.push({ code: "LIEN", severity: "warning", title: "Lien recorded",
-      detail: "Review for mechanic's or tax liens.", source: "ACRIS" });
+
+  // E-designation (CEQR environmental requirement) — real remediation cost.
+  const eds = inp.eDesignations || [];
+  if (eds.length) {
+    const types = [...new Set(eds.map((e: any) => e.type).filter(Boolean))].join(", ");
+    flags.push({ code: "E_DESIGNATION", severity: "critical",
+      title: `(E) designation on the lot${types ? ": " + types : ""}`,
+      detail: "A CEQR environmental requirement (hazardous materials, air quality, and/or noise) is attached to this " +
+        "tax lot. It obligates testing and often remediation or mitigation before a new building can be occupied — " +
+        "a real, sometimes large, cost line. Pull the (E) requirements before underwriting.", source: "DCP E-Designations" });
   }
 
   if (inp.acrisAvailable === false) {

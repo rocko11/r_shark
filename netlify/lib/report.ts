@@ -1,11 +1,47 @@
 import * as sq from "./socrata.ts";
 import { ACRIS_BOROUGHS, BOROUGH_NAME, DATASETS, splitBBL } from "./datasets.ts";
+import { analyzeTitle } from "./title.ts";
 import { developmentRights, redFlags } from "./derive.ts";
 
 function chunk<T>(xs: T[], n = 150): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
   return out;
+}
+
+// PLUTO ownertype codes: C=City, M=Mixed city&private, O=Other public (authority/
+// state/federal), P=Private, X=Fully tax-exempt (city/state/fed/authority/private
+// institution), blank=Unknown (usually private). We also scan the owner name,
+// since the code can lag a recent sale and name patterns are unambiguous.
+function classifyOwnership(ownertype: any, ownername: any) {
+  const code = String(ownertype ?? "").toUpperCase().trim();
+  const name = String(ownername ?? "").toUpperCase();
+  const cityName = /\bCITY OF NEW YORK\b|\bNYC (DEPT|DEPARTMENT|HOUSING|HPD|EDC|DCAS)\b|\bNYCHA\b|\bHOUSING AUTHORITY\b|\bDEPT OF|DEPARTMENT OF (HOUSING|TRANSPORTATION|PARKS|CITYWIDE)/.test(name);
+  const publicName = /\bSTATE OF NEW YORK\b|\bNEW YORK STATE\b|\bUNITED STATES\b|\bU\.?S\.?A\.?\b|\bPORT AUTHORITY\b|\bMTA\b|\bMETROPOLITAN TRANSPORTATION\b|\bTRANSIT AUTHORITY\b|\bPUBLIC LIBRARY\b|\bHEALTH \+ HOSPITALS\b|\bDORMITORY AUTHORITY\b/.test(name);
+
+  let category: "city" | "public" | "mixed" | "private" | "exempt_unclear";
+  let label: string;
+  if (code === "C" || cityName) { category = "city"; label = "City-owned"; }
+  else if (code === "O" || publicName) { category = "public"; label = "Public (state / federal / authority)"; }
+  else if (code === "M") { category = "mixed"; label = "Mixed city & private"; }
+  else if (code === "P" || code === "") { category = "private"; label = "Private"; }
+  else if (code === "X") { category = "exempt_unclear"; label = "Tax-exempt (owner type unclear)"; }
+  else { category = "private"; label = "Private"; }
+
+  // If the name clearly says city/public but the code says private, trust the name and note it.
+  if ((cityName || publicName) && (code === "P" || code === "")) {
+    category = cityName ? "city" : "public";
+    label = cityName ? "City-owned" : "Public (state / federal / authority)";
+  }
+
+  const developer_note =
+    category === "city" ? "City-owned lots are generally not for sale on the open market; acquisition usually runs through an HPD/EDC disposition or RFP program, or a ground lease."
+    : category === "public" ? "Owned by a state/federal body or public authority — typically not a conventional private purchase."
+    : category === "mixed" ? "Mixed city and private ownership — confirm exactly which interest is being sold."
+    : category === "exempt_unclear" ? "Fully tax-exempt; owner could be a public body or a private institution (church, university, nonprofit). Verify the owner before assuming it's buyable."
+    : null;
+
+  return { code: code || null, category, label, is_public: category === "city" || category === "public", developer_note };
 }
 
 // ACRIS: Legals -> document_id -> Master + Parties. No address field exists.
@@ -141,16 +177,35 @@ export async function buildReport(bbl: string, bin: string | null = null) {
   }
   tasks["hpd_violations"] = sq.query("hpd_violations", { where: sq.buildWhere({ bbl }), limit: 500 });
   if (acrisOk) tasks["acris"] = acris(borough, block, lot);
+  // E-designations key on borough/block/lot (like ACRIS legals), all boroughs.
+  tasks["e_designations"] = sq.query("e_designations", {
+    where: sq.buildWhere({ borough, block, lot }), limit: 50,
+  });
 
   const { data, errors } = await sq.gather(tasks);
 
   const derived = developmentRights(pluto);
   const acrisData = data.acris || { documents: [] };
+
+  // Public vs. private ownership, from PLUTO's ownertype code, cross-checked
+  // against the owner name (the code occasionally lags a recent transfer).
+  const ownershipType = classifyOwnership(pluto.ownertype, pluto.ownername);
+
+  // Title / ownership / liens / easements / foreclosure analysis from ACRIS docs.
+  const title = analyzeTitle(acrisData.documents || [], acrisOk);
+  // Attach E-designations (normalize the type field across dataset vintages).
+  const eDesigs = (data.e_designations || []).map((e: any) => ({
+    enumber: e.enumber || e.e_number, ceqr_number: e.ceqr_number || e.ceqr,
+    type: e.e_designatio || e.edesignation || e.type || "Environmental (E)",
+  }));
+  if (title.available) title.e_designations = eDesigs;
+
   derived.flags = redFlags(pluto, {
     ecb: data.ecb_violations,
     dobViolations: [...(data.dob_violations || []), ...(data.dob_safety_violations || [])],
     hpdViolations: data.hpd_violations, acrisDocs: acrisData.documents,
     acrisAvailable: acrisOk, derived,
+    title, eDesignations: eDesigs,
   });
 
   const dob = unionDob(data.dob_now_jobs, data.dob_bis_jobs, data.dob_now_permits, data.dob_bis_permits);
@@ -167,6 +222,7 @@ export async function buildReport(bbl: string, bin: string | null = null) {
       irregular_lot: pluto.irrlotcode, assessed_total: pluto.assesstot,
       latitude: pluto.latitude ? Number(pluto.latitude) : null,
       longitude: pluto.longitude ? Number(pluto.longitude) : null,
+      ownership_type: ownershipType,
     },
     development: derived,
     dob,
@@ -178,6 +234,7 @@ export async function buildReport(bbl: string, bin: string | null = null) {
     },
     acris: acrisOk ? acrisData : { available: false,
       reason: "ACRIS excludes Staten Island. Use the Richmond County Clerk." },
+    title,
     provenance: { sources_queried: Object.keys(tasks).sort(), sources_failed: errors },
     disclaimer: "Informational only. Not a zoning analysis. Confirm all figures with a licensed " +
       "architect or land use counsel before acting.",
