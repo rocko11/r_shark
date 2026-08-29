@@ -581,33 +581,6 @@ function render(d) {
     <p class="ownnote">${esc(own.note)}</p>
     ${id.ownership_type && id.ownership_type.developer_note ? `<div class="lpwrap" style="border-color:var(--iron)"><div class="edhead" style="color:var(--iron)">${esc(id.ownership_type.label)}</div><p class="ownnote" style="margin:0">${esc(id.ownership_type.developer_note)}</p></div>` : ""}
 
-    ${(()=>{const OI=d.owner_intel||{};const pf=OI.portfolio||{};const ct=OI.contacts||{};
-      const pfHtml = pf.available && pf.count>0 ? `
-        <div class="ownrow" style="margin-top:8px"><span class="ownk">Portfolio</span>
-          <span class="ownv"><strong>${pf.count}</strong> other lot${pf.count===1?"":"s"} under this owner name${pf.adjacent_count>0?` · <span style="color:var(--iron);font-weight:600">${pf.adjacent_count} adjacent</span>`:""}${pf.total_other_lot_area?` · ${Math.round(pf.total_other_lot_area).toLocaleString()} sf total`:""}</span></div>
-        <details class="assump"><summary>Owner's other lots (${pf.lots.length} shown${pf.count>pf.lots.length?` of ${pf.count}`:""})</summary>
-          <table class="stack"><tbody>
-          ${pf.lots.map(l=>`<tr>
-            <td style="font-size:12.5px">${esc(l.address||l.bbl)}${l.adjacent?` <span class="owntag owntag-city" style="margin-left:4px">adjacent</span>`:""}</td>
-            <td style="font-family:var(--mono);font-size:11px;white-space:nowrap">${esc(l.bldg_class||"—")}</td>
-            <td class="num">${l.lot_area?Math.round(l.lot_area).toLocaleString()+" sf":"—"}</td>
-            <td class="num" style="font-family:var(--mono);font-size:11px"><button class="pop-btn" style="padding:3px 7px" onclick="loadBBL('${esc(l.bbl)}')">report →</button></td>
-          </tr>`).join("")}
-          </tbody></table>
-          <p class="ownnote">${esc(pf.note||"")}</p>
-        </details>`
-        : pf.available===false ? `<p class="ownnote" style="margin-top:6px">Portfolio: ${esc(pf.reason||"not available for this owner.")}</p>`
-        : `<p class="ownnote" style="margin-top:6px">No other lots found under this exact owner name.</p>`;
-      const ctHtml = ct.available && (ct.contacts||[]).length ? `
-        <div class="ownblock" style="margin-top:8px">
-          <div class="edhead" style="font-size:11px;margin-bottom:6px">Registered contacts (HPD)</div>
-          ${ct.contacts.map(c=>`<div class="ownrow"><span class="ownk">${esc((c.role||"Contact"))}</span>
-            <span class="ownv">${esc(c.name||c.person||"—")}${c.business_address?`<br><span class="pop-k" style="font-size:11.5px">${esc(c.business_address)}</span>`:""}</span></div>`).join("")}
-          <p class="ownnote" style="margin-bottom:0">${esc(ct.note||"")}</p>
-        </div>`
-        : ct.reason ? `<p class="ownnote" style="margin-top:6px">Contact: ${esc(ct.reason)}</p>` : "";
-      return pfHtml + ctHtml;
-    })()}
     ${(own.history||[]).length?`
     <details class="assump" open><summary>Sales &amp; transfer history (${own.history.length} deeds)</summary>
       <table class="stack"><tbody>
@@ -621,6 +594,35 @@ function render(d) {
       <p class="ownnote">Prices are deed "consideration" amounts from ACRIS. Transfers marked <em>non-sale</em> are $0 or nominal — usually family or LLC restructures, correction deeds, or gifts — and should not be read as market prices.</p>
     </details>`:""}`
     : `<p class="hint">No recorded deed found — ownership can't be confirmed from ACRIS for this lot.</p>`}
+
+    ${(()=>{const OI=d.owner_intel||{};const pf=OI.portfolio||{};const ct=OI.contacts||{};
+      const pfHtml = pf.available && pf.count>0 ? `
+        <div class="ownblock" style="margin-top:8px">
+        <div class="ownrow"><span class="ownk">Portfolio</span>
+          <span class="ownv"><strong>${pf.count}</strong> other lot${pf.count===1?"":"s"} under this owner name${pf.adjacent_count>0?` · <span style="color:var(--iron);font-weight:600">${pf.adjacent_count} adjacent</span>`:""}${pf.total_other_lot_area?` · ${Math.round(pf.total_other_lot_area).toLocaleString()} sf total`:""}</span></div>
+        <details class="assump"><summary>Owner's other lots (${pf.lots.length} shown${pf.count>pf.lots.length?` of ${pf.count}`:""})</summary>
+          <table class="stack"><tbody>
+          ${pf.lots.map(l=>`<tr>
+            <td style="font-size:12.5px">${esc(l.address||l.bbl)}${l.adjacent?` <span class="owntag owntag-city" style="margin-left:4px">adjacent</span>`:""}</td>
+            <td style="font-family:var(--mono);font-size:11px;white-space:nowrap">${esc(l.bldg_class||"—")}</td>
+            <td class="num">${l.lot_area?Math.round(l.lot_area).toLocaleString()+" sf":"—"}</td>
+            <td class="num" style="font-family:var(--mono);font-size:11px"><button class="pop-btn" style="padding:3px 7px" onclick="loadBBL('${esc(l.bbl)}')">report →</button></td>
+          </tr>`).join("")}
+          </tbody></table>
+          <p class="ownnote">${esc(pf.note||"")}</p>
+        </details></div>`
+        : pf.available===false ? `<p class="ownnote" style="margin-top:6px">Portfolio: ${esc(pf.reason||"not available for this owner.")}</p>`
+        : `<p class="ownnote" style="margin-top:6px">No other lots found under this owner name.</p>`;
+      const ctHtml = ct.available && (ct.contacts||[]).length ? `
+        <div class="ownblock" style="margin-top:8px">
+          <div class="edhead" style="font-size:11px;margin-bottom:6px">Registered contacts (HPD)</div>
+          ${ct.contacts.map(c=>`<div class="ownrow"><span class="ownk">${esc((c.role||"Contact"))}</span>
+            <span class="ownv">${esc(c.name||c.person||"—")}${c.business_address?`<br><span class="pop-k" style="font-size:11.5px">${esc(c.business_address)}</span>`:""}</span></div>`).join("")}
+          <p class="ownnote" style="margin-bottom:0">${esc(ct.note||"")}</p>
+        </div>`
+        : ct.reason ? `<p class="ownnote" style="margin-top:6px">Contact: ${esc(ct.reason)}</p>` : "";
+      return pfHtml + ctHtml;
+    })()}
 
     ${eds.length?`
     <div class="edwrap">
