@@ -654,7 +654,7 @@ function render(d) {
           <div class="edhead" style="font-size:11px;margin-bottom:6px">Owner phone &amp; email <span class="pop-k" style="text-transform:none;letter-spacing:0">· paid lookup</span></div>
           <div id="stbox">
             <button class="pop-btn" onclick="skipTrace('${addr}')" style="padding:7px 12px">Look up owner phone &amp; email →</button>
-            <p class="ownnote" style="margin:8px 0 0">Runs a paid skip-trace (Tracerfy) for this owner's phone and email. Charged per successful match; a miss costs nothing. Not legal-to-call advice — you're responsible for DNC/TCPA compliance.</p>
+            <p class="ownnote" style="margin:8px 0 0">Runs a paid skip-trace (DataSkip) for this owner's phone and email. Charged per successful match; a miss costs nothing. Not legal-to-call advice — you're responsible for DNC/TCPA compliance.</p>
           </div>
         </div>`;
       return pfHtml + ctHtml + stHtml;
@@ -918,7 +918,7 @@ async function skipTrace(address) {
     });
     const d = await r.json();
     if (d.enabled === false) {
-      box.innerHTML = '<p class="ownnote" style="margin:0">Owner phone/email lookup isn\'t enabled. Add a <strong>TRACERFY_API_KEY</strong> in Netlify environment variables to turn it on.</p>';
+      box.innerHTML = '<p class="ownnote" style="margin:0">Owner phone/email lookup isn\'t enabled. Add a <strong>SKIPTRACE_API_KEY</strong> in Netlify environment variables to turn it on.</p>';
       return;
     }
     if (d.error) {
