@@ -4,6 +4,7 @@ import { analyzeTitle } from "./title.ts";
 import { ownerPortfolio, ownerContacts } from "./owner.ts";
 import { assessRentStabilization } from "./rentstab.ts";
 import { estimatePropertyTax } from "./tax.ts";
+import { checkArrears } from "./arrears.ts";
 import { developmentRights, redFlags } from "./derive.ts";
 
 function chunk<T>(xs: T[], n = 150): T[][] {
@@ -201,6 +202,8 @@ export async function buildReport(bbl: string, bin: string | null = null) {
     ownerContacts(bbl).catch(() => ({ available: false, contacts: [] })),
   ]);
 
+  const arrears = await checkArrears(bbl).catch(() => ({ available: false, on_lien_sale_list: false, caveat: "Arrears check unavailable." }));
+
   // Title / ownership / liens / easements / foreclosure analysis from ACRIS docs.
   const title = analyzeTitle(acrisData.documents || [], acrisOk);
   // Attach E-designations (normalize the type field across dataset vintages).
@@ -217,6 +220,17 @@ export async function buildReport(bbl: string, bin: string | null = null) {
     acrisAvailable: acrisOk, derived,
     title, eDesignations: eDesigs,
   });
+
+  // Tax/water arrears on the lien sale list is a critical, deal-shaping flag.
+  if (arrears && arrears.on_lien_sale_list) {
+    derived.flags.unshift({
+      code: arrears.sold ? "TAX_LIEN_SOLD" : "TAX_WATER_ARREARS",
+      severity: "critical",
+      title: arrears.sold ? "Tax lien SOLD at lien sale" : (arrears.water_only ? "On lien sale list — water/sewer arrears" : "On tax lien sale list — arrears"),
+      detail: arrears.caveat,
+      source: "DOF Tax Lien Sale List",
+    });
+  }
 
   const dob = unionDob(data.dob_now_jobs, data.dob_bis_jobs, data.dob_now_permits, data.dob_bis_permits);
   const violations = consolidateViolations(data.dob_violations, data.dob_safety_violations, data.ecb_violations);
@@ -238,6 +252,7 @@ export async function buildReport(bbl: string, bin: string | null = null) {
     owner_intel: { ownership_type: ownershipType, portfolio, contacts },
     rent_stabilization: assessRentStabilization(pluto, bbl),
     property_tax: estimatePropertyTax(pluto),
+    arrears,
     dob,
     violations: {
       ...violations,

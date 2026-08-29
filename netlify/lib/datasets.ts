@@ -81,6 +81,9 @@ export const DATASETS: Record<string, Dataset> = {
   hpd_contacts: { slug: "hpd_contacts", socrataId: "feu5-w2e2", key: "registrationid",
     verified: false, canaryField: "registrationid", bblField: null,
     notes: "Registration Contacts. type=HeadOfficer/IndividualOwner/CorporateOwner/Agent, firstname, lastname, corporationname, business address. Join on registrationid." },
+  tax_lien_sale: { slug: "tax_lien_sale", socrataId: "9rz4-mjek", key: "block",
+    verified: false, canaryField: "cycle", bblField: null,
+    notes: "Tax Lien Sale List. Keyed borough+block+lot (no bbl). Fields: month, cycle (10/30/60/90 Day Notice, Final Sale), water_debt_only (YES/NO/Y/N). Threshold signal — no dollar amount." },
 };
 
 export const BOROUGH_NAME: Record<number, string> = {
