@@ -209,6 +209,17 @@ footer{border-top:1px solid var(--rule);margin-top:40px;padding-top:14px;
 .rsbadge.rs-none{background:var(--rule-2);color:var(--ink-2)}
 .rssignals{margin:6px 0 10px;padding-left:18px;font-size:13px;line-height:1.5}
 .rssignals li{margin-bottom:3px}
+/* property tax */
+.taxwrap{border:1px solid var(--rule);background:var(--paper-2);padding:16px}
+.taxbig{border-bottom:1px solid var(--rule-2);padding-bottom:12px;margin-bottom:12px}
+.taxbignum{font-family:var(--display);font-weight:700;font-size:32px;font-variation-settings:"wdth" 100;line-height:1;color:var(--ink)}
+.taxper{font-family:var(--mono);font-size:13px;font-weight:400;color:var(--ink-2);margin-left:6px;letter-spacing:.02em}
+.taxsub{font-family:var(--mono);font-size:12px;color:var(--ink-2);margin-top:6px}
+.taxgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px 20px;margin-bottom:12px}
+@media(min-width:600px){.taxgrid{grid-template-columns:repeat(4,1fr)}}
+.taxcell{display:flex;flex-direction:column;gap:2px}
+.taxcell .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.taxcellv{font-family:var(--mono);font-size:13px;color:var(--ink)}
 .ownblock{border:1px solid var(--rule);background:var(--paper-2);padding:12px 14px;margin-bottom:8px}
 .ownrow{display:flex;gap:12px;padding:3px 0;font-size:13px}
 .ownk{font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);min-width:110px}
@@ -480,6 +491,8 @@ function render(d) {
 
   const cell = (k, val) => `<div class="cell"><span class="k">${k}</span>
     <span class="v">${val ?? "—"}</span></div>`;
+  const cellSmall = (k, val) => `<div class="taxcell"><span class="k">${k}</span>
+    <span class="taxcellv">${val ?? "—"}</span></div>`;
 
   const titleblock = `
   <div class="titleblock">
@@ -722,6 +735,31 @@ function render(d) {
         ${rs.signals && rs.signals.length?`<ul class="rssignals">${rs.signals.map(s=>`<li>${esc(s)}</li>`).join("")}</ul>`:""}
         <p class="ownnote"><strong>Caveat.</strong> ${esc(rs.caveat)}</p>
         <p class="ownnote" style="margin-bottom:0"><strong>To confirm.</strong> ${esc(rs.action)}</p>
+      </div>
+    </section>`;})()}
+
+    ${(()=>{const tx=d.property_tax;if(!tx)return "";
+      if(!tx.available)return `
+    <section>
+      <div class="sec-head"><h2>Property tax</h2><span class="count">estimate</span></div>
+      <p class="hint">${esc(tx.reason||"Not available.")} ${esc(tx.caveat)}</p>
+    </section>`;
+      return `
+    <section>
+      <div class="sec-head"><h2>Property tax</h2>
+        <span class="count">${esc(tx.rate_year)} · estimate</span></div>
+      <div class="taxwrap">
+        <div class="taxbig">
+          <div class="taxbignum">$${tx.annual_tax_estimate.toLocaleString()}<span class="taxper">/yr est.</span></div>
+          <div class="taxsub">≈ $${tx.quarterly.toLocaleString()} per quarter${tx.has_exemption?` · <span style="color:var(--ochre)">exemption applied</span>`:""}</div>
+        </div>
+        <div class="taxgrid">
+          ${cellSmall("Tax class", esc(tx.tax_class))}
+          ${cellSmall("Rate", tx.rate_pct.toFixed(3)+"%")}
+          ${cellSmall("Assessed total", "$"+tx.assessed_total.toLocaleString())}
+          ${tx.exempt_total>0?cellSmall("Exempt portion", "$"+tx.exempt_total.toLocaleString()):cellSmall("Taxable assessed", "$"+tx.taxable_assessed.toLocaleString())}
+        </div>
+        <p class="ownnote" style="margin-bottom:0"><strong>Estimate.</strong> ${esc(tx.caveat)}</p>
       </div>
     </section>`;})()}
 
