@@ -1,6 +1,7 @@
 import * as sq from "./socrata.ts";
 import { ACRIS_BOROUGHS, BOROUGH_NAME, DATASETS, splitBBL } from "./datasets.ts";
 import { analyzeTitle } from "./title.ts";
+import { ownerPortfolio, ownerContacts } from "./owner.ts";
 import { developmentRights, redFlags } from "./derive.ts";
 
 function chunk<T>(xs: T[], n = 150): T[][] {
@@ -191,6 +192,13 @@ export async function buildReport(bbl: string, bin: string | null = null) {
   // against the owner name (the code occasionally lags a recent transfer).
   const ownershipType = classifyOwnership(pluto.ownertype, pluto.ownername);
 
+  // Owner intelligence: portfolio (other lots same owner holds) + HPD contact.
+  // Run in parallel; both degrade gracefully to {available:false}.
+  const [portfolio, contacts] = await Promise.all([
+    ownerPortfolio(pluto.ownername, bbl, Number(block), Number(lot)).catch(() => ({ available: false, count: 0, lots: [] })),
+    ownerContacts(bbl).catch(() => ({ available: false, contacts: [] })),
+  ]);
+
   // Title / ownership / liens / easements / foreclosure analysis from ACRIS docs.
   const title = analyzeTitle(acrisData.documents || [], acrisOk);
   // Attach E-designations (normalize the type field across dataset vintages).
@@ -225,6 +233,7 @@ export async function buildReport(bbl: string, bin: string | null = null) {
       ownership_type: ownershipType,
     },
     development: derived,
+    owner_intel: { ownership_type: ownershipType, portfolio, contacts },
     dob,
     violations: {
       ...violations,

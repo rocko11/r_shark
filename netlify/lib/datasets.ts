@@ -78,6 +78,9 @@ export const DATASETS: Record<string, Dataset> = {
     notes: "Housing Maintenance Code Violations. Class A/B/C/I." },
   hpd_registrations: { slug: "hpd_registrations", socrataId: "tesw-yqqr", key: "bbl",
     verified: false, canaryField: "registrationid", bblField: "bbl" },
+  hpd_contacts: { slug: "hpd_contacts", socrataId: "feu5-w2e2", key: "registrationid",
+    verified: false, canaryField: "registrationid", bblField: null,
+    notes: "Registration Contacts. type=HeadOfficer/IndividualOwner/CorporateOwner/Agent, firstname, lastname, corporationname, business address. Join on registrationid." },
 };
 
 export const BOROUGH_NAME: Record<number, string> = {

@@ -29,7 +29,7 @@ const money = (v: any) => {
 const yr = (d?: string) => (d && d.length >= 4 ? d.slice(0, 4) : null);
 
 // Doc-type classification -------------------------------------------------
-const isDeed = (t: string) => /DEED|RPTT|CONF|CORRECTION DEED/.test(t) && !/MASTER/.test(t);
+const isDeed = (t: string) => /DEED|RPTT|CONF|GRANT|BARGAIN|EXECUTOR|ADMINISTRATOR|REFEREE|CONTRACT OF SALE/.test(t) && !/MASTER|MORT|LEASE|EASE|MODIF|ASSIGN/.test(t);
 const isMortgage = (t: string) => /(^| )MTGE|MORTGAGE|^AGMT|CONSOL|SPRD|AL&R/.test(t);
 const isMortgageSat = (t: string) => /SAT|RELEASE OF MORT|ASSIGNMENT OF MORT.*SAT|RELM|DISCHARGE/.test(t) && /MOR|MTG|SAT/.test(t);
 const isMechanic = (t: string) => /MECHANIC|(^| )ML( |$)|LIEN.*MECH/.test(t);
