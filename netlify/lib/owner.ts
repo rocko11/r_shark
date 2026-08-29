@@ -43,20 +43,34 @@ export async function ownerPortfolio(ownername: any, selfBbl: string, selfBlock:
     return { available: false, reason: "Owner name is public/placeholder or too generic to match a portfolio reliably.", count: 0, lots: [] };
   }
 
-  // PLUTO ownername is upper-case already. Match on the exact owner string first
-  // (high precision); Socrata's = is case-sensitive-ish, so use upper().
-  // We can't run our JS root-normalizer inside SoQL, so we match the exact name
-  // and note that near-variants (punctuation/suffix differences) may be missed.
+  // Pick a distinctive anchor word to LIKE-match on. Prefer the first meaningful
+  // token (usually the actual name — ESRT, BELTO), skipping generic words that
+  // would over-match ("BUILDING", "STATE", "PARK", etc.).
+  const GENERIC = new Set(["BUILDING","BUILDINGS","STATE","EMPIRE","PARK","PARKS","AVENUE","STREET","PLACE","EAST","WEST","NORTH","SOUTH","NEW","YORK","CITY","APARTMENTS","APARTMENT","HOUSE","HOUSING","TOWER","TOWERS","PLAZA","CENTER","CENTRE","MANOR","GARDENS","GARDEN","COURT","MANAGEMENT","REALTY","PROPERTIES","ASSOCIATES","DEVELOPMENT"]);
+  const words = root.split(" ").filter(w => w.length >= 4);
+  const anchor = words.find(w => !GENERIC.has(w)) || words.sort((a, b) => b.length - a.length)[0];
+  if (!anchor) {
+    return { available: false, reason: "Owner name has no distinctive token to match a portfolio.", count: 0, lots: [] };
+  }
+  const like = `%${anchor.replace(/'/g, "''")}%`;
   let rows: any[] = [];
   try {
     rows = await sq.query("pluto", {
-      where: `upper(ownername)='${raw.toUpperCase().replace(/'/g, "''")}'`,
+      where: `upper(ownername) like '${like}'`,
       select: "bbl,address,ownername,borough,block,lot,bldgclass,lotarea,unitsres,unitstotal,assesstot,latitude,longitude",
       limit: 500,
     });
   } catch {
     return { available: false, reason: "Portfolio lookup failed.", count: 0, lots: [] };
   }
+
+  // The LIKE anchor can over-match (e.g. "EMPIRE" catches unrelated "EMPIRE" owners),
+  // so re-filter in JS to rows whose normalized root shares the full owner root.
+  const selfRoot = root;
+  rows = rows.filter((r) => {
+    const rr = ownerRoot(r.ownername);
+    return rr === selfRoot || rr.includes(selfRoot) || selfRoot.includes(rr);
+  });
 
   const norm = (v: any) => (v == null || v === "" ? null : Number(v));
   const cleanBbl = (v: any) => String(v ?? "").split(".")[0].padStart(10, "0");
@@ -100,12 +114,18 @@ export async function ownerPortfolio(ownername: any, selfBbl: string, selfBlock:
 }
 
 // HPD registration contact — head officer / individual owner / managing agent.
-// Two-hop: registrations (by bbl) -> registrationid -> contacts (by registrationid).
+// Two-hop: registrations (by boro/block/lot) -> registrationid -> contacts (by
+// registrationid). NOTE: the registrations dataset (tesw-yqqr) has NO bbl column —
+// it keys on boroid + block + lot, so we split the BBL.
 export async function ownerContacts(bbl: string) {
+  const clean = String(bbl).split(".")[0].padStart(10, "0");
+  const boroid = clean.slice(0, 1);
+  const block = String(Number(clean.slice(1, 6)));  // strip leading zeros
+  const lot = String(Number(clean.slice(6, 10)));
   let regs: any[] = [];
   try {
     regs = await sq.query("hpd_registrations", {
-      where: `bbl='${String(bbl).replace(/'/g, "''")}'`,
+      where: `boroid='${boroid}' AND block='${block}' AND lot='${lot}'`,
       select: "registrationid,lastregistrationdate,registrationenddate,housenumber,streetname,zip",
       limit: 5,
     });
