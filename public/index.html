@@ -646,7 +646,18 @@ function render(d) {
           <p class="ownnote" style="margin-bottom:0">${esc(ct.note||"")}</p>
         </div>`
         : ct.reason ? `<p class="ownnote" style="margin-top:6px">Contact: ${esc(ct.reason)}</p>` : "";
-      return pfHtml + ctHtml;
+      // On-demand paid skip-trace for phone/email. Button only; fires a paid lookup on click.
+      const addr = esc((id.address||"") + "");
+      const zip = "";
+      const stHtml = `
+        <div class="ownblock" style="margin-top:8px">
+          <div class="edhead" style="font-size:11px;margin-bottom:6px">Owner phone &amp; email <span class="pop-k" style="text-transform:none;letter-spacing:0">· paid lookup</span></div>
+          <div id="stbox">
+            <button class="pop-btn" onclick="skipTrace('${addr}')" style="padding:7px 12px">Look up owner phone &amp; email →</button>
+            <p class="ownnote" style="margin:8px 0 0">Runs a paid skip-trace (Tracerfy) for this owner's phone and email. Charged per successful match; a miss costs nothing. Not legal-to-call advice — you're responsible for DNC/TCPA compliance.</p>
+          </div>
+        </div>`;
+      return pfHtml + ctHtml + stHtml;
     })()}
 
     ${eds.length?`
@@ -893,6 +904,55 @@ async function initBlockMap(lat, lng, selfBbl) {
 function loadBBL(bbl) {
   q.value = bbl;
   run();
+}
+
+// On-demand paid owner skip-trace. Calls /api/skiptrace and renders phone/email.
+async function skipTrace(address) {
+  const box = document.getElementById("stbox");
+  if (!box) return;
+  box.innerHTML = '<p class="ownnote" style="margin:0">Looking up owner contact… (paid lookup in progress)</p>';
+  try {
+    const r = await fetch("/api/skiptrace", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address: address, state: "NY" }),
+    });
+    const d = await r.json();
+    if (d.enabled === false) {
+      box.innerHTML = '<p class="ownnote" style="margin:0">Owner phone/email lookup isn\'t enabled. Add a <strong>TRACERFY_API_KEY</strong> in Netlify environment variables to turn it on.</p>';
+      return;
+    }
+    if (d.error) {
+      box.innerHTML = '<p class="ownnote" style="margin:0">Lookup failed: ' + esc(d.error) + '</p>';
+      return;
+    }
+    if (d.hit === false) {
+      box.innerHTML = '<p class="ownnote" style="margin:0">' + esc(d.note || "No match found.") + '</p>';
+      return;
+    }
+    // hit
+    let h = "";
+    if (d.owner_name) h += '<div class="ownrow"><span class="ownk">Matched owner</span><span class="ownv"><strong>' + esc(d.owner_name) + '</strong></span></div>';
+    if (d.phones && d.phones.length) {
+      h += d.phones.map(function(p){
+        var flags = [];
+        if (p.type) flags.push(esc(p.type));
+        if (p.carrier) flags.push(esc(p.carrier));
+        if (p.dnc) flags.push('<span style="color:var(--iron)">DNC</span>');
+        if (p.litigator) flags.push('<span style="color:var(--iron)">TCPA litigator</span>');
+        return '<div class="ownrow"><span class="ownk">Phone</span><span class="ownv"><strong>' + esc(p.number) + '</strong>' + (flags.length ? ' <span class="pop-k" style="font-size:11px">· ' + flags.join(" · ") + '</span>' : '') + '</span></div>';
+      }).join("");
+    }
+    if (d.emails && d.emails.length) {
+      h += d.emails.map(function(e){ return '<div class="ownrow"><span class="ownk">Email</span><span class="ownv">' + esc(e) + '</span></div>'; }).join("");
+    }
+    if (d.mailing_address) h += '<div class="ownrow"><span class="ownk">Mailing</span><span class="ownv">' + esc(d.mailing_address) + '</span></div>';
+    if (!d.phones?.length && !d.emails?.length && !d.mailing_address) h += '<p class="ownnote" style="margin:0">Matched, but no phone/email/mailing returned for this owner.</p>';
+    h += '<p class="ownnote" style="margin:8px 0 0"><strong>Compliance.</strong> ' + esc(d.compliance_note || "You are responsible for DNC/TCPA compliance on any outreach.") + '</p>';
+    if (d.credits_deducted) h += '<p class="ownnote" style="margin:4px 0 0">' + d.credits_deducted + ' credit(s) used.</p>';
+    box.innerHTML = h;
+  } catch (e) {
+    box.innerHTML = '<p class="ownnote" style="margin:0">Lookup failed: ' + esc(String(e)) + '</p>';
+  }
 }
 
 /* empty state */
