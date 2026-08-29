@@ -158,11 +158,17 @@ export async function ownerContacts(bbl: string) {
   const cleaned = contacts.map((c) => {
     const t = String(c.type || "").toUpperCase().replace(/\s+/g, "");
     const person = [c.firstname, c.lastname].filter(Boolean).join(" ").trim();
+    // HPD sometimes stores the house number inside businessstreetname too, which
+    // produces "2307 2307 EASTCHESTER ROAD". Only prepend the house number if the
+    // street doesn't already start with it.
+    const hn = String(c.businesshousenumber || "").trim();
+    const st = String(c.businessstreetname || "").trim();
+    const street = hn && !st.startsWith(hn) ? [hn, st].filter(Boolean).join(" ") : st;
     const addr = [
-      [c.businesshousenumber, c.businessstreetname].filter(Boolean).join(" "),
-      c.businessapartment ? "Apt/Ste " + c.businessapartment : "",
-      [c.businesscity, c.businessstate, c.businesszip].filter(Boolean).join(", "),
-    ].filter(Boolean).join(", ");
+      street,
+      c.businessapartment ? "Apt/Ste " + String(c.businessapartment).trim() : "",
+      [c.businesscity, c.businessstate, c.businesszip].filter(Boolean).map(s => String(s).trim()).join(", "),
+    ].filter(Boolean).join(", ").replace(/\s{2,}/g, " ");
     return {
       role: c.type || "Contact",
       role_key: t,
