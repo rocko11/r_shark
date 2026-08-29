@@ -763,27 +763,32 @@ function render(d) {
       </div>
     </section>`;})()}
 
-    ${(()=>{const ar=d.arrears;if(!ar)return "";
-      if(!ar.available)return `
+    ${(()=>{const ar=d.arrears;if(!ar||!ar.available)return (ar&&ar.reason)?`
     <section>
-      <div class="sec-head"><h2>Tax &amp; water arrears</h2><span class="count">DOF lien sale list</span></div>
-      <p class="hint">${esc(ar.reason||ar.caveat)}</p>
-    </section>`;
-      const onList = ar.on_lien_sale_list;
-      const cls = onList ? (ar.sold?"rs-listed":"rs-likely") : "rs-none";
-      const badge = ar.sold?"LIEN SOLD":onList?(ar.water_only?"WATER ARREARS":"ON LIEN LIST"):"CLEAR";
-      const head = ar.sold?"Tax lien sold at auction":onList?(ar.water_only?"On lien sale list — water/sewer":"On the tax lien sale list"):"Not on the lien sale list";
+      <div class="sec-head"><h2>Tax and water arrears</h2><span class="count">DOF lien sale list</span></div>
+      <p class="hint">${esc(ar.reason||ar.caveat||"")}</p>
+    </section>`:"";
+      const onList=!!ar.on_lien_sale_list;
+      const cls=onList?(ar.sold?"rs-listed":"rs-likely"):"rs-none";
+      let badge="CLEAR";let head="Not on the lien sale list";
+      if(ar.sold){badge="LIEN SOLD";head="Tax lien sold at auction";}
+      else if(onList&&ar.water_only){badge="WATER ARREARS";head="On lien sale list for water/sewer";}
+      else if(onList){badge="ON LIEN LIST";head="On the tax lien sale list";}
+      let sig="";
+      if(onList){
+        let items="";
+        if(ar.most_recent){items+="<li>Most recent listing: "+esc(ar.most_recent)+(ar.latest_cycle?" ("+esc(ar.latest_cycle)+")":"")+"</li>";}
+        if(ar.appearances&&ar.appearances>1){items+="<li>Appears "+ar.appearances+" times across lien-sale cycles.</li>";}
+        if(items)sig='<ul class="rssignals">'+items+'</ul>';
+      }
       return `
     <section>
-      <div class="sec-head"><h2>Tax &amp; water arrears</h2>
+      <div class="sec-head"><h2>Tax and water arrears</h2>
         <span class="count">DOF lien sale list</span></div>
       <div class="rswrap ${cls}">
         <div class="rshead"><span class="rsbadge ${cls}">${badge}</span><strong>${esc(head)}</strong></div>
-        ${onList?`<ul class="rssignals">
-          ${ar.most_recent?`<li>Most recent listing: ${esc(ar.most_recent)}${ar.latest_cycle?` (${esc(ar.latest_cycle)})`:""}</li>`:""}
-          ${ar.appearances&&ar.appearances>1?`<li>Appears ${ar.appearances} times across lien-sale cycles.</li>`:""}
-        </ul>`:""}
-        <p class="ownnote" style="margin-bottom:0">${esc(ar.caveat)}</p>
+        ${sig}
+        <p class="ownnote" style="margin-bottom:0">${esc(ar.caveat||"")}</p>
       </div>
     </section>`;})()}
 
