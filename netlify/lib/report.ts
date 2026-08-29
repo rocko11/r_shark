@@ -2,6 +2,7 @@ import * as sq from "./socrata.ts";
 import { ACRIS_BOROUGHS, BOROUGH_NAME, DATASETS, splitBBL } from "./datasets.ts";
 import { analyzeTitle } from "./title.ts";
 import { ownerPortfolio, ownerContacts } from "./owner.ts";
+import { assessRentStabilization } from "./rentstab.ts";
 import { developmentRights, redFlags } from "./derive.ts";
 
 function chunk<T>(xs: T[], n = 150): T[][] {
@@ -234,6 +235,7 @@ export async function buildReport(bbl: string, bin: string | null = null) {
     },
     development: derived,
     owner_intel: { ownership_type: ownershipType, portfolio, contacts },
+    rent_stabilization: assessRentStabilization(pluto, bbl),
     dob,
     violations: {
       ...violations,

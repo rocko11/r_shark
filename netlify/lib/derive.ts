@@ -1,6 +1,8 @@
 // The derivation layer — the product. Every output is a range with stated
 // assumptions, never a single confident number.
 
+import { DHCR_BBLS } from "./dhcr_data.ts";
+
 const UAP_ELIGIBLE = ["R6", "R7", "R8", "R9", "R10", "R11", "R12"];
 const UAP_MAX_BONUS = 0.20;
 
@@ -111,13 +113,22 @@ export function redFlags(pluto: any, inp: FlagInput = {}): Flag[] {
 
   const unitsRes = num(pluto.unitsres) ?? 0;
   const yearBuilt = num(pluto.yearbuilt) ?? 0;
-  if (unitsRes >= 6 && yearBuilt > 0 && yearBuilt < 1974) {
+  const bblClean = String(pluto.bbl ?? "").split(".")[0].padStart(10, "0");
+  const onDhcr = DHCR_BBLS.has(bblClean);
+  const presumptive = unitsRes >= 6 && yearBuilt > 0 && yearBuilt < 1974;
+
+  if (onDhcr) {
+    flags.push({ code: "RENT_STABILIZATION_DHCR", severity: "critical",
+      title: "On the DHCR rent-stabilized list",
+      detail: `This lot appears on the DHCR rent-stabilized building list${yearBuilt ? `, built ${Math.round(yearBuilt)}` : ""}${unitsRes ? ` with ${Math.round(unitsRes)} residential units` : ""}. ` +
+        "At least one unit is registered as stabilized. The list does not give the unit count and is point-in-time — pull a certified DHCR rent roll for the exact number of stabilized units and legal rents. Vacant delivery may be constrained.",
+      source: "DHCR building list" });
+  } else if (presumptive) {
     flags.push({ code: "POSSIBLE_RENT_STABILIZATION", severity: "critical",
-      title: "Likely rent-stabilized units",
-      detail: `${Math.round(unitsRes)} residential units, built ${Math.round(yearBuilt)}. Pre-1974 ` +
-        "buildings with 6+ units are presumptively subject to rent stabilization. Vacant delivery " +
-        "may be impossible. Confirm against DHCR registration and DOF tax bill unit counts.",
-      source: "PLUTO (heuristic)" });
+      title: "Likely rent-stabilized — not on DHCR list",
+      detail: `${Math.round(unitsRes)} residential units, built ${Math.round(yearBuilt)}. Pre-1974 buildings with 6+ units are presumptively stabilized, but this lot is NOT on the DHCR list. ` +
+        "That can mean the owner stopped registering (their compliance problem, and yours after closing) or the building exited — open data can't say which. Order the DHCR registration history before assuming vacant delivery.",
+      source: "PLUTO heuristic (not DHCR-listed)" });
   }
 
   if (inp.derived && inp.derived.built_far !== null) {

@@ -197,6 +197,18 @@ footer{border-top:1px solid var(--rule);margin-top:40px;padding-top:14px;
 .owntag-public{color:var(--ochre)}
 .owntag-mixed{color:var(--ochre)}
 .owntag-exempt_unclear{color:var(--ink-2)}
+/* rent stabilization */
+.rswrap{border:1px solid var(--rule);background:var(--paper-2);padding:14px 16px;border-left-width:4px}
+.rswrap.rs-listed{border-left-color:var(--iron)}
+.rswrap.rs-likely{border-left-color:var(--ochre)}
+.rswrap.rs-none{border-left-color:var(--rule-2)}
+.rshead{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:15px}
+.rsbadge{font-family:var(--mono);font-size:10px;letter-spacing:.06em;padding:3px 8px;border-radius:2px;font-weight:600;white-space:nowrap}
+.rsbadge.rs-listed{background:var(--iron);color:var(--paper)}
+.rsbadge.rs-likely{background:var(--ochre);color:var(--ink)}
+.rsbadge.rs-none{background:var(--rule-2);color:var(--ink-2)}
+.rssignals{margin:6px 0 10px;padding-left:18px;font-size:13px;line-height:1.5}
+.rssignals li{margin-bottom:3px}
 .ownblock{border:1px solid var(--rule);background:var(--paper-2);padding:12px 14px;margin-bottom:8px}
 .ownrow{display:flex;gap:12px;padding:3px 0;font-size:13px}
 .ownk{font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);min-width:110px}
@@ -697,6 +709,21 @@ function render(d) {
         <span class="count">${T.available===false?"unavailable":"ACRIS · recorded record"}</span></div>
       ${titleHtml}
     </section>
+
+    ${(()=>{const rs=d.rent_stabilization;if(!rs)return "";
+      const cls = rs.confidence==="listed"?"rs-listed":rs.confidence==="tax_program"?"rs-listed":rs.confidence==="likely"?"rs-likely":rs.confidence==="possible"?"rs-likely":"rs-none";
+      const badge = rs.confidence==="listed"?"DHCR-LISTED":rs.confidence==="tax_program"?"TAX PROGRAM":rs.confidence==="likely"?"LIKELY":rs.confidence==="possible"?"POSSIBLE":"NO SIGNAL";
+      return `
+    <section>
+      <div class="sec-head"><h2>Rent stabilization</h2>
+        <span class="count">${rs.on_dhcr_list?"DHCR building list":"heuristic + tax programs"}</span></div>
+      <div class="rswrap ${cls}">
+        <div class="rshead"><span class="rsbadge ${cls}">${badge}</span><strong>${esc(rs.status)}</strong></div>
+        ${rs.signals && rs.signals.length?`<ul class="rssignals">${rs.signals.map(s=>`<li>${esc(s)}</li>`).join("")}</ul>`:""}
+        <p class="ownnote"><strong>Caveat.</strong> ${esc(rs.caveat)}</p>
+        <p class="ownnote" style="margin-bottom:0"><strong>To confirm.</strong> ${esc(rs.action)}</p>
+      </div>
+    </section>`;})()}
 
     <section>
       <div class="sec-head"><h2>Development rights</h2>
