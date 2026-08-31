@@ -232,6 +232,15 @@ footer{border-top:1px solid var(--rule);margin-top:40px;padding-top:14px;
 .edhead{font-family:var(--display);font-weight:700;font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
 .edrow{font-size:13px;padding:2px 0;font-family:var(--mono)}
 .lien-open{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--iron);font-weight:600}
+.neg{color:var(--iron);font-weight:700}
+.doclink{color:var(--slate);text-decoration:underline;font-family:var(--mono);font-size:11px;white-space:nowrap}
+.doclink:hover{color:var(--iron)}
+.reclinks{display:grid;grid-template-columns:1fr;gap:1px;background:var(--rule);border:1px solid var(--rule)}
+@media(min-width:640px){.reclinks{grid-template-columns:1fr 1fr}}
+.reclink{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--paper-2);
+  padding:11px 13px;font-family:var(--mono);font-size:12px;color:var(--ink);text-decoration:none;line-height:1.35}
+.reclink:hover{background:var(--paper);color:var(--slate)}
+.reclink-go{color:var(--slate);font-weight:700}
 .lien-ok{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}
 .loading{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;
          color:var(--ink-2);padding:36px 0}
@@ -288,6 +297,8 @@ const $ = s => document.querySelector(s);
 const out = $("#out"), q = $("#q"), ac = $("#ac"), hint = $("#hint");
 const fmt = n => n == null || n === "" ? "—" : Number(n).toLocaleString("en-US");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+// Link to a recorded document's scanned image in NYC ACRIS by its document_id.
+const acrisLink = id => id ? `<a class="doclink" href="https://a836-acris.nyc.gov/DS/DocumentSearch/DocumentImageView?doc_id=${encodeURIComponent(String(id))}" target="_blank" rel="noopener">view doc →</a>` : "";
 
 /* ---------- search ---------- */
 let acTimer;
@@ -574,7 +585,7 @@ function render(d) {
       Richmond County Clerk. Ownership and encumbrance history below is incomplete.</div>`
     : docs.length ? `
     <table class="stack"><thead><tr>
-      <th>Date</th><th>Document</th><th>From → To</th><th class="num">Amount</th>
+      <th>Date</th><th>Document</th><th>From → To</th><th class="num">Amount</th><th>Link</th>
     </tr></thead><tbody>
     ${docs.map(x => `<tr>
       <td style="white-space:nowrap;font-family:var(--mono);font-size:12px">${esc((x.document_date||"").slice(0,10))}</td>
@@ -583,6 +594,7 @@ function render(d) {
         <span style="color:var(--rule)">→</span>
         ${esc((x.grantees||[]).join(", ").slice(0,44) || "—")}</td>
       <td class="num" data-l="Amount">${x.document_amount && +x.document_amount > 0 ? "$"+fmt(x.document_amount) : "—"}</td>
+      <td data-l="Link">${acrisLink(x.document_id)}</td>
     </tr>`).join("")}</tbody></table>`
     : `<p class="hint">No recorded documents found for this lot.</p>`;
 
@@ -696,8 +708,8 @@ function render(d) {
 
     ${eds.length?`
     <div class="edwrap">
-      <div class="edhead">⚠ (E) Designation — environmental requirement on this lot: YES</div>
-      ${eds.map(e=>`<div class="edrow"><strong>${esc(e.type||"Environmental (E)")}</strong>${e.enumber?` · E-${esc(e.enumber)}`:""}${e.ceqr_number?` · CEQR ${esc(e.ceqr_number)}`:""}</div>`).join("")}
+      <div class="edhead"><span class="neg">⚠ (E) DESIGNATION — ENVIRONMENTAL REQUIREMENT ON THIS LOT: YES</span></div>
+      ${eds.map(e=>`<div class="edrow"><strong class="neg">${esc(e.type||"Environmental (E)")}</strong>${e.enumber?` · E-${esc(e.enumber)}`:""}${e.ceqr_number?` · CEQR ${esc(e.ceqr_number)}`:""}</div>`).join("")}
       <p class="ownnote">Requires environmental testing and often remediation/mitigation (hazmat, air, or noise) before a new building can be occupied. Pull the full (E) requirements before underwriting.</p>
     </div>`:`
     <div class="ownblock" style="border-left:4px solid var(--moss)">
@@ -707,21 +719,22 @@ function render(d) {
 
     ${lps.length?`
     <div class="lpwrap">
-      <div class="edhead" style="color:var(--iron)">⚠ Lis pendens — foreclosure / title litigation notice</div>
-      ${lps.map(l=>`<div class="edrow">${esc((l.date||"").slice(0,10)||l.year||"")}${(l.plaintiff||[]).length?` · plaintiff ${esc(l.plaintiff.join(", ").slice(0,50))}`:""}</div>`).join("")}
+      <div class="edhead"><span class="neg">⚠ LIS PENDENS — FORECLOSURE / TITLE LITIGATION NOTICE</span></div>
+      ${lps.map(l=>`<div class="edrow"><span class="neg">${esc((l.date||"").slice(0,10)||l.year||"")}${(l.plaintiff||[]).length?` · plaintiff ${esc(l.plaintiff.join(", ").slice(0,50))}`:""}</span> ${acrisLink(l.document_id)}</div>`).join("")}
       <p class="ownnote">A lawsuit affecting title was filed. This does <em>not</em> state the outcome — verify current status in the NY courts SCROLL system.</p>
     </div>`:""}
 
     <div class="sec-head" style="margin-top:20px"><h3 style="font-family:var(--display);font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:0">Liens</h3>
       <span class="count">${openLiens.length} open · ${clearedLiens.length} discharged</span></div>
     ${(T.liens||[]).length? `
-    <table class="stack"><thead><tr><th>Type</th><th>Recorded</th><th>Creditor</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>
+    <table class="stack"><thead><tr><th>Type</th><th>Recorded</th><th>Creditor</th><th class="num">Amount</th><th>Status</th><th>Document</th></tr></thead><tbody>
     ${(T.liens||[]).slice(0,14).map(l=>`<tr>
-      <td data-l="Type"><strong>${esc(l.kind)}</strong></td>
+      <td data-l="Type"><strong${l.discharged?"":' class="neg"'}>${esc(l.kind)}</strong></td>
       <td data-l="Recorded" style="white-space:nowrap;font-family:var(--mono);font-size:12px">${esc((l.date||"").slice(0,10)||l.year||"—")}</td>
       <td data-l="Creditor" style="font-size:12.5px">${esc((l.creditor||[]).join(", ").slice(0,36)||"—")}</td>
-      <td class="num" data-l="Amount">${money(l.amount)}</td>
+      <td class="num" data-l="Amount"${l.discharged?"":' style="color:var(--iron);font-weight:700"'}>${money(l.amount)}</td>
       <td data-l="Status">${l.discharged?`<span class="lien-ok">discharged</span>`:`<span class="lien-open">open</span>`}</td>
+      <td data-l="Document">${acrisLink(l.document_id)}</td>
     </tr>`).join("")}
     </tbody></table>
     <p class="ownnote">"Open" means no matching discharge was found in ACRIS — not a guarantee the lien is live, nor that others don't exist. Mortgages are normal and expected. Only a title search is definitive.</p>`
@@ -842,7 +855,7 @@ function render(d) {
       <div class="sec-head"><h2>Tax and water arrears</h2>
         <span class="count">DOF lien sale list</span></div>
       <div class="rswrap ${cls}">
-        <div class="rshead"><span class="rsbadge ${cls}">${badge}</span><strong>${esc(head)}</strong></div>
+        <div class="rshead"><span class="rsbadge ${cls}">${badge}</span><strong${onList?' class="neg"':''}>${esc(head)}</strong></div>
         ${sig}
         <p class="ownnote" style="margin-bottom:0">${esc(ar.caveat||"")}</p>
       </div>
@@ -868,6 +881,37 @@ function render(d) {
       <div class="sec-head"><h2>DOB filings</h2>
         <span class="count">${fmt(dob.filing_count)} total · ${fmt(dob.permits_issued)} permits</span></div>
       ${filingsHtml}
+    </section>
+
+    <section>
+      <div class="sec-head"><h2>Official city records</h2>
+        <span class="count">verify on the source</span></div>
+      ${(()=>{
+        const boro = String(d.bbl||"").slice(0,1);
+        const block = id.block, lot = id.lot, bblRaw = d.bbl;
+        const bin = d.bin;
+        const bbAddr = encodeURIComponent(id.address||"");
+        const links = [
+          { label:"DOB — Buildings (permits, violations, complaints, C of O)",
+            url:`https://a810-bisweb.nyc.gov/bisweb/PropertyProfileOverviewServlet?boro=${boro}&block=${block}&lot=${lot}` },
+          { label:"ACRIS — deeds, mortgages & liens for this lot",
+            url:`https://a836-acris.nyc.gov/DS/DocumentSearch/BBLResult?bbl=${bblRaw}` },
+          { label:"DOF — property tax & assessment (Property Tax Public Access)",
+            url:`https://a836-pts-access.nyc.gov/care/search/commonsearch.aspx?mode=persprop` },
+          { label:"DOF / DEP — pay or view charges (water/sewer & tax) via CityPay",
+            url:`https://a836-citypay.nyc.gov/citypay/PropertyTax` },
+          { label:"HPD Online — housing violations, complaints & registration",
+            url:`https://hpdonline.nyc.gov/hpdonline/` },
+          { label:"ZoLA — zoning & land use map for this lot",
+            url:`https://zola.planning.nyc.gov/l/lot/${boro}/${block}/${lot}` },
+          { label:"DOB NOW — recent filings not in BIS",
+            url:`https://a810-dobnow.nyc.gov/publish/Index.html#!/` },
+        ];
+        return `<div class="reclinks">${links.map(l=>
+          `<a class="reclink" href="${l.url}" target="_blank" rel="noopener">${esc(l.label)} <span class="reclink-go">→</span></a>`
+        ).join("")}</div>
+        <p class="ownnote">Each link opens the authoritative city system for this exact lot (Borough ${esc(boro)}, Block ${esc(block)}, Lot ${esc(lot)}${bin?`, BIN ${esc(bin)}`:""}). HPD Online and DOB NOW open to a search — enter the address or BBL. Always confirm findings on the source of record before acting.</p>`;
+      })()}
     </section>
 
     <section>
