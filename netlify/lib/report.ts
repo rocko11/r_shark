@@ -240,6 +240,7 @@ export async function buildReport(bbl: string, bin: string | null = null) {
     identity: {
       address: pluto.address, borough: BOROUGH_NAME[borough], block, lot,
       zip: pluto.zipcode || null,
+      community_district: pluto.cd || null,
       owner_of_record: pluto.ownername, building_class: pluto.bldgclass,
       year_built: pluto.yearbuilt, num_floors: pluto.numfloors,
       units_residential: pluto.unitsres, units_total: pluto.unitstotal,
