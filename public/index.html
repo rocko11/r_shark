@@ -162,6 +162,8 @@ footer{border-top:1px solid var(--rule);margin-top:40px;padding-top:14px;
 /* ---------- block map ---------- */
 .mapwrap{border:1px solid var(--rule);background:var(--paper-2)}
 #blockmap{height:340px;width:100%;background:var(--paper-2)}
+.svwrap{border:2px solid var(--ink);background:var(--paper-2);line-height:0}
+.svwrap img{filter:grayscale(0.15) sepia(0.06) contrast(0.98)}
 /* Mute OSM tiles toward the drafting-linen palette so the map reads as a plan,
    not a consumer web map. */
 #blockmap .leaflet-tile{filter:grayscale(0.7) sepia(0.18) brightness(1.02) contrast(0.92)}
@@ -512,7 +514,7 @@ function render(d) {
       ${cell("Year built", esc(id.year_built))}
       ${cell("Floors", esc(id.num_floors))}
       ${cell("Res. units", esc(id.units_residential))}
-      ${cell("Frontage", id.lot_frontage ? id.lot_frontage + " ft" : "—")}
+      ${cell("Lot dims (W×L)", ((id.lot_frontage && id.lot_depth) ? (Math.round(id.lot_frontage*10)/10 + "′ × " + Math.round(id.lot_depth*10)/10 + "′") : (id.lot_frontage ? Math.round(id.lot_frontage*10)/10 + "′ wide" : "—")) + (String(id.irregular_lot).toUpperCase()==="Y" ? ` <span class="pop-k" style="font-size:10px">irregular</span>` : ""))}
       ${cell("Bldg class", esc(id.building_class))}
       ${cell("Owner of record", `${esc(id.owner_of_record)}${id.ownership_type && id.ownership_type.category!=="private" ? ` <span class="owntag owntag-${id.ownership_type.category}">${esc(id.ownership_type.label)}</span>` : ""}`)}
     </div>
@@ -708,6 +710,13 @@ function render(d) {
     ${titleblock}
 
     ${hasGeo ? `
+    <section id="svsection" style="display:none">
+      <div class="sec-head"><h2>Street view</h2>
+        <span class="count" id="svmeta">Google</span></div>
+      <div class="svwrap"><img id="svimg" alt="Street View of the property" style="width:100%;display:block"></div>
+    </section>` : ""}
+
+    ${hasGeo ? `
     <section>
       <div class="sec-head"><h2>The block</h2>
         <span class="count">click a lot for its report</span></div>
@@ -846,9 +855,32 @@ addEventListener("resize", () => {
   rzTimer = setTimeout(() => { if (lastReport) render(lastReport); }, 250);
 });
 
+/* ---------- street view ---------- */
+async function loadStreetView(lat, lng) {
+  const section = document.getElementById("svsection");
+  const img = document.getElementById("svimg");
+  const meta = document.getElementById("svmeta");
+  if (!section || !img || lat == null || lng == null) return;
+  try {
+    const r = await fetch("/api/streetview?lat=" + encodeURIComponent(lat) + "&lng=" + encodeURIComponent(lng));
+    const d = await r.json();
+    if (d && d.available && d.image_url) {
+      img.onload = function(){ section.style.display = ""; };
+      img.onerror = function(){ section.style.display = "none"; };
+      img.src = d.image_url;
+      meta.textContent = d.captured ? ("Google · " + d.captured) : "Google";
+    } else {
+      section.style.display = "none";
+    }
+  } catch (e) {
+    section.style.display = "none";
+  }
+}
+
 /* ---------- block map ---------- */
 let _map = null;
 async function initBlockMap(lat, lng, selfBbl) {
+  loadStreetView(lat, lng);
   const el = document.getElementById("blockmap");
   if (!el) return;
   if (_map) { _map.remove(); _map = null; }
