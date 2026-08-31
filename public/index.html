@@ -873,13 +873,13 @@ function render(d) {
 
     <section>
       <div class="sec-head"><h2>Violations</h2>
-        <span class="count">DOB · ECB · HPD</span></div>
+        <span class="count">${d.bin?`<a class="doclink" href="https://a810-bisweb.nyc.gov/bisweb/ActionViolationDisplayServlet?requestid=1&allbin=${esc(d.bin)}" target="_blank" rel="noopener">DOB records →</a> · <a class="doclink" href="https://a810-bisweb.nyc.gov/bisweb/ECBQueryByLocationServlet?requestid=1&allbin=${esc(d.bin)}" target="_blank" rel="noopener">ECB records →</a> · <a class="doclink" href="https://hpdonline.nyc.gov/hpdonline/" target="_blank" rel="noopener">HPD →</a>`:"DOB · ECB · HPD"}</span></div>
       ${stats}
     </section>
 
     <section>
       <div class="sec-head"><h2>DOB filings</h2>
-        <span class="count">${fmt(dob.filing_count)} total · ${fmt(dob.permits_issued)} permits</span></div>
+        <span class="count">${fmt(dob.filing_count)} total · ${fmt(dob.permits_issued)} permits${d.bin?` · <a class="doclink" href="https://a810-bisweb.nyc.gov/bisweb/COsByLocationServlet?requestid=1&allbin=${esc(d.bin)}" target="_blank" rel="noopener">C of O →</a> · <a class="doclink" href="https://a810-bisweb.nyc.gov/bisweb/PropertyProfileOverviewServlet?boro=${esc(String(d.bbl||"").slice(0,1))}&block=${esc(id.block)}&lot=${esc(id.lot)}" target="_blank" rel="noopener">permits →</a>`:""}</span></div>
       ${filingsHtml}
     </section>
 
@@ -890,10 +890,19 @@ function render(d) {
         const boro = String(d.bbl||"").slice(0,1);
         const block = id.block, lot = id.lot, bblRaw = d.bbl;
         const bin = d.bin;
-        const bbAddr = encodeURIComponent(id.address||"");
         const links = [
-          { label:"DOB — Buildings (permits, violations, complaints, C of O)",
+          { label:"DOB — property profile (permits, jobs, C of O)",
             url:`https://a810-bisweb.nyc.gov/bisweb/PropertyProfileOverviewServlet?boro=${boro}&block=${block}&lot=${lot}` },
+          ...(bin?[
+            { label:"DOB — Certificates of Occupancy (PDFs)",
+              url:`https://a810-bisweb.nyc.gov/bisweb/COsByLocationServlet?requestid=1&allbin=${bin}` },
+            { label:"DOB — violations for this building",
+              url:`https://a810-bisweb.nyc.gov/bisweb/ActionViolationDisplayServlet?requestid=1&allbin=${bin}` },
+            { label:"ECB — OATH civil-penalty violations",
+              url:`https://a810-bisweb.nyc.gov/bisweb/ECBQueryByLocationServlet?requestid=1&allbin=${bin}` },
+            { label:"DOB — complaints on this building",
+              url:`https://a810-bisweb.nyc.gov/bisweb/ComplaintsByAddressServlet?requestid=1&allbin=${bin}` },
+          ]:[]),
           { label:"ACRIS — deeds, mortgages & liens for this lot",
             url:`https://a836-acris.nyc.gov/DS/DocumentSearch/BBLResult?bbl=${bblRaw}` },
           { label:"DOF — property tax & assessment (Property Tax Public Access)",
