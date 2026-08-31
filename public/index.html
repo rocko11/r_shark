@@ -755,7 +755,7 @@ function render(d) {
     ${hasGeo ? `
     <section>
       <div class="sec-head"><h2>The block</h2>
-        <span class="count">hover a lot, click to open its report</span></div>
+        <span class="count">hover a lot, click to open its report · zoom out for more</span></div>
       <div class="mapwrap">
         <div id="blockmap"></div>
         <div class="maplegend">
@@ -921,7 +921,7 @@ async function initBlockMap(lat, lng, selfBbl) {
   if (!el) return;
   if (_map) { _map.remove(); _map = null; }
 
-  _map = L.map(el, { zoomControl: true, scrollWheelZoom: false, attributionControl: true })
+  _map = L.map(el, { zoomControl: true, scrollWheelZoom: true, attributionControl: true })
     .setView([lat, lng], 17);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19, attribution: "© OpenStreetMap",
@@ -944,7 +944,7 @@ async function initBlockMap(lat, lng, selfBbl) {
   }
 
   try {
-    const r = await fetch(`/api/lots?bbl=${encodeURIComponent(selfBbl || "")}`);
+    const r = await fetch(`/api/lots?bbl=${encodeURIComponent(selfBbl || "")}&lat=${lat}&lng=${lng}&blocks=5`);
     const j = await r.json();
     const lots = j.lots || [];
     // Category -> base color, mirroring the report palette.
@@ -1000,11 +1000,9 @@ async function initBlockMap(lat, lng, selfBbl) {
       if (lot.is_self) selfLayer = layer;
     }
 
-    // Frame the block, keep the self lot on top.
-    if (layers.length) {
-      const group = L.featureGroup(layers);
-      try { _map.fitBounds(group.getBounds().pad(0.15)); } catch (e) {}
-    }
+    // Keep the property centred at a readable zoom so nearby lots stay clickable;
+    // the full 5-block radius is all shaded and reachable by panning/zooming out.
+    _map.setView([lat, lng], 17);
     if (selfLayer) selfLayer.bringToFront();
   } catch (e) {
     // Map still shows the basemap and the property centre if the footprints fail.
