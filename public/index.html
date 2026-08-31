@@ -515,6 +515,7 @@ function render(d) {
       ${cell("Floors", esc(id.num_floors))}
       ${cell("Res. units", esc(id.units_residential))}
       ${cell("Lot dims (W×L)", ((id.lot_frontage && id.lot_depth) ? (Math.round(id.lot_frontage*10)/10 + "′ × " + Math.round(id.lot_depth*10)/10 + "′") : (id.lot_frontage ? Math.round(id.lot_frontage*10)/10 + "′ wide" : "—")) + (String(id.irregular_lot).toUpperCase()==="Y" ? ` <span class="pop-k" style="font-size:10px">irregular</span>` : ""))}
+      ${cell("Bldg dims (W×L)", (id.bldg_frontage && id.bldg_depth && Number(id.bldg_frontage)>0 && Number(id.bldg_depth)>0) ? (Math.round(id.bldg_frontage*10)/10 + "′ × " + Math.round(id.bldg_depth*10)/10 + "′") : "—")}
       ${cell("Bldg class", esc(id.building_class))}
       ${cell("Owner of record", `${esc(id.owner_of_record)}${id.ownership_type && id.ownership_type.category!=="private" ? ` <span class="owntag owntag-${id.ownership_type.category}">${esc(id.ownership_type.label)}</span>` : ""}`)}
     </div>
@@ -598,6 +599,37 @@ function render(d) {
   const titleHtml = T.available === false ? `
     <div class="gap"><strong>No ACRIS coverage here.</strong> ${esc(T.reason || "Staten Island records sit with the Richmond County Clerk.")} Ownership and lien history can't be pulled for this lot.</div>`
     : `
+    ${(()=>{
+      // Complete title-search summary header — at-a-glance verdict + counts.
+      const openLienCount = openLiens.length;
+      const openLienAmt = openLiens.reduce((s,l)=>s+(l.amount||0),0);
+      const hasLP = lps.length>0;
+      const hasE = eds.length>0;
+      const issues = [];
+      if (openLienCount) issues.push(openLienCount + " open lien" + (openLienCount>1?"s":"") + (openLienAmt?" · " + money(openLienAmt):""));
+      if (hasLP) issues.push(lps.length + " lis pendens / foreclosure notice" + (lps.length>1?"s":""));
+      if (hasE) issues.push("(E) environmental designation");
+      if (eases.length) issues.push(eases.length + " recorded easement" + (eases.length>1?"s":""));
+      const clean = issues.length===0;
+      const deedCount = (own && own.history) ? own.history.length : 0;
+      return `
+      <div class="rswrap ${clean?'rs-none':'rs-listed'}" style="margin-bottom:14px">
+        <div class="rshead">
+          <span class="rsbadge ${clean?'rs-none':'rs-listed'}">${clean?'NO OPEN ISSUES FOUND':'ISSUES FOUND'}</span>
+          <strong>Title search &mdash; recorded documents</strong>
+          <button class="pop-btn" style="margin-left:auto;margin-top:0" onclick="window.print()">Print / save PDF</button>
+        </div>
+        <div class="taxgrid" style="margin-bottom:6px">
+          <div class="taxcell"><span class="k">Owner of record</span><span class="taxcellv">${esc((own&&own.current_owner)||'—')}</span></div>
+          <div class="taxcell"><span class="k">Deeds on file</span><span class="taxcellv">${deedCount}</span></div>
+          <div class="taxcell"><span class="k">Open liens</span><span class="taxcellv" style="${openLienCount?'color:var(--iron);font-weight:600':''}">${openLienCount}${openLienAmt?' · '+money(openLienAmt):''}</span></div>
+          <div class="taxcell"><span class="k">Foreclosure / LP</span><span class="taxcellv" style="${hasLP?'color:var(--iron);font-weight:600':''}">${hasLP?lps.length:'None'}</span></div>
+        </div>
+        <p class="ownnote" style="margin:0">${clean
+          ? 'No open liens, foreclosure notices, or environmental designations were found in the recorded ACRIS documents for this lot. This is a record scan, <strong>not</strong> a certified title search &mdash; order a title report from a licensed title company before closing.'
+          : 'Recorded issues found: ' + issues.join('; ') + '. Details below. This is a record scan, <strong>not</strong> a certified title search &mdash; order a title report from a licensed title company before closing.'}</p>
+      </div>`;
+    })()}
     ${own && own.current_owner ? `
     <div class="ownblock">
       <div class="ownrow"><span class="ownk">Owner of record</span>
@@ -664,10 +696,14 @@ function render(d) {
 
     ${eds.length?`
     <div class="edwrap">
-      <div class="edhead">⚠ (E) Designation — environmental requirement on this lot</div>
+      <div class="edhead">⚠ (E) Designation — environmental requirement on this lot: YES</div>
       ${eds.map(e=>`<div class="edrow"><strong>${esc(e.type||"Environmental (E)")}</strong>${e.enumber?` · E-${esc(e.enumber)}`:""}${e.ceqr_number?` · CEQR ${esc(e.ceqr_number)}`:""}</div>`).join("")}
       <p class="ownnote">Requires environmental testing and often remediation/mitigation (hazmat, air, or noise) before a new building can be occupied. Pull the full (E) requirements before underwriting.</p>
-    </div>`:""}
+    </div>`:`
+    <div class="ownblock" style="border-left:4px solid var(--moss)">
+      <div class="edhead" style="color:var(--moss)">(E) Designation — environmental requirement on this lot: NO</div>
+      <p class="ownnote" style="margin:4px 0 0">No (E) designation found in the City's E-designation dataset for this lot. This checks the mapped list only; it does not rule out other environmental conditions (spills, prior use, adjacent contamination).</p>
+    </div>`}
 
     ${lps.length?`
     <div class="lpwrap">
@@ -719,14 +755,14 @@ function render(d) {
     ${hasGeo ? `
     <section>
       <div class="sec-head"><h2>The block</h2>
-        <span class="count">click a lot for its report</span></div>
+        <span class="count">hover a lot, click to open its report</span></div>
       <div class="mapwrap">
         <div id="blockmap"></div>
         <div class="maplegend">
           <span><i style="background:var(--iron)"></i>this lot</span>
           <span><i style="background:var(--slate)"></i>room to build</span>
-          <span><i style="background:var(--ochre)"></i>landmark / historic</span>
-          <span><i style="background:var(--paper)"></i>other</span>
+          <span><i style="background:var(--ochre)"></i>institutional / parking</span>
+          <span><i style="background:var(--ink-2)"></i>existing building</span>
         </div>
       </div>
     </section>` : ""}
@@ -908,26 +944,70 @@ async function initBlockMap(lat, lng, selfBbl) {
   }
 
   try {
-    const r = await fetch(`/api/nearby?lat=${lat}&lng=${lng}&radius=250&bbl=${encodeURIComponent(selfBbl || "")}`);
+    const r = await fetch(`/api/lots?bbl=${encodeURIComponent(selfBbl || "")}`);
     const j = await r.json();
-    for (const lot of (j.lots || [])) {
-      const cls = lot.is_self ? "self" : lot.signal;
-      const m = L.marker([lot.lat, lot.lng], {
-        icon: lot.is_self ? dot("self") : dot(cls), zIndexOffset: lot.is_self ? 1000 : 0,
+    const lots = j.lots || [];
+    // Category -> base color, mirroring the report palette.
+    const css = getComputedStyle(document.documentElement);
+    const COLORS = {
+      self:        css.getPropertyValue("--iron").trim()  || "#9E3323",
+      opportunity: css.getPropertyValue("--slate").trim() || "#38596B",
+      constrained: css.getPropertyValue("--ochre").trim() || "#B57F1E",
+      existing:    css.getPropertyValue("--ink-2").trim() || "#4A4E52",
+    };
+    // Fill styles: high transparency at rest; darker (more opaque) on hover.
+    const restOpacity = (cat) => cat === "self" ? 0.42 : 0.16;
+    const hoverOpacity = (cat) => cat === "self" ? 0.55 : 0.40;
+
+    const layers = [];
+    let selfLayer = null;
+    for (const lot of lots) {
+      if (!lot.geometry) continue;
+      const color = COLORS[lot.category] || COLORS.existing;
+      const layer = L.geoJSON(lot.geometry, {
+        style: {
+          color: color, weight: 1, opacity: 0.7,
+          fillColor: color, fillOpacity: restOpacity(lot.category),
+        },
       }).addTo(_map);
-      const far = lot.built_far != null ? `Built FAR ${lot.built_far}` : "";
-      const resid = lot.resid_far != null ? ` / max ${lot.resid_far}` : "";
-      m.bindPopup(`
+
+      const far = (lot.year_built ? "built " + lot.year_built : "");
+      const areaTxt = lot.lot_area ? Math.round(Number(lot.lot_area)).toLocaleString() + " sf lot" : "";
+      layer.bindPopup(`
         <div class="pop-addr">${esc(lot.address || lot.bbl)}</div>
-        <div class="pop-k">${esc(lot.bldg_class || "")}${lot.year_built ? " · built " + lot.year_built : ""}</div>
-        <div>${esc(far + resid)}</div>
+        <div class="pop-k">${esc(lot.bldg_class || "")}${far ? " · " + esc(far) : ""}</div>
+        ${areaTxt ? `<div class="pop-k">${areaTxt}</div>` : ""}
         ${lot.units_res ? `<div class="pop-k">${lot.units_res} residential units</div>` : ""}
         ${lot.is_self ? '<div class="pop-k" style="margin-top:6px">You are viewing this lot.</div>'
           : `<button class="pop-btn" onclick="loadBBL('${esc(lot.bbl)}')">See this lot's report →</button>`}
       `);
+
+      // Hover: darken the fill so the mouse-over lot is obviously "live".
+      if (!lot.is_self) {
+        layer.on("mouseover", function(){
+          this.setStyle({ fillOpacity: hoverOpacity(lot.category), weight: 2 });
+          el.style.cursor = "pointer";
+        });
+        layer.on("mouseout", function(){
+          this.setStyle({ fillOpacity: restOpacity(lot.category), weight: 1 });
+          el.style.cursor = "";
+        });
+        // Click anywhere on the shaded footprint opens that lot's report.
+        layer.on("click", function(){ loadBBL(lot.bbl); });
+      }
+
+      layers.push(layer);
+      if (lot.is_self) selfLayer = layer;
     }
+
+    // Frame the block, keep the self lot on top.
+    if (layers.length) {
+      const group = L.featureGroup(layers);
+      try { _map.fitBounds(group.getBounds().pad(0.15)); } catch (e) {}
+    }
+    if (selfLayer) selfLayer.bringToFront();
   } catch (e) {
-    // Map still shows the basemap and the property; neighbours just don't load.
+    // Map still shows the basemap and the property centre if the footprints fail.
     L.marker([lat, lng], { icon: dot("self") }).addTo(_map);
   }
 }
