@@ -15,7 +15,8 @@ export interface Flag {
 }
 export interface Derived {
   lot_area: number | null; existing_floor_area: number | null; built_far: number | null;
-  zoning_districts: string[]; scenarios: Scenario[]; flags: Flag[]; caveats: string[];
+  zoning_districts: string[]; commercial_overlays?: string[]; special_districts?: string[];
+  scenarios: Scenario[]; flags: Flag[]; caveats: string[];
 }
 
 function num(v: unknown): number | null {
@@ -41,6 +42,8 @@ export function developmentRights(pluto: any): Derived {
   const facilFar = num(pluto.facilfar);
 
   const districts = [1, 2, 3, 4].map((i) => norm(pluto[`zonedist${i}`])).filter(Boolean);
+  const overlays = [1, 2].map((i) => norm(pluto[`overlay${i}`])).filter(Boolean);
+  const specialDistricts = [1, 2, 3].map((i) => norm(pluto[`spdist${i}`])).filter(Boolean);
 
   const caveats: string[] = [
     "Figures are FAR-based and do not account for height, setback, yard, sky " +
@@ -84,9 +87,25 @@ export function developmentRights(pluto: any): Derived {
       "uses the primary district only and is indicative, not reliable.");
   }
 
+  if (specialDistricts.length) {
+    caveats.push(
+      `In Special Purpose District${specialDistricts.length > 1 ? "s" : ""} ${specialDistricts.join(", ")}. ` +
+      "Special districts layer their own use, bulk, height, ground-floor and often Mandatory " +
+      "Inclusionary Housing (MIH) requirements on top of the base zoning — the as-of-right FAR " +
+      "above may not reflect the actual buildable program. Check the district's specific rules.");
+  }
+  if (overlays.length) {
+    caveats.push(
+      `Commercial overlay${overlays.length > 1 ? "s" : ""} ${overlays.join(", ")} apply${overlays.length > 1 ? "" : "s"} ` +
+      "— these permit certain commercial uses on the ground floor within a residential district.");
+  }
+
   return {
     lot_area: lotArea, existing_floor_area: bldgArea, built_far: builtFar,
-    zoning_districts: districts, scenarios, flags: [], caveats,
+    zoning_districts: districts,
+    commercial_overlays: overlays,
+    special_districts: specialDistricts,
+    scenarios, flags: [], caveats,
   };
 }
 
@@ -220,7 +239,6 @@ export function redFlags(pluto: any, inp: FlagInput = {}): Flag[] {
         detail: "A money judgment recorded against an owner can attach to the property. No satisfaction found — verify.",
         source: "ACRIS" });
     }
-    // Any other open liens (mortgages excluded from flagging — normal) get a soft note.
     const otherOpen = open.filter((l: any) =>
       l.kind !== "Mechanic's lien" && !/tax lien/i.test(l.kind) && l.kind !== "Judgment lien" && l.kind !== "Mortgage");
     if (otherOpen.length) {
@@ -237,7 +255,6 @@ export function redFlags(pluto: any, inp: FlagInput = {}): Flag[] {
     }
   }
 
-  // E-designation (CEQR environmental requirement) — real remediation cost.
   const eds = inp.eDesignations || [];
   if (eds.length) {
     const types = [...new Set(eds.map((e: any) => e.type).filter(Boolean))].join(", ");
