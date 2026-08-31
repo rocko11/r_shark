@@ -61,6 +61,64 @@ export default async (req: Request, _ctx: Context) => {
     const yearmax = Number(u.get("yearmax")); if (yearmax > 0) clauses.push(`yearbuilt<=${yearmax}`);
     const unitsmin = Number(u.get("unitsmin")); if (unitsmin > 0) clauses.push(`unitsres>=${unitsmin}`);
     if (!clauses.length) return json({ error: "Pick at least one filter (ZIP, community district, borough, vacant, class, size, year, or units)." }, 400);
+  } else if (mode === "distress") {
+    // Distressed properties from the DOF Tax Lien Sale List (9rz4-mjek), filtered by area.
+    // kind=tax  -> water_debt_only='NO' (tax arrears)
+    // kind=water-> water_debt_only='YES' (water/sewer arrears)
+    // kind=all  -> both
+    const LIEN = "https://data.cityofnewyork.us/resource/9rz4-mjek.json";
+    const lc: string[] = [];
+    const zip = (u.get("zip") || "").replace(/\D/g, "");
+    const cd = (u.get("cd") || "").replace(/\D/g, "");
+    const boro = (u.get("borough") || "").replace(/\D/g, "");
+    if (zip.length === 5) lc.push(`zip_code='${esc(zip)}'`);
+    if (cd) lc.push(`community_board='${esc(cd)}'`);
+    if (boro) lc.push(`borough='${esc(boro)}'`);
+    const kind = (u.get("kind") || "all").toLowerCase();
+    if (kind === "water") lc.push(`upper(water_debt_only)='YES'`);
+    else if (kind === "tax") lc.push(`upper(water_debt_only)='NO'`);
+    if (!lc.length) return json({ error: "Pick a borough, ZIP, or community district to search liens." }, 400);
+
+    const lp = new URLSearchParams({
+      $select: "borough,block,lot,house_number,street_name,zip_code,cycle,water_debt_only,building_class,community_board",
+      $where: lc.join(" AND "),
+      $order: "month DESC",
+      $limit: "60",
+    });
+    if (APP_TOKEN) lp.set("$$app_token", APP_TOKEN);
+
+    let lrows: any[];
+    try {
+      const r = await fetch(`${LIEN}?${lp.toString()}`);
+      if (!r.ok) return json({ error: `Lien list ${r.status}` }, 502);
+      lrows = await r.json();
+    } catch (e) {
+      return json({ error: `Lien search failed: ${(e as Error).message}`.slice(0, 160) }, 502);
+    }
+    // Build BBL (borough is single digit, block/lot unpadded in this dataset) and dedupe.
+    const seen = new Set<string>();
+    const results = [];
+    for (const r of lrows) {
+      const b = String(r.borough || "").replace(/\D/g, "");
+      const blk = String(r.block || "").replace(/\D/g, "").padStart(5, "0");
+      const lt = String(r.lot || "").replace(/\D/g, "").padStart(4, "0");
+      if (!b || !blk || !lt) continue;
+      const bbl = b + blk + lt;
+      if (seen.has(bbl)) continue;
+      seen.add(bbl);
+      const water = String(r.water_debt_only || "").toUpperCase() === "YES";
+      results.push({
+        bbl,
+        address: [r.house_number, r.street_name].filter(Boolean).join(" ") || null,
+        owner: null,
+        bldg_class: r.building_class || null,
+        lot_area: null, units_res: null, year_built: null,
+        zip: r.zip_code || null,
+        lien_type: water ? "Water/sewer lien" : "Tax lien",
+        cycle: r.cycle || null,
+      });
+    }
+    return json({ mode, kind, count: results.length, results });
   } else {
     return json({ error: "Unknown search mode." }, 400);
   }
