@@ -327,6 +327,7 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
       <button class="smode" data-m="zip" onclick="setSMode('zip')">By ZIP</button>
       <button class="smode" data-m="cd" onclick="setSMode('cd')">By community board</button>
       <button class="smode" data-m="block" onclick="setSMode('block')">By block</button>
+      <button class="smode" data-m="distress" onclick="setSMode('distress')">Tax / water liens</button>
       <button class="smode" data-m="filter" onclick="setSMode('filter')">By filters</button>
     </div>
     <div id="sform"></div>
@@ -1183,6 +1184,16 @@ function setSMode(m) {
       <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:6px 0 10px"><input type="checkbox" id="s_vacant"> Vacant lots only</label>
       ${go}
       <p class="hint" style="margin-top:8px">Combine any filters. Example: ZIP + vacant + min lot area to find development sites.</p>`;
+  } else if (m === 'distress') {
+    f.innerHTML = `<div class="sfilters">
+      <div class="sfield"><label>Borough (1–5)</label><input id="s_boro" placeholder="3"></div>
+      <div class="sfield"><label>ZIP</label><input id="s_zip" placeholder="11238"></div>
+      <div class="sfield"><label>Community district</label><input id="s_cd" placeholder="303"></div>
+      </div>
+      <div class="sfield" style="margin-top:6px"><label>Lien type</label>
+        <select id="s_kind"><option value="all">Tax + water liens</option><option value="tax">Tax liens only</option><option value="water">Water/sewer liens only</option></select></div>
+      ${go}
+      <p class="hint" style="margin-top:8px">From the DOF Tax Lien Sale List — properties with unpaid property tax or water/sewer charges the City can sell as a lien. Often a precursor to foreclosure. Pick at least a borough. <strong>Note:</strong> full foreclosure/lis-pendens isn't searchable citywide from open data — but each property's report checks it (see "Lis pendens" in the title section).</p>`;
   }
   document.getElementById('sresults').innerHTML = '';
 }
@@ -1203,6 +1214,12 @@ async function runSearch() {
       const v = val('s_' + fid); if (v) p.set(key, v);
     });
     if (document.getElementById('s_vacant')?.checked) p.set('vacant', '1');
+  } else if (sMode === 'distress') {
+    ['zip','cd','boro:borough'].forEach(pair => {
+      const [fid, key] = pair.includes(':') ? pair.split(':') : [pair, pair];
+      const v = val('s_' + fid); if (v) p.set(key, v);
+    });
+    p.set('kind', document.getElementById('s_kind')?.value || 'all');
   }
   res.innerHTML = '<p class="loading">Searching PLUTO…</p>';
   try {
@@ -1213,7 +1230,7 @@ async function runSearch() {
     res.innerHTML = `<p class="hint" style="margin:10px 0">${d.count} result${d.count===1?'':'s'}${d.count>=60?' (showing first 60, largest lots first)':''} — click any to open its report.</p>`
       + d.results.map(x => `<div class="srow" onclick="loadBBL('${esc(x.bbl)}')">
           <div><div class="a">${esc(x.address || x.bbl)}</div>
-            <div class="m">${esc(x.owner || '')}${x.bldg_class ? ' · ' + esc(x.bldg_class) : ''}${x.zip ? ' · ' + esc(x.zip) : ''}</div></div>
+            <div class="m">${x.lien_type ? '<span class="neg">' + esc(x.lien_type) + '</span>' + (x.cycle ? ' · ' + esc(x.cycle) : '') : (esc(x.owner || '') + (x.bldg_class ? ' · ' + esc(x.bldg_class) : ''))}${x.zip ? ' · ' + esc(x.zip) : ''}</div></div>
           <div class="m" style="text-align:right;white-space:nowrap">${x.lot_area ? x.lot_area.toLocaleString() + ' sf' : ''}${x.units_res ? '<br>' + x.units_res + ' units' : ''}${x.year_built ? '<br>built ' + x.year_built : ''}</div>
         </div>`).join('');
   } catch (e) {
