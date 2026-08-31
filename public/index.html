@@ -31,20 +31,49 @@
 *{box-sizing:border-box}
 html,body{margin:0}
 body{
-  background:var(--paper);
+  background:#0ABAB5;
   color:var(--ink);
   font-family:var(--body);
   font-size:15px;
   line-height:1.5;
   -webkit-font-smoothing:antialiased;
-  /* faint drafting grid */
+  /* faint drafting grid over the Tiffany-green field */
   background-image:
-    linear-gradient(var(--rule-2) 1px,transparent 1px),
-    linear-gradient(90deg,var(--rule-2) 1px,transparent 1px);
+    linear-gradient(rgba(255,255,255,.10) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.10) 1px,transparent 1px);
   background-size:44px 44px;
   background-position:-1px -1px;
 }
+/* The report itself sits on a paper card so the drafting aesthetic and text stay readable. */
 .wrap{max-width:1000px;margin:0 auto;padding:28px 20px 96px}
+/* tabs */
+.tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid var(--ink)}
+.tab{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;
+  background:var(--paper-2);border:2px solid var(--ink);border-bottom:none;padding:9px 16px;cursor:pointer;
+  color:var(--ink-2);margin-bottom:-2px}
+.tab-on{background:var(--paper);color:var(--ink);font-weight:600}
+/* search modes */
+.smodes{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.smode{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  background:var(--paper-2);border:1.5px solid var(--rule);padding:7px 12px;cursor:pointer;color:var(--ink-2)}
+.smode-on{border-color:var(--ink);color:var(--ink);background:var(--paper);font-weight:600}
+.sfield{margin-bottom:10px}
+.sfield label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px}
+.sfield input,.sfield select{padding:10px 12px;font-family:var(--mono);font-size:14px;background:var(--paper-2);
+  border:1.5px solid var(--ink);border-radius:0;outline:none;min-width:200px}
+.sfilters{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
+@media(min-width:640px){.sfilters{grid-template-columns:1fr 1fr 1fr}}
+.sgo{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;background:var(--ink);
+  color:var(--paper);padding:9px 18px;border:none;cursor:pointer;margin-top:6px}
+.sgo:hover{background:var(--slate)}
+.srow{display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding:11px 13px;
+  border:1px solid var(--rule);border-top:none;background:var(--paper-2);cursor:pointer}
+.srow:first-child{border-top:1px solid var(--rule)}
+.srow:hover{background:var(--paper)}
+.srow .a{font-family:var(--display);font-weight:700;font-size:14px;text-transform:uppercase;font-variation-settings:"wdth" 112}
+.srow .m{font-family:var(--mono);font-size:11px;color:var(--ink-2)}
+#out, .empty{background:var(--paper);border:1px solid var(--ink);padding:22px 24px;margin-top:14px;
+  box-shadow:0 8px 30px rgba(0,0,0,.14)}
 
 /* ---------- masthead ---------- */
 .mast{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
@@ -275,6 +304,12 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
     <span class="sub">NYC · five boroughs</span>
   </div>
 
+  <div class="tabs" id="tabs">
+    <button class="tab tab-on" data-tab="report" onclick="showTab('report')">Property report</button>
+    <button class="tab" data-tab="search" onclick="showTab('search')">Search properties</button>
+  </div>
+
+  <div id="panel-report">
   <div class="search">
     <label for="q">Property address or 10-digit BBL</label>
     <input id="q" autocomplete="off" spellcheck="false"
@@ -284,6 +319,19 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
   <p class="hint" id="hint">Enter to run. Data is public record; verify before acting.</p>
 
   <div id="out"></div>
+  </div>
+
+  <div id="panel-search" hidden>
+    <div class="smodes">
+      <button class="smode smode-on" data-m="owner" onclick="setSMode('owner')">By owner</button>
+      <button class="smode" data-m="zip" onclick="setSMode('zip')">By ZIP</button>
+      <button class="smode" data-m="cd" onclick="setSMode('cd')">By community board</button>
+      <button class="smode" data-m="block" onclick="setSMode('block')">By block</button>
+      <button class="smode" data-m="filter" onclick="setSMode('filter')">By filters</button>
+    </div>
+    <div id="sform"></div>
+    <div id="sresults"></div>
+  </div>
 
   <footer>
     Sources: DCP PLUTO · DOB (BIS + DOB NOW) · DOB ECB · HPD · ACRIS.
@@ -299,6 +347,23 @@ const fmt = n => n == null || n === "" ? "—" : Number(n).toLocaleString("en-US
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // Link to a recorded document's scanned image in NYC ACRIS by its document_id.
 const acrisLink = id => id ? `<a class="doclink" href="https://a836-acris.nyc.gov/DS/DocumentSearch/DocumentImageView?doc_id=${encodeURIComponent(String(id))}" target="_blank" rel="noopener">view doc →</a>` : "";
+
+// Community board from PLUTO's cd code (borough digit + 2-digit board number).
+// Links to the official NYC Community Affairs Unit page for that borough's boards.
+const CB_BOROUGH = { "1":["manhattan","Manhattan"], "2":["bronx","Bronx"], "3":["brooklyn","Brooklyn"], "4":["queens","Queens"], "5":["staten-island","Staten Island"] };
+function communityBoard(cd) {
+  const s = String(cd ?? "").replace(/\D/g, "").padStart(3, "0");
+  if (!s || s === "000") return null;
+  const boro = CB_BOROUGH[s[0]];
+  if (!boro) return null;
+  const num = parseInt(s.slice(1), 10);
+  if (!num) return null;
+  return {
+    label: `${boro[1]} Community Board ${num}`,
+    short: `${boro[1]} CB${num}`,
+    url: `https://www.nyc.gov/site/cau/community-boards/${boro[0]}-boards.page`,
+  };
+}
 
 /* ---------- search ---------- */
 let acTimer;
@@ -510,8 +575,9 @@ function render(d) {
   const titleblock = `
   <div class="titleblock">
     <div class="tb-head">
-      <h2 class="addr">${esc(id.address || d.bbl)}</h2>
+      <h2 class="addr">${esc(id.address || d.bbl)}${id.zip ? ` <span style="font-weight:400;font-size:0.6em;letter-spacing:.05em">${esc(id.zip)}</span>` : ""}</h2>
       <div class="boro">${esc(id.borough || "")} · Block ${id.block} · Lot ${id.lot}</div>
+      ${(()=>{ const cb = communityBoard(id.community_district); return cb ? `<div class="boro" style="margin-top:2px">${esc(cb.label)} · <a class="doclink" href="${cb.url}" target="_blank" rel="noopener">board info & website →</a></div>` : ""; })()}
     </div>
     <div class="tb-grid">
       ${cell("BBL", `<span style="letter-spacing:.05em">${esc(d.bbl)}</span>`)}
@@ -1071,7 +1137,88 @@ async function initBlockMap(lat, lng, selfBbl) {
 // Clicking a neighbour pin loads that lot through the normal report path.
 function loadBBL(bbl) {
   q.value = bbl;
+  showTab('report');
   run();
+}
+
+/* ---------- tabs ---------- */
+function showTab(name) {
+  document.getElementById('panel-report').hidden = name !== 'report';
+  document.getElementById('panel-search').hidden = name !== 'search';
+  document.querySelectorAll('#tabs .tab').forEach(t => t.classList.toggle('tab-on', t.dataset.tab === name));
+  if (name === 'search' && !document.getElementById('sform').innerHTML) setSMode('owner');
+}
+
+/* ---------- property search ---------- */
+let sMode = 'owner';
+function setSMode(m) {
+  sMode = m;
+  document.querySelectorAll('.smode').forEach(b => b.classList.toggle('smode-on', b.dataset.m === m));
+  const f = document.getElementById('sform');
+  const go = `<button class="sgo" onclick="runSearch()">Search →</button>`;
+  if (m === 'owner') {
+    f.innerHTML = `<div class="sfield"><label>Owner name (company or person)</label><input id="s_q" placeholder="e.g. BELTO REALTY" onkeydown="if(event.key==='Enter')runSearch()"></div>${go}
+      <p class="hint" style="margin-top:8px">Finds every lot in the city where the owner-of-record name matches. Great for mapping a portfolio.</p>`;
+  } else if (m === 'zip') {
+    f.innerHTML = `<div class="sfield"><label>ZIP code</label><input id="s_zip" placeholder="11238" onkeydown="if(event.key==='Enter')runSearch()"></div>${go}`;
+  } else if (m === 'cd') {
+    f.innerHTML = `<div class="sfield"><label>Community district (borough digit + board, e.g. 304 = Brooklyn CB4)</label><input id="s_cd" placeholder="304" onkeydown="if(event.key==='Enter')runSearch()"></div>${go}
+      <p class="hint" style="margin-top:8px">1=Manhattan, 2=Bronx, 3=Brooklyn, 4=Queens, 5=Staten Island.</p>`;
+  } else if (m === 'block') {
+    f.innerHTML = `<div class="sfield"><label>10-digit BBL (any lot on the block) — or borough + block below</label><input id="s_bbl" placeholder="3011330064" onkeydown="if(event.key==='Enter')runSearch()"></div>
+      <div class="sfilters"><div class="sfield"><label>Borough (1–5)</label><input id="s_boro" placeholder="3"></div>
+      <div class="sfield"><label>Block</label><input id="s_block" placeholder="1133" onkeydown="if(event.key==='Enter')runSearch()"></div></div>${go}`;
+  } else if (m === 'filter') {
+    f.innerHTML = `<div class="sfilters">
+      <div class="sfield"><label>ZIP</label><input id="s_zip" placeholder="11238"></div>
+      <div class="sfield"><label>Community district</label><input id="s_cd" placeholder="304"></div>
+      <div class="sfield"><label>Borough (1–5)</label><input id="s_boro" placeholder="3"></div>
+      <div class="sfield"><label>Building class prefix</label><input id="s_class" placeholder="V = vacant, C = walk-up"></div>
+      <div class="sfield"><label>Min lot area (sf)</label><input id="s_minlot" placeholder="2500"></div>
+      <div class="sfield"><label>Max lot area (sf)</label><input id="s_maxlot" placeholder=""></div>
+      <div class="sfield"><label>Year built ≥</label><input id="s_yearmin" placeholder=""></div>
+      <div class="sfield"><label>Year built ≤</label><input id="s_yearmax" placeholder="1974"></div>
+      <div class="sfield"><label>Min residential units</label><input id="s_unitsmin" placeholder="6"></div>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:6px 0 10px"><input type="checkbox" id="s_vacant"> Vacant lots only</label>
+      ${go}
+      <p class="hint" style="margin-top:8px">Combine any filters. Example: ZIP + vacant + min lot area to find development sites.</p>`;
+  }
+  document.getElementById('sresults').innerHTML = '';
+}
+
+async function runSearch() {
+  const res = document.getElementById('sresults');
+  const val = id => (document.getElementById(id)?.value || '').trim();
+  const p = new URLSearchParams({ mode: sMode });
+  if (sMode === 'owner') p.set('q', val('s_q'));
+  else if (sMode === 'zip') p.set('zip', val('s_zip'));
+  else if (sMode === 'cd') p.set('cd', val('s_cd'));
+  else if (sMode === 'block') {
+    if (val('s_bbl')) p.set('bbl', val('s_bbl'));
+    else { p.set('borough', val('s_boro')); p.set('block', val('s_block')); }
+  } else if (sMode === 'filter') {
+    ['zip','cd','boro:borough','class','minlot','maxlot','yearmin','yearmax','unitsmin'].forEach(pair => {
+      const [fid, key] = pair.includes(':') ? pair.split(':') : [pair, pair];
+      const v = val('s_' + fid); if (v) p.set(key, v);
+    });
+    if (document.getElementById('s_vacant')?.checked) p.set('vacant', '1');
+  }
+  res.innerHTML = '<p class="loading">Searching PLUTO…</p>';
+  try {
+    const r = await fetch('/api/search?' + p.toString());
+    const d = await r.json();
+    if (d.error) { res.innerHTML = '<div class="err">' + esc(d.error) + '</div>'; return; }
+    if (!d.results || !d.results.length) { res.innerHTML = '<p class="hint">No matching lots found.</p>'; return; }
+    res.innerHTML = `<p class="hint" style="margin:10px 0">${d.count} result${d.count===1?'':'s'}${d.count>=60?' (showing first 60, largest lots first)':''} — click any to open its report.</p>`
+      + d.results.map(x => `<div class="srow" onclick="loadBBL('${esc(x.bbl)}')">
+          <div><div class="a">${esc(x.address || x.bbl)}</div>
+            <div class="m">${esc(x.owner || '')}${x.bldg_class ? ' · ' + esc(x.bldg_class) : ''}${x.zip ? ' · ' + esc(x.zip) : ''}</div></div>
+          <div class="m" style="text-align:right;white-space:nowrap">${x.lot_area ? x.lot_area.toLocaleString() + ' sf' : ''}${x.units_res ? '<br>' + x.units_res + ' units' : ''}${x.year_built ? '<br>built ' + x.year_built : ''}</div>
+        </div>`).join('');
+  } catch (e) {
+    res.innerHTML = '<div class="err">Search failed: ' + esc(String(e)) + '</div>';
+  }
 }
 
 // On-demand paid owner skip-trace. Calls /api/skiptrace and renders phone/email.
@@ -1079,10 +1226,16 @@ async function skipTrace(address) {
   const box = document.getElementById("stbox");
   if (!box) return;
   box.innerHTML = '<p class="ownnote" style="margin:0">Looking up owner contact… (paid lookup in progress)</p>';
+  // DataSkip matches far better with full city/state/zip — pull them from the loaded report.
+  const rid = (lastReport && lastReport.identity) || {};
+  // NYC borough is the USPS city, except Manhattan's postal city is "New York".
+  let city = rid.borough || "";
+  if (/manhattan/i.test(city)) city = "New York";
+  const zip = rid.zip || "";
   try {
     const r = await fetch("/api/skiptrace", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ address: address, state: "NY" }),
+      body: JSON.stringify({ address: address, city: city, state: "NY", zip: zip }),
     });
     const d = await r.json();
     if (d.enabled === false) {
