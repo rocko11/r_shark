@@ -95,29 +95,79 @@ export default async (req: Request, _ctx: Context) => {
     } catch (e) {
       return json({ error: `Lien search failed: ${(e as Error).message}`.slice(0, 160) }, 502);
     }
-    // Build BBL (borough is single digit, block/lot unpadded in this dataset) and dedupe.
-    const seen = new Set<string>();
-    const results = [];
+    // Group liens by building. Condo unit lots (1001-6999) all belong to one condominium;
+    // liens attach to the units, but PLUTO only indexes the billing BBL (75xx). So we roll
+    // every lien'd unit up to its building — keyed by borough+block+address — and resolve the
+    // report link to a real, PLUTO-queryable BBL (the billing 75xx lot, or the fee lot itself).
+    type Grp = { key: string; borough: string; block: string; sampleLot: string; address: string;
+      isCondo: boolean; bldg_class: string | null; zip: string | null; water: boolean; tax: boolean;
+      cycle: string | null; unitCount: number };
+    const groups = new Map<string, Grp>();
     for (const r of lrows) {
       const b = String(r.borough || "").replace(/\D/g, "");
       const blk = String(r.block || "").replace(/\D/g, "").padStart(5, "0");
-      const lt = String(r.lot || "").replace(/\D/g, "").padStart(4, "0");
-      if (!b || !blk || !lt) continue;
-      const bbl = b + blk + lt;
-      if (seen.has(bbl)) continue;
-      seen.add(bbl);
+      const ltNum = Number(String(r.lot || "").replace(/\D/g, ""));
+      const lt = String(ltNum).padStart(4, "0");
+      if (!b || !blk || !ltNum) continue;
+      const addr = [r.house_number, r.street_name].filter(Boolean).join(" ").trim().toUpperCase();
+      const isCondo = ltNum >= 1001 && ltNum <= 6999; // condo unit lot
+      // Condo units group by building (borough+block+address); fee lots stay individual.
+      const key = isCondo ? `${b}|${blk}|${addr}` : `${b}${blk}${lt}`;
       const water = String(r.water_debt_only || "").toUpperCase() === "YES";
-      results.push({
-        bbl,
-        address: [r.house_number, r.street_name].filter(Boolean).join(" ") || null,
-        owner: null,
-        bldg_class: r.building_class || null,
-        lot_area: null, units_res: null, year_built: null,
-        zip: r.zip_code || null,
-        lien_type: water ? "Water/sewer lien" : "Tax lien",
-        cycle: r.cycle || null,
-      });
+      const g = groups.get(key);
+      if (g) {
+        g.unitCount++;
+        if (water) g.water = true; else g.tax = true;
+      } else {
+        groups.set(key, {
+          key, borough: b, block: blk, sampleLot: lt,
+          address: [r.house_number, r.street_name].filter(Boolean).join(" ") || (b + blk + lt),
+          isCondo, bldg_class: r.building_class || null, zip: r.zip_code || null,
+          water, tax: !water, cycle: r.cycle || null, unitCount: 1,
+        });
+      }
     }
+
+    // For each condo group, resolve the building's billing BBL (75xx on the block whose address
+    // matches). One PLUTO call per block covers all its condos.
+    const condoBlocks = [...new Set([...groups.values()].filter(g => g.isCondo).map(g => g.borough + g.block))];
+    const billingByAddr = new Map<string, string>(); // "boroblock|ADDRESS" -> billing bbl
+    await Promise.all(condoBlocks.map(async (bb) => {
+      try {
+        const lo = Number(bb + "7501"), hi = Number(bb + "7599");
+        const q = new URLSearchParams({ $select: "bbl,address", $where: `bbl>=${lo} AND bbl<=${hi}`, $limit: "50" });
+        if (APP_TOKEN) q.set("$$app_token", APP_TOKEN);
+        const rr = await fetch(`${PLUTO}?${q.toString()}`);
+        if (!rr.ok) return;
+        for (const row of await rr.json()) {
+          const bill = String(row.bbl || "").split(".")[0].padStart(10, "0");
+          const a = String(row.address || "").trim().toUpperCase();
+          if (a) billingByAddr.set(`${bb}|${a}`, bill);
+        }
+      } catch { /* leave unresolved */ }
+    }));
+
+    const results = [...groups.values()].map((g) => {
+      let bbl = g.borough + g.block + g.sampleLot;
+      let note = "";
+      if (g.isCondo) {
+        const bill = billingByAddr.get(`${g.borough}${g.block}|${g.address.toUpperCase()}`);
+        if (bill) bbl = bill; // point to the building's PLUTO-resolvable billing BBL
+        note = ` · ${g.unitCount} condo unit${g.unitCount > 1 ? "s" : ""} with liens`;
+      }
+      const lien_type = g.water && g.tax ? "Tax + water liens" : g.water ? "Water/sewer lien" : "Tax lien";
+      return {
+        bbl,
+        address: g.address,
+        owner: null,
+        bldg_class: g.bldg_class,
+        lot_area: null, units_res: null, year_built: null,
+        zip: g.zip,
+        lien_type: lien_type + note,
+        cycle: g.cycle,
+        is_condo: g.isCondo,
+      };
+    });
     return json({ mode, kind, count: results.length, results });
   } else {
     return json({ error: "Unknown search mode." }, 400);
