@@ -516,7 +516,12 @@ function render(d) {
     <div class="tb-grid">
       ${cell("BBL", `<span style="letter-spacing:.05em">${esc(d.bbl)}</span>`)}
       ${cell("BIN", esc(d.bin || "—"))}
-      ${cell("Zoning", esc((dev.zoning_districts||[]).join(" / ") || "—"))}
+      ${cell("Zoning", (function(){
+        const base = (dev.zoning_districts||[]).join(" / ") || "—";
+        const ov = (dev.commercial_overlays||[]).length ? ` <span style="color:var(--slate)">+ ${esc(dev.commercial_overlays.join(", "))}</span>` : "";
+        const sp = (dev.special_districts||[]).length ? `<br><span class="neg" style="font-size:12px">${esc(dev.special_districts.join(", "))} special district</span>` : "";
+        return esc(base) + ov + sp;
+      })())}
       ${cell("Lot area", fmt(dev.lot_area) + " sf")}
       ${cell("Built", fmt(dev.existing_floor_area) + " sf")}
       ${cell("Built FAR", dev.built_far ?? "—")}
