@@ -77,6 +77,8 @@ export default async (req: Request, _ctx: Context) => {
     const kind = (u.get("kind") || "all").toLowerCase();
     if (kind === "water") lc.push(`upper(water_debt_only)='YES'`);
     else if (kind === "tax") lc.push(`upper(water_debt_only)='NO'`);
+    const cls = (u.get("class") || "").trim().toUpperCase();
+    if (cls) lc.push(`starts_with(upper(building_class),'${esc(cls)}')`);
     if (!lc.length) return json({ error: "Pick a borough, ZIP, or community district to search liens." }, 400);
 
     const lp = new URLSearchParams({
