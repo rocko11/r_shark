@@ -83,7 +83,7 @@ export default async (req: Request, _ctx: Context) => {
       $select: "borough,block,lot,house_number,street_name,zip_code,cycle,water_debt_only,building_class,community_board",
       $where: lc.join(" AND "),
       $order: "month DESC",
-      $limit: "60",
+      $limit: "50000",
     });
     if (APP_TOKEN) lp.set("$$app_token", APP_TOKEN);
 
@@ -209,7 +209,7 @@ export default async (req: Request, _ctx: Context) => {
     $select: "bbl,address,ownername,bldgclass,lotarea,unitsres,yearbuilt,zipcode,latitude,longitude",
     $where: clauses.join(" AND "),
     $order: "lotarea DESC",
-    $limit: "60",
+    $limit: "50000",
   });
   if (APP_TOKEN) params.set("$$app_token", APP_TOKEN);
 
