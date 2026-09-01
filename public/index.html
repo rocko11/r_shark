@@ -1275,7 +1275,7 @@ function setSMode(m) {
       <div class="sfield"><label>ZIP</label><input id="s_zip" placeholder="11238"></div>
       <div class="sfield"><label>Community district</label><input id="s_cd" placeholder="304"></div>
       <div class="sfield"><label>Borough (1–5)</label><input id="s_boro" placeholder="3"></div>
-      <div class="sfield"><label>Building class prefix</label><input id="s_class" placeholder="V = vacant, C = walk-up"></div>
+      <div class="sfield"><label>Building class prefix</label><input id="s_class" placeholder="e.g. V, C, R4"><small style="display:block;margin-top:4px;font-family:var(--mono);font-size:10px;color:var(--fog)">V = vacant · C = walk-up · R = residential · D = elevator</small></div>
       <div class="sfield"><label>Min lot area (sf)</label><input id="s_minlot" placeholder="2500"></div>
       <div class="sfield"><label>Max lot area (sf)</label><input id="s_maxlot" placeholder=""></div>
       <div class="sfield"><label>Year built ≥</label><input id="s_yearmin" placeholder=""></div>
@@ -1357,7 +1357,7 @@ async function runSearch() {
     window.__searchResults = d.results;
     window.__searchMeta = { mode: sMode, count: d.count };
     res.innerHTML = `<div style="display:flex;align-items:center;gap:12px;margin:10px 0;flex-wrap:wrap">
-        <span class="hint" style="margin:0">${d.count} result${d.count===1?'':'s'}${d.count>=60?' (showing first 60, largest lots first)':''} — click any to open its report.</span>
+        <span class="hint" style="margin:0">${d.count} result${d.count===1?'':'s'} — click any to open its report.</span>
         <button class="sgo" style="margin:0;padding:6px 12px;font-size:11px" onclick="downloadSearchCsv()">⭳ Download to Excel</button>
       </div>`
       + d.results.map(x => `<div class="srow" onclick="loadBBL('${esc(x.bbl)}')">
