@@ -6,52 +6,59 @@
 <title>Site Report — NYC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62.5..125,400..700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62.5..125,400..700&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <script src="vendor/leaflet/leaflet.js"></script>
 <style>
 :root{
-  /* Drafting linen and Sanborn atlas minerals. Colors carry meaning:
-     iron = masonry/existing, slate = available, ochre = conditional. */
-  --paper:#E6E4DB;
-  --paper-2:#EFEDE6;
-  --ink:#15171A;
-  --ink-2:#4A4E52;
-  --rule:#B4B2A7;
-  --rule-2:#CFCCC1;
-  --iron:#9E3323;      /* existing / critical */
-  --slate:#38596B;     /* available / as-of-right */
-  --ochre:#B57F1E;     /* conditional / warning */
-  --moss:#4C6B4F;      /* ok */
+  /* R Shark — a predator's instrument for NYC property. Deep water, cold chrome,
+     electric shark-teal for the live/positive signal, hot red for danger. */
+  --abyss:#0A0E14;      /* deepest base */
+  --steel:#141B26;      /* raised panels / cards */
+  --steel-2:#1C2532;    /* hover / secondary surface */
+  --line:#28323F;       /* hairlines on dark */
+  --chrome:#EAF0F6;     /* primary text */
+  --fog:#8A97A8;        /* muted labels */
+  --shark:#2FE0C6;      /* signature electric teal — live / positive / accent */
+  --shark-deep:#12A896; /* teal pressed/darker */
+  --blood:#FF4B3E;      /* danger / negatives / critical */
+  --amber:#FFB03A;      /* caution / conditional */
 
-  --display:"Archivo",system-ui,sans-serif;
+  /* legacy names remapped so the whole app inherits the rebrand */
+  --paper:var(--abyss);
+  --paper-2:var(--steel);
+  --ink:var(--chrome);
+  --ink-2:var(--fog);
+  --rule:var(--line);
+  --rule-2:var(--line);
+  --iron:var(--blood);      /* existing / critical -> danger red */
+  --slate:var(--shark);     /* available / as-of-right -> teal */
+  --ochre:var(--amber);     /* conditional / warning */
+  --moss:var(--shark-deep); /* ok */
+
+  --display:"Space Grotesk","Archivo",system-ui,sans-serif;
   --body:"Archivo",system-ui,-apple-system,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,monospace;
 }
 *{box-sizing:border-box}
 html,body{margin:0}
 body{
-  background:#0ABAB5;
-  color:var(--ink);
+  background:var(--abyss);
+  color:var(--chrome);
   font-family:var(--body);
   font-size:15px;
   line-height:1.5;
   -webkit-font-smoothing:antialiased;
-  /* faint drafting grid over the Tiffany-green field */
+  /* deep-water gradient: a faint teal glow rising from the depths */
   background-image:
-    linear-gradient(rgba(255,255,255,.10) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(255,255,255,.10) 1px,transparent 1px);
-  background-size:44px 44px;
-  background-position:-1px -1px;
+    radial-gradient(1200px 600px at 80% -10%, rgba(47,224,198,.10), transparent 60%),
+    radial-gradient(900px 500px at 0% 100%, rgba(47,224,198,.05), transparent 55%);
+  background-attachment:fixed;
 }
-/* The report itself sits on a paper card so the drafting aesthetic and text stay readable. */
-.wrap{max-width:1000px;margin:0 auto;padding:28px 20px 96px}
-/* tabs */
-.tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid var(--ink)}
-.tab{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;
-  background:var(--paper-2);border:2px solid var(--ink);border-bottom:none;padding:9px 16px;cursor:pointer;
-  color:var(--ink-2);margin-bottom:-2px}
-.tab-on{background:var(--paper);color:var(--ink);font-weight:600}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px 96px}
+/* Report + search sit on raised steel panels. */
+#out, .empty{background:var(--steel);border:1px solid var(--line);border-radius:14px;
+  padding:26px 26px;margin-top:16px;box-shadow:0 20px 60px rgba(0,0,0,.45)}
 /* search modes */
 .smodes{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
 .smode{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;
@@ -72,45 +79,60 @@ body{
 .srow:hover{background:var(--paper)}
 .srow .a{font-family:var(--display);font-weight:700;font-size:14px;text-transform:uppercase;font-variation-settings:"wdth" 112}
 .srow .m{font-family:var(--mono);font-size:11px;color:var(--ink-2)}
-#out, .empty{background:var(--paper);border:1px solid var(--ink);padding:22px 24px;margin-top:14px;
-  box-shadow:0 8px 30px rgba(0,0,0,.14)}
+/* When #out only holds the empty state, strip the big panel so it's just the compact card */
+#out:has(.empty){background:transparent;border:none;box-shadow:none;padding:0;margin-top:24px}
 
 /* ---------- masthead ---------- */
-.mast{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
-      border-bottom:2px solid var(--ink);padding-bottom:10px;margin-bottom:26px}
-.mast h1{font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:.02em;
-         font-variation-settings:"wdth" 118;text-transform:uppercase;margin:0}
-.mast .sub{font-family:var(--mono);font-size:11px;color:var(--ink-2);
-           text-transform:uppercase;letter-spacing:.09em}
+/* ---------- masthead / hero ---------- */
+.mast{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;
+      padding:34px 0 22px;margin-bottom:22px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:16px}
+.fin{width:72px;height:55px;flex:none;filter:drop-shadow(0 0 22px rgba(47,224,198,.40))}
+.lock{display:flex;flex-direction:column;gap:2px}
+.wordmark{font-family:var(--display);font-weight:700;font-size:clamp(30px,6vw,46px);
+          letter-spacing:-.02em;line-height:.95;margin:0;color:var(--chrome)}
+.tagline{font-family:var(--body);font-size:14px;color:var(--fog);margin:0;letter-spacing:.01em}
+.mast-meta{font-family:var(--display);font-weight:600;font-size:13px;color:var(--shark);
+           letter-spacing:.01em;padding-bottom:4px}
+
+/* ---------- tabs ---------- */
+.tabs{display:flex;gap:8px;margin-bottom:20px}
+.tab{font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.01em;
+  background:transparent;border:1px solid var(--line);border-radius:999px;padding:9px 18px;cursor:pointer;
+  color:var(--fog);transition:color .15s,border-color .15s,background .15s}
+.tab:hover{color:var(--chrome);border-color:var(--fog)}
+.tab-on{background:var(--shark);color:var(--abyss);border-color:var(--shark);font-weight:700}
 
 /* ---------- search ---------- */
 .search{position:relative;margin-bottom:14px}
 .search label{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.09em;
               text-transform:uppercase;color:var(--ink-2);margin-bottom:6px}
 .search input{
-  width:100%;padding:14px 15px;font-family:var(--mono);font-size:16px;
-  background:var(--paper-2);color:var(--ink);
-  border:1.5px solid var(--ink);border-radius:0;outline:none;
+  width:100%;padding:15px 17px;font-family:var(--mono);font-size:16px;
+  background:var(--steel-2);color:var(--chrome);
+  border:1px solid var(--line);border-radius:12px;outline:none;transition:border-color .15s,box-shadow .15s;
 }
-.search input:focus{box-shadow:0 0 0 3px rgba(56,89,107,.28)}
-.search input::placeholder{color:#8D8B82}
-.ac{position:absolute;top:100%;left:0;right:0;z-index:20;background:var(--paper-2);
-    border:1.5px solid var(--ink);border-top:none;max-height:280px;overflow:auto}
+.search input:focus{border-color:var(--shark);box-shadow:0 0 0 3px rgba(47,224,198,.20)}
+.search input::placeholder{color:var(--fog)}
+.ac{position:absolute;top:100%;left:0;right:0;z-index:20;background:var(--steel-2);margin-top:4px;
+    border:1px solid var(--line);border-radius:12px;max-height:280px;overflow:auto}
 .ac button{display:block;width:100%;text-align:left;background:none;border:none;
-  border-bottom:1px solid var(--rule-2);padding:10px 14px;cursor:pointer;
-  font-family:var(--mono);font-size:13px;color:var(--ink)}
-.ac button:hover,.ac button:focus{background:var(--paper);outline:none}
+  border-bottom:1px solid var(--line);padding:11px 15px;cursor:pointer;
+  font-family:var(--mono);font-size:13px;color:var(--chrome)}
+.ac button:hover,.ac button:focus{background:var(--steel);color:var(--shark);outline:none}
 .hint{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);letter-spacing:.02em}
 
 /* ---------- empty state ---------- */
-.empty{margin-top:52px;border-left:2px solid var(--rule);padding-left:20px;max-width:60ch}
-.empty h2{font-family:var(--display);font-size:15px;text-transform:uppercase;
-          letter-spacing:.04em;margin:0 0 8px}
-.empty p{color:var(--ink-2);margin:0 0 8px}
+.empty{background:var(--steel-2);border:1px solid var(--line);border-radius:12px;
+  padding:18px 22px;max-width:520px}
+.empty h2{font-family:var(--display);font-size:13px;font-weight:700;text-transform:uppercase;
+          letter-spacing:.04em;margin:0 0 7px;color:var(--shark)}
+.empty p{color:var(--fog);margin:0 0 6px;font-size:13px;line-height:1.5}
+.empty p:last-child{margin:0}
 
 /* ---------- title block ---------- */
-.titleblock{border:2px solid var(--ink);background:var(--paper-2);margin-bottom:26px}
-.tb-head{padding:16px 18px;border-bottom:2px solid var(--ink)}
+.titleblock{border:1px solid var(--line);background:var(--steel-2);border-radius:12px;overflow:hidden;margin-bottom:26px}
+.tb-head{padding:18px 20px;border-bottom:1px solid var(--line)}
 .tb-head .addr{font-family:var(--display);font-weight:700;font-size:clamp(21px,4.4vw,32px);
                font-variation-settings:"wdth" 122;line-height:1.05;text-transform:uppercase;
                letter-spacing:-.005em;margin:0}
@@ -319,14 +341,39 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
 <body>
 <div class="wrap">
 
-  <div class="mast">
-    <h1>Site Report</h1>
-    <span class="sub">NYC · five boroughs</span>
-  </div>
+  <header class="mast">
+    <div class="brand">
+      <svg class="fin" viewBox="0 0 110 84" aria-hidden="true">
+        <!-- Fin: sits inside the R bowl — teal shows through the counter of the R -->
+        <path d="M72 52 C 56 50, 44 42, 41 14 C 30 30, 22 42, 16 52 C 30 52, 52 52, 72 52 Z" fill="var(--shark)"/>
+        <!-- Water surface ripple -->
+        <path d="M6 60 C 22 56, 44 56, 60 59 C 74 62, 86 60, 102 57"
+              fill="none" stroke="var(--shark)" stroke-width="3" stroke-linecap="round" opacity=".45"/>
+        <!-- Custom wave-R — all paths hand-drawn, no font used -->
+        <!-- Spine: tall left stroke, slight inward flex like a wave body -->
+        <path d="M 14 6 C 12 20, 13 38, 12 62"
+              fill="none" stroke="white" stroke-width="8.5" stroke-linecap="round"/>
+        <!-- Bowl: rises like a cresting wave — wide arc that peaks high then returns -->
+        <path d="M 14 6 C 26 1, 58 4, 68 20 C 78 36, 66 52, 14 52"
+              fill="none" stroke="white" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- Leg: shoots from bowl junction, sweeps right like a wave running ashore -->
+        <path d="M 36 52 C 58 56, 80 60, 98 64"
+              fill="none" stroke="white" stroke-width="7.5" stroke-linecap="round"/>
+        <!-- Splash tip: wave lifts upward at the end — not a curl, a rising break -->
+        <path d="M 98 64 C 103 60, 104 54, 100 50"
+              fill="none" stroke="white" stroke-width="5.5" stroke-linecap="round"/>
+      </svg>
+      <div class="lock">
+        <h1 class="wordmark">SHARK</h1>
+        <p class="tagline">The real shark of NYC property.</p>
+      </div>
+    </div>
+    <div class="mast-meta">Address in. Deal out.</div>
+  </header>
 
   <div class="tabs" id="tabs">
     <button class="tab tab-on" data-tab="report" onclick="showTab('report')">Property report</button>
-    <button class="tab" data-tab="search" onclick="showTab('search')">Search properties</button>
+    <button class="tab" data-tab="search" onclick="showTab('search')">Hunt properties</button>
   </div>
 
   <div id="panel-report">
@@ -355,11 +402,7 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
     <div id="sresults"></div>
   </div>
 
-  <footer>
-    Sources: DCP PLUTO · DOB (BIS + DOB NOW) · DOB ECB · HPD · ACRIS.
-    Informational only, not a zoning analysis. Confirm every figure with a licensed
-    architect or land use counsel before acting.
-  </footer>
+
 </div>
 
 <script>
