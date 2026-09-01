@@ -221,6 +221,8 @@ footer{border-top:1px solid var(--rule);margin-top:40px;padding-top:14px;
 
 .err{border-left:4px solid var(--iron);background:var(--paper-2);padding:13px 15px}
 /* title / ownership / liens */
+.condo-badge{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.08em;
+  vertical-align:middle;padding:3px 9px;background:var(--slate);color:var(--paper);border-radius:2px;margin-left:8px}
 .owntag{display:inline-block;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;
   text-transform:uppercase;padding:2px 6px;border:1px solid currentColor;border-radius:2px;
   vertical-align:2px;margin-left:6px;font-weight:600}
@@ -576,9 +578,10 @@ function render(d) {
   const titleblock = `
   <div class="titleblock">
     <div class="tb-head">
-      <h2 class="addr">${esc(id.address || d.bbl)}${id.zip ? ` <span style="font-weight:400;font-size:0.6em;letter-spacing:.05em">${esc(id.zip)}</span>` : ""}</h2>
+      <h2 class="addr">${esc(id.address || d.bbl)}${id.zip ? ` <span style="font-weight:400;font-size:0.6em;letter-spacing:.05em">${esc(id.zip)}</span>` : ""}${id.is_condo ? ` <span class="condo-badge">CONDOMINIUM</span>` : ""}</h2>
       <div class="boro">${esc(id.borough || "")} · Block ${id.block} · Lot ${id.lot}</div>
       ${(()=>{ const cb = communityBoard(id.community_district); return cb ? `<div class="boro" style="margin-top:2px">${esc(cb.label)} · <a class="doclink" href="${cb.url}" target="_blank" rel="noopener">board info & website →</a></div>` : ""; })()}
+      ${id.is_condo ? `<div class="boro" style="margin-top:4px;color:var(--slate)">This is a condominium${id.condo_number?` (DOF condo #${esc(id.condo_number)})`:""}. Each unit is a separate tax lot with its own BBL — taxes, liens, and deeds attach to individual units, so this building-level report may not show unit-specific encumbrances. Check the specific unit's BBL for a full picture.</div>` : ""}
     </div>
     <div class="tb-grid">
       ${cell("BBL", `<span style="letter-spacing:.05em">${esc(d.bbl)}</span>`)}
