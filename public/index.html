@@ -1275,13 +1275,14 @@ function setSMode(m) {
       <div class="sfield"><label>ZIP</label><input id="s_zip" placeholder="11238"></div>
       <div class="sfield"><label>Community district</label><input id="s_cd" placeholder="304"></div>
       <div class="sfield"><label>Borough (1–5)</label><input id="s_boro" placeholder="3"></div>
-      <div class="sfield"><label>Building class prefix</label><input id="s_class" placeholder="e.g. V, C, R4"><small style="display:block;margin-top:4px;font-family:var(--mono);font-size:10px;color:var(--fog)">V = vacant · C = walk-up · R = residential · D = elevator</small></div>
+      <div class="sfield"><label>Building class prefix</label><input id="s_class" placeholder="e.g. V, C, R4"></div>
       <div class="sfield"><label>Min lot area (sf)</label><input id="s_minlot" placeholder="2500"></div>
       <div class="sfield"><label>Max lot area (sf)</label><input id="s_maxlot" placeholder=""></div>
       <div class="sfield"><label>Year built ≥</label><input id="s_yearmin" placeholder=""></div>
       <div class="sfield"><label>Year built ≤</label><input id="s_yearmax" placeholder="1974"></div>
       <div class="sfield"><label>Min residential units</label><input id="s_unitsmin" placeholder="6"></div>
       </div>
+      <p style="font-family:var(--mono);font-size:11px;color:var(--fog);margin:0 0 10px">Building class: <strong style="color:var(--chrome)">V</strong> = vacant · <strong style="color:var(--chrome)">C</strong> = walk-up · <strong style="color:var(--chrome)">D</strong> = elevator · <strong style="color:var(--chrome)">R4</strong> = condo · <strong style="color:var(--chrome)">S</strong> = mixed-use · <strong style="color:var(--chrome)">F</strong> = factory/industrial · <strong style="color:var(--chrome)">G</strong> = garage/warehouse · <strong style="color:var(--chrome)">L</strong> = loft</p>
       <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:6px 0 10px"><input type="checkbox" id="s_vacant"> Vacant lots only</label>
       ${go}
       <p class="hint" style="margin-top:8px">Combine any filters. Example: ZIP + vacant + min lot area to find development sites.</p>`;
