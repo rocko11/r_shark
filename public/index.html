@@ -330,6 +330,7 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
       <button class="smode" data-m="cd" onclick="setSMode('cd')">By community board</button>
       <button class="smode" data-m="block" onclick="setSMode('block')">By block</button>
       <button class="smode" data-m="distress" onclick="setSMode('distress')">Tax / water liens</button>
+      <button class="smode" data-m="lotsize" onclick="setSMode('lotsize')">By lot size</button>
       <button class="smode" data-m="filter" onclick="setSMode('filter')">By filters</button>
     </div>
     <div id="sform"></div>
@@ -1197,6 +1198,20 @@ function setSMode(m) {
         <select id="s_kind"><option value="all">Tax + water liens</option><option value="tax">Tax liens only</option><option value="water">Water/sewer liens only</option></select></div>
       ${go}
       <p class="hint" style="margin-top:8px">From the DOF Tax Lien Sale List — properties with unpaid property tax or water/sewer charges the City can sell as a lien. Often a precursor to foreclosure. Pick at least a borough. <strong>Note:</strong> full foreclosure/lis-pendens isn't searchable citywide from open data — but each property's report checks it (see "Lis pendens" in the title section).</p>`;
+  } else if (m === 'lotsize') {
+    f.innerHTML = `<div class="sfilters">
+      <div class="sfield"><label>Min lot area (sf)</label><input id="s_minlot" placeholder="5000" onkeydown="if(event.key==='Enter')runSearch()"></div>
+      <div class="sfield"><label>Max lot area (sf)</label><input id="s_maxlot" placeholder="20000" onkeydown="if(event.key==='Enter')runSearch()"></div>
+      </div>
+      <p class="hint" style="margin:4px 0 8px">Narrow to an area (recommended — the city is large):</p>
+      <div class="sfilters">
+      <div class="sfield"><label>Borough (1–5)</label><input id="s_boro" placeholder="3"></div>
+      <div class="sfield"><label>ZIP</label><input id="s_zip" placeholder="11238"></div>
+      <div class="sfield"><label>Community district</label><input id="s_cd" placeholder="303"></div>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:6px 0 10px"><input type="checkbox" id="s_vacant"> Vacant lots only</label>
+      ${go}
+      <p class="hint" style="margin-top:8px">Results are sorted largest lot first. Set a min, a max, or a range. Tip: pair a min lot area with "vacant only" to find development sites.</p>`;
   }
   document.getElementById('sresults').innerHTML = '';
 }
@@ -1223,6 +1238,13 @@ async function runSearch() {
       const v = val('s_' + fid); if (v) p.set(key, v);
     });
     p.set('kind', document.getElementById('s_kind')?.value || 'all');
+  } else if (sMode === 'lotsize') {
+    p.set('mode', 'filter'); // backend handles lot size under the filter mode
+    ['zip','cd','boro:borough','minlot','maxlot'].forEach(pair => {
+      const [fid, key] = pair.includes(':') ? pair.split(':') : [pair, pair];
+      const v = val('s_' + fid); if (v) p.set(key, v);
+    });
+    if (document.getElementById('s_vacant')?.checked) p.set('vacant', '1');
   }
   res.innerHTML = '<p class="loading">Searching PLUTO…</p>';
   try {
