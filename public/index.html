@@ -1196,8 +1196,13 @@ function setSMode(m) {
       </div>
       <div class="sfield" style="margin-top:6px"><label>Lien type</label>
         <select id="s_kind"><option value="all">Tax + water liens</option><option value="tax">Tax liens only</option><option value="water">Water/sewer liens only</option></select></div>
+      <p class="hint" style="margin:8px 0 6px">Optional — also filter by lot size (combines distressed + size):</p>
+      <div class="sfilters">
+      <div class="sfield"><label>Min lot area (sf)</label><input id="s_minlot" placeholder="e.g. 5000" onkeydown="if(event.key==='Enter')runSearch()"></div>
+      <div class="sfield"><label>Max lot area (sf)</label><input id="s_maxlot" placeholder="" onkeydown="if(event.key==='Enter')runSearch()"></div>
+      </div>
       ${go}
-      <p class="hint" style="margin-top:8px">From the DOF Tax Lien Sale List — properties with unpaid property tax or water/sewer charges the City can sell as a lien. Often a precursor to foreclosure. Pick at least a borough. <strong>Note:</strong> full foreclosure/lis-pendens isn't searchable citywide from open data — but each property's report checks it (see "Lis pendens" in the title section).</p>`;
+      <p class="hint" style="margin-top:8px">From the DOF Tax Lien Sale List — properties with unpaid property tax or water/sewer charges the City can sell as a lien. Often a precursor to foreclosure. Pick at least a borough. Add a lot-size range to find, e.g., large distressed development sites. <strong>Note:</strong> when you filter by size, condo unit liens (no PLUTO lot area) are excluded. Full foreclosure/lis-pendens isn't searchable citywide — each property's report checks it in the title section.</p>`;
   } else if (m === 'lotsize') {
     f.innerHTML = `<div class="sfilters">
       <div class="sfield"><label>Min lot area (sf)</label><input id="s_minlot" placeholder="5000" onkeydown="if(event.key==='Enter')runSearch()"></div>
@@ -1233,7 +1238,7 @@ async function runSearch() {
     });
     if (document.getElementById('s_vacant')?.checked) p.set('vacant', '1');
   } else if (sMode === 'distress') {
-    ['zip','cd','boro:borough'].forEach(pair => {
+    ['zip','cd','boro:borough','minlot','maxlot'].forEach(pair => {
       const [fid, key] = pair.includes(':') ? pair.split(':') : [pair, pair];
       const v = val('s_' + fid); if (v) p.set(key, v);
     });
