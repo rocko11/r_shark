@@ -1257,7 +1257,12 @@ async function runSearch() {
     const d = await r.json();
     if (d.error) { res.innerHTML = '<div class="err">' + esc(d.error) + '</div>'; return; }
     if (!d.results || !d.results.length) { res.innerHTML = '<p class="hint">No matching lots found.</p>'; return; }
-    res.innerHTML = `<p class="hint" style="margin:10px 0">${d.count} result${d.count===1?'':'s'}${d.count>=60?' (showing first 60, largest lots first)':''} — click any to open its report.</p>`
+    window.__searchResults = d.results;
+    window.__searchMeta = { mode: sMode, count: d.count };
+    res.innerHTML = `<div style="display:flex;align-items:center;gap:12px;margin:10px 0;flex-wrap:wrap">
+        <span class="hint" style="margin:0">${d.count} result${d.count===1?'':'s'}${d.count>=60?' (showing first 60, largest lots first)':''} — click any to open its report.</span>
+        <button class="sgo" style="margin:0;padding:6px 12px;font-size:11px" onclick="downloadSearchCsv()">⭳ Download to Excel</button>
+      </div>`
       + d.results.map(x => `<div class="srow" onclick="loadBBL('${esc(x.bbl)}')">
           <div><div class="a">${esc(x.address || x.bbl)}</div>
             <div class="m">${x.lien_type ? '<span class="neg">' + esc(x.lien_type) + '</span>' + (x.cycle ? ' · ' + esc(x.cycle) : '') : (esc(x.owner || '') + (x.bldg_class ? ' · ' + esc(x.bldg_class) : ''))}${x.zip ? ' · ' + esc(x.zip) : ''}</div></div>
@@ -1266,6 +1271,42 @@ async function runSearch() {
   } catch (e) {
     res.innerHTML = '<div class="err">Search failed: ' + esc(String(e)) + '</div>';
   }
+}
+
+// Export the current search results as a CSV that opens directly in Excel. No dependencies —
+// builds the file in-browser and triggers a download.
+function downloadSearchCsv() {
+  const rows = window.__searchResults || [];
+  if (!rows.length) return;
+  const cols = [
+    ["BBL", "bbl"], ["Address", "address"], ["Owner", "owner"],
+    ["Building class", "bldg_class"], ["Lot area (sf)", "lot_area"],
+    ["Residential units", "units_res"], ["Year built", "year_built"],
+    ["ZIP", "zip"], ["Lien type", "lien_type"], ["Lien cycle", "cycle"],
+    ["Is condo", "is_condo"],
+    ["Report URL", null],
+  ];
+  const q = v => {
+    if (v === null || v === undefined) return "";
+    let s = String(v);
+    if (typeof v === "boolean") s = v ? "Yes" : "No";
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const header = cols.map(c => c[0]).join(",");
+  const body = rows.map(r => cols.map(c =>
+    c[1] === null ? q("https://rshark.netlify.app/?bbl=" + (r.bbl || "")) : q(r[c[1]])
+  ).join(",")).join("\r\n");
+  const csv = "\uFEFF" + header + "\r\n" + body; // BOM so Excel reads UTF-8 correctly
+  const meta = window.__searchMeta || {};
+  const stamp = new Date().toISOString().slice(0, 10);
+  const name = `rshark-search-${meta.mode || "results"}-${stamp}.csv`;
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // On-demand paid owner skip-trace. Calls /api/skiptrace and renders phone/email.
