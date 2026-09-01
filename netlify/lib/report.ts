@@ -241,6 +241,8 @@ export async function buildReport(bbl: string, bin: string | null = null) {
       address: pluto.address, borough: BOROUGH_NAME[borough], block, lot,
       zip: pluto.zipcode || null,
       community_district: pluto.cd || null,
+      is_condo: (Number(pluto.condono) > 0) || /^\d{6}75\d\d$/.test(String(bbl).split(".")[0].padStart(10,"0")),
+      condo_number: pluto.condono || null,
       owner_of_record: pluto.ownername, building_class: pluto.bldgclass,
       year_built: pluto.yearbuilt, num_floors: pluto.numfloors,
       units_residential: pluto.unitsres, units_total: pluto.unitstotal,
