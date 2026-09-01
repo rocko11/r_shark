@@ -66,19 +66,22 @@ body{
 .smode-on{border-color:var(--ink);color:var(--ink);background:var(--paper);font-weight:600}
 .sfield{margin-bottom:10px}
 .sfield label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px}
-.sfield input,.sfield select{padding:10px 12px;font-family:var(--mono);font-size:14px;background:var(--paper-2);
-  border:1.5px solid var(--ink);border-radius:0;outline:none;min-width:200px}
+.sfield input,.sfield select{padding:10px 12px;font-family:var(--mono);font-size:14px;
+  background:var(--steel-2);color:var(--chrome);
+  border:1.5px solid var(--line);border-radius:8px;outline:none;min-width:200px}
+.sfield input:focus,.sfield select:focus{border-color:var(--shark);box-shadow:0 0 0 3px rgba(47,224,198,.20)}
+.sfield input::placeholder{color:var(--fog)}
 .sfilters{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
 @media(min-width:640px){.sfilters{grid-template-columns:1fr 1fr 1fr}}
 .sgo{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;background:var(--ink);
   color:var(--paper);padding:9px 18px;border:none;cursor:pointer;margin-top:6px}
 .sgo:hover{background:var(--slate)}
 .srow{display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding:11px 13px;
-  border:1px solid var(--rule);border-top:none;background:var(--paper-2);cursor:pointer}
-.srow:first-child{border-top:1px solid var(--rule)}
-.srow:hover{background:var(--paper)}
-.srow .a{font-family:var(--display);font-weight:700;font-size:14px;text-transform:uppercase;font-variation-settings:"wdth" 112}
-.srow .m{font-family:var(--mono);font-size:11px;color:var(--ink-2)}
+  border:1px solid var(--line);border-top:none;background:var(--steel-2);cursor:pointer;color:var(--chrome)}
+.srow:first-child{border-top:1px solid var(--line)}
+.srow:hover{background:var(--steel)}
+.srow .a{font-family:var(--display);font-weight:700;font-size:14px;text-transform:uppercase;color:var(--chrome)}
+.srow .m{font-family:var(--mono);font-size:11px;color:var(--fog)}
 /* When #out only holds the empty state, strip the big panel so it's just the compact card */
 #out:has(.empty){background:transparent;border:none;box-shadow:none;padding:0;margin-top:24px}
 
@@ -173,8 +176,8 @@ section{margin-bottom:34px}
            padding-top:3px;white-space:nowrap;color:var(--ink-2)}
 .flag.critical .sev{color:var(--iron)}
 .flag.warning .sev{color:var(--ochre)}
-.flag .t{font-weight:600;font-size:14.5px}
-.flag .d{color:var(--ink-2);font-size:13.5px;margin-top:3px}
+.flag .t{font-weight:600;font-size:14.5px;color:var(--chrome)}
+.flag .d{color:var(--chrome);opacity:.8;font-size:13.5px;margin-top:3px}
 .flag .src{font-family:var(--mono);font-size:10px;color:#8D8B82;margin-top:5px;
            letter-spacing:.05em;text-transform:uppercase}
 .clear{border-left:4px solid var(--moss);background:var(--paper-2);padding:11px 13px;
@@ -196,8 +199,8 @@ section{margin-bottom:34px}
 /* ---------- data tables ---------- */
 table{width:100%;border-collapse:collapse;font-size:13.5px}
 th{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
-   text-align:left;color:var(--ink-2);border-bottom:1px solid var(--ink);padding:5px 8px 5px 0}
-td{padding:7px 8px 7px 0;border-bottom:1px solid var(--rule-2);vertical-align:top}
+   text-align:left;color:var(--fog);border-bottom:1px solid var(--line);padding:5px 8px 5px 0}
+td{padding:7px 8px 7px 0;border-bottom:1px solid var(--line);vertical-align:top;color:var(--chrome)}
 td.num,th.num{font-family:var(--mono);text-align:right;padding-right:0}
 .tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;
      border:1px solid var(--rule);padding:1px 5px;white-space:nowrap}
@@ -210,7 +213,7 @@ td.num,th.num{font-family:var(--mono);text-align:right;padding-right:0}
 .stat{background:var(--paper-2);padding:12px 13px}
 .stat .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
          color:var(--ink-2);display:block}
-.stat .v{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:3px}
+.stat .v{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:3px;color:var(--chrome)}
 .stat .v.bad{color:var(--iron)}
 
 .gap{border:1px dashed var(--ochre);background:rgba(181,127,30,.07);padding:12px 14px;
