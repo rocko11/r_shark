@@ -161,13 +161,45 @@ export default async (req: Request, _ctx: Context) => {
         address: g.address,
         owner: null,
         bldg_class: g.bldg_class,
-        lot_area: null, units_res: null, year_built: null,
+        lot_area: null as number | null, units_res: null, year_built: null,
         zip: g.zip,
         lien_type: lien_type + note,
         cycle: g.cycle,
         is_condo: g.isCondo,
       };
     });
+
+    // Optional lot-size filter: cross-reference the distressed BBLs against PLUTO for lot area.
+    // Only runs when a min or max is given, so plain lien searches stay fast.
+    const minlot = Number(u.get("minlot"));
+    const maxlot = Number(u.get("maxlot"));
+    if ((minlot > 0 || maxlot > 0) && results.length) {
+      const areaByBbl = new Map<string, number>();
+      const ids = results.map((r) => Number(r.bbl)).filter((n) => Number.isFinite(n));
+      // Batch in chunks of 200 BBLs per query.
+      for (let i = 0; i < ids.length; i += 200) {
+        const chunk = ids.slice(i, i + 200);
+        const pp = new URLSearchParams({ $select: "bbl,lotarea", $where: `bbl in(${chunk.join(",")})`, $limit: "500" });
+        if (APP_TOKEN) pp.set("$$app_token", APP_TOKEN);
+        try {
+          const rr = await fetch(`${PLUTO}?${pp.toString()}`);
+          if (rr.ok) for (const row of await rr.json()) {
+            const id = String(row.bbl || "").split(".")[0].padStart(10, "0");
+            if (row.lotarea != null) areaByBbl.set(id, Math.round(Number(row.lotarea)));
+          }
+        } catch { /* skip chunk */ }
+      }
+      for (const r of results) r.lot_area = areaByBbl.get(r.bbl) ?? null;
+      const filtered = results.filter((r) => {
+        if (r.lot_area == null) return false; // no PLUTO area (often condo unit lots) → exclude when size-filtering
+        if (minlot > 0 && r.lot_area < minlot) return false;
+        if (maxlot > 0 && r.lot_area > maxlot) return false;
+        return true;
+      });
+      filtered.sort((a, b) => (b.lot_area || 0) - (a.lot_area || 0));
+      return json({ mode, kind, count: filtered.length, results: filtered });
+    }
+
     return json({ mode, kind, count: results.length, results });
   } else {
     return json({ error: "Unknown search mode." }, 400);
