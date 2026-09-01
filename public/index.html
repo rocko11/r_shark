@@ -1204,7 +1204,9 @@ async function initBlockMap(lat, lng, selfBbl) {
 // Clicking a neighbour pin loads that lot through the normal report path.
 function loadBBL(bbl) {
   q.value = bbl;
-  showTab('report');
+  // Only switch tab if we're not already on the report panel — avoids
+  // collapsing the Leaflet map container mid-click (which eats the event).
+  if (document.getElementById('panel-report').hidden) showTab('report');
   run();
 }
 
@@ -1214,6 +1216,8 @@ function showTab(name) {
   document.getElementById('panel-search').hidden = name !== 'search';
   document.querySelectorAll('#tabs .tab').forEach(t => t.classList.toggle('tab-on', t.dataset.tab === name));
   if (name === 'search' && !document.getElementById('sform').innerHTML) setSMode('owner');
+  // Let Leaflet recalculate its container size after any panel visibility change.
+  if (name === 'report' && window._map) setTimeout(() => _map.invalidateSize(), 50);
 }
 
 /* ---------- property search ---------- */
