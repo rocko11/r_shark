@@ -66,19 +66,22 @@ body{
 .smode-on{border-color:var(--ink);color:var(--ink);background:var(--paper);font-weight:600}
 .sfield{margin-bottom:10px}
 .sfield label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px}
-.sfield input,.sfield select{padding:10px 12px;font-family:var(--mono);font-size:14px;background:var(--paper-2);
-  border:1.5px solid var(--ink);border-radius:0;outline:none;min-width:200px}
+.sfield input,.sfield select{padding:10px 12px;font-family:var(--mono);font-size:14px;
+  background:var(--steel-2);color:var(--chrome);
+  border:1.5px solid var(--line);border-radius:8px;outline:none;min-width:200px}
+.sfield input:focus,.sfield select:focus{border-color:var(--shark);box-shadow:0 0 0 3px rgba(47,224,198,.20)}
+.sfield input::placeholder{color:var(--fog)}
 .sfilters{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
 @media(min-width:640px){.sfilters{grid-template-columns:1fr 1fr 1fr}}
 .sgo{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;background:var(--ink);
   color:var(--paper);padding:9px 18px;border:none;cursor:pointer;margin-top:6px}
 .sgo:hover{background:var(--slate)}
 .srow{display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding:11px 13px;
-  border:1px solid var(--rule);border-top:none;background:var(--paper-2);cursor:pointer}
-.srow:first-child{border-top:1px solid var(--rule)}
-.srow:hover{background:var(--paper)}
-.srow .a{font-family:var(--display);font-weight:700;font-size:14px;text-transform:uppercase;font-variation-settings:"wdth" 112}
-.srow .m{font-family:var(--mono);font-size:11px;color:var(--ink-2)}
+  border:1px solid var(--line);border-top:none;background:var(--steel-2);cursor:pointer;color:var(--chrome)}
+.srow:first-child{border-top:1px solid var(--line)}
+.srow:hover{background:var(--steel)}
+.srow .a{font-family:var(--display);font-weight:700;font-size:14px;text-transform:uppercase;color:var(--chrome)}
+.srow .m{font-family:var(--mono);font-size:11px;color:var(--fog)}
 /* When #out only holds the empty state, strip the big panel so it's just the compact card */
 #out:has(.empty){background:transparent;border:none;box-shadow:none;padding:0;margin-top:24px}
 
@@ -87,12 +90,12 @@ body{
 .mast{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;
       padding:34px 0 22px;margin-bottom:22px;border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:16px}
-.fin{width:72px;height:55px;flex:none;filter:drop-shadow(0 0 22px rgba(47,224,198,.40))}
+.fin{width:144px;height:110px;flex:none;filter:drop-shadow(0 0 32px rgba(47,224,198,.45))}
 .lock{display:flex;flex-direction:column;gap:2px}
-.wordmark{font-family:var(--display);font-weight:700;font-size:clamp(30px,6vw,46px);
+.wordmark{font-family:var(--display);font-weight:700;font-size:clamp(60px,10vw,92px);
           letter-spacing:-.02em;line-height:.95;margin:0;color:var(--chrome)}
-.tagline{font-family:var(--body);font-size:14px;color:var(--fog);margin:0;letter-spacing:.01em}
-.mast-meta{font-family:var(--display);font-weight:600;font-size:13px;color:var(--shark);
+.tagline{font-family:var(--body);font-size:18px;color:var(--fog);margin:0;letter-spacing:.01em}
+.mast-meta{font-family:var(--display);font-weight:600;font-size:16px;color:var(--shark);
            letter-spacing:.01em;padding-bottom:4px}
 
 /* ---------- tabs ---------- */
@@ -130,6 +133,15 @@ body{
 .empty p{color:var(--fog);margin:0 0 6px;font-size:13px;line-height:1.5}
 .empty p:last-child{margin:0}
 
+/* ---------- report brand strip (appears top of every generated report) ---------- */
+.report-brand{display:flex;align-items:center;gap:7px;padding:9px 16px;
+  border-bottom:1px solid var(--line);background:var(--abyss)}
+.report-fin{width:26px;height:20px;flex:none}
+.report-brand-name{font-family:var(--display);font-weight:700;font-size:14px;
+  letter-spacing:-.01em;color:var(--chrome)}
+.report-brand-sep{flex:1}
+.report-brand-date{font-family:var(--mono);font-size:11px;color:var(--fog)}
+
 /* ---------- title block ---------- */
 .titleblock{border:1px solid var(--line);background:var(--steel-2);border-radius:12px;overflow:hidden;margin-bottom:26px}
 .tb-head{padding:18px 20px;border-bottom:1px solid var(--line)}
@@ -164,8 +176,8 @@ section{margin-bottom:34px}
            padding-top:3px;white-space:nowrap;color:var(--ink-2)}
 .flag.critical .sev{color:var(--iron)}
 .flag.warning .sev{color:var(--ochre)}
-.flag .t{font-weight:600;font-size:14.5px}
-.flag .d{color:var(--ink-2);font-size:13.5px;margin-top:3px}
+.flag .t{font-weight:600;font-size:14.5px;color:var(--chrome)}
+.flag .d{color:var(--chrome);opacity:.8;font-size:13.5px;margin-top:3px}
 .flag .src{font-family:var(--mono);font-size:10px;color:#8D8B82;margin-top:5px;
            letter-spacing:.05em;text-transform:uppercase}
 .clear{border-left:4px solid var(--moss);background:var(--paper-2);padding:11px 13px;
@@ -187,8 +199,8 @@ section{margin-bottom:34px}
 /* ---------- data tables ---------- */
 table{width:100%;border-collapse:collapse;font-size:13.5px}
 th{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
-   text-align:left;color:var(--ink-2);border-bottom:1px solid var(--ink);padding:5px 8px 5px 0}
-td{padding:7px 8px 7px 0;border-bottom:1px solid var(--rule-2);vertical-align:top}
+   text-align:left;color:var(--fog);border-bottom:1px solid var(--line);padding:5px 8px 5px 0}
+td{padding:7px 8px 7px 0;border-bottom:1px solid var(--line);vertical-align:top;color:var(--chrome)}
 td.num,th.num{font-family:var(--mono);text-align:right;padding-right:0}
 .tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;
      border:1px solid var(--rule);padding:1px 5px;white-space:nowrap}
@@ -201,7 +213,7 @@ td.num,th.num{font-family:var(--mono);text-align:right;padding-right:0}
 .stat{background:var(--paper-2);padding:12px 13px}
 .stat .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
          color:var(--ink-2);display:block}
-.stat .v{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:3px}
+.stat .v{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:3px;color:var(--chrome)}
 .stat .v.bad{color:var(--iron)}
 
 .gap{border:1px dashed var(--ochre);background:rgba(181,127,30,.07);padding:12px 14px;
@@ -259,6 +271,12 @@ footer{border-top:1px solid var(--rule);margin-top:40px;padding-top:14px;
   a { color: #000 !important; text-decoration: none; }
   #blockmap { height: 300px !important; }
   .condo-badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .report-brand { background: #f4f4f4 !important; border-bottom: 1px solid #ddd !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .report-brand-name { color: #111 !important; }
+  .report-brand-date { color: #666 !important; }
+  .report-fin path { stroke: #0A0E14 !important; }
+  .report-fin path[fill] { fill: #0ABAB5 !important; }
 }
 
 .condo-badge{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.08em;
@@ -639,6 +657,19 @@ function render(d) {
 
   const titleblock = `
   <div class="titleblock">
+    <div class="report-brand">
+      <svg viewBox="0 0 110 84" class="report-fin" aria-hidden="true">
+        <path d="M72 52 C 56 50, 44 42, 41 14 C 30 30, 22 42, 16 52 C 30 52, 52 52, 72 52 Z" fill="var(--shark)"/>
+        <path d="M6 60 C 22 56, 44 56, 60 59 C 74 62, 86 60, 102 57" fill="none" stroke="var(--shark)" stroke-width="3" stroke-linecap="round" opacity=".45"/>
+        <path d="M 14 6 C 12 20, 13 38, 12 62" fill="none" stroke="white" stroke-width="8.5" stroke-linecap="round"/>
+        <path d="M 14 6 C 26 1, 58 4, 68 20 C 78 36, 66 52, 14 52" fill="none" stroke="white" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M 36 52 C 58 56, 80 60, 98 64" fill="none" stroke="white" stroke-width="7.5" stroke-linecap="round"/>
+        <path d="M 98 64 C 103 60, 104 54, 100 50" fill="none" stroke="white" stroke-width="5.5" stroke-linecap="round"/>
+      </svg>
+      <span class="report-brand-name">SHARK</span>
+      <span class="report-brand-sep"></span>
+      <span class="report-brand-date">${new Date(d.generated_at||Date.now()).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</span>
+    </div>
     <div class="tb-head">
       <button class="pdf-btn no-print" onclick="downloadPdf()">⭳ Download PDF</button>
       <h2 class="addr">${esc(id.address || d.bbl)}${id.zip ? ` <span style="font-weight:400;font-size:0.6em;letter-spacing:.05em">${esc(id.zip)}</span>` : ""}${id.is_condo ? ` <span class="condo-badge">CONDOMINIUM</span>` : ""}</h2>
@@ -1204,7 +1235,9 @@ async function initBlockMap(lat, lng, selfBbl) {
 // Clicking a neighbour pin loads that lot through the normal report path.
 function loadBBL(bbl) {
   q.value = bbl;
-  showTab('report');
+  // Only switch tab if we're not already on the report panel — avoids
+  // collapsing the Leaflet map container mid-click (which eats the event).
+  if (document.getElementById('panel-report').hidden) showTab('report');
   run();
 }
 
@@ -1214,6 +1247,8 @@ function showTab(name) {
   document.getElementById('panel-search').hidden = name !== 'search';
   document.querySelectorAll('#tabs .tab').forEach(t => t.classList.toggle('tab-on', t.dataset.tab === name));
   if (name === 'search' && !document.getElementById('sform').innerHTML) setSMode('owner');
+  // Let Leaflet recalculate its container size after any panel visibility change.
+  if (name === 'report' && window._map) setTimeout(() => _map.invalidateSize(), 50);
 }
 
 /* ---------- property search ---------- */
