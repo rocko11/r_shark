@@ -23,7 +23,13 @@ import type { Config } from "@netlify/functions";
 //   PROPERTY SIGNALS (from PLUTO):
 //     Vacant lot (no building)                  +15  ← pure carrying cost
 //     Large lot ≥5,000 sf                       +5   ← more upside for buyer
-//     Long hold: assessed value low vs lot size +5   ← likely older owner
+//     Low assessed value vs lot size            +5   ← likely older owner
+//
+//   ESTATE / PROBATE / TRUST (from PLUTO ownername):
+//     Executor or administrator of estate       +20  ← probate in progress, heirs want cash
+//     "ESTATE OF [NAME]" (owner deceased)       +15  ← heirs lack attachment, want to liquidate
+//     Irrevocable trust                         +8   ← often indicates owner incapacitated/deceased
+//     Held in trust (AS TRUSTEE)               +3   ← weaker signal
 //
 // MARKET COMPARISON SECTION:
 //   Each email also shows recent deed sales in the same ZIP (from ACRIS)
@@ -54,6 +60,75 @@ const BORO_D: Record<string,string> = {MANHATTAN:"1",BRONX:"2",BROOKLYN:"3",QUEE
 // ZIP → borough digit lookup (common NYC ZIPs)
 const ZIP_BORO: Record<string,string> = {};
 // We derive borough from lien data; fallback by range
+
+// ── ZIP → StreetEasy area slug mapping ─────────────────────────────────────
+const ZIP_SE_AREA: Record<string,string> = {
+  "11238":"prospect-heights", "11201":"brooklyn-heights",
+  "11222":"greenpoint",       "11237":"bushwick",
+  "11206":"east-williamsburg","11211":"williamsburg",
+  "11215":"park-slope",       "11217":"boerum-hill",
+  "11231":"carroll-gardens",  "11205":"clinton-hill",
+  "11221":"bed-stuy",         "11233":"crown-heights",
+  "10036":"hells-kitchen",    "10011":"chelsea",
+  "10014":"west-village",     "10013":"tribeca",
+  "10002":"lower-east-side",  "10003":"east-village",
+  "10025":"upper-west-side",  "10128":"upper-east-side",
+  "11101":"long-island-city", "11103":"astoria",
+};
+
+type Listing = {
+  address: string; price: number; beds: number|null; baths: number|null;
+  sqft: number|null; days_on_market: number|null; url: string; building_type: string;
+};
+
+// Fetch active for-sale listings from StreetEasy's internal GraphQL API.
+// No API key required. Falls back silently if the endpoint is unavailable.
+async function fetchListings(zip: string): Promise<{listings:Listing[], median_price:number|null, total:number}> {
+  const area = ZIP_SE_AREA[zip];
+  if (!area) return { listings: [], median_price: null, total: 0 };
+
+  // Enum values must be inlined (not JSON-stringified) — StreetEasy's server rejects string enums.
+  const query = `query SearchSalesFederated {
+  searchSales(input: {
+    sorting: { attribute: LISTED_AT, direction: DESCENDING },
+    filters: { areas: [${area}], saleStatus: ACTIVE },
+    perPage: 10, page: 1
+  }) {
+    totalCount
+    edges {
+      ... on OrganicSaleEdge {
+        node { id price street unit livingAreaSize bedroomCount fullBathroomCount urlPath daysOnMarket buildingType }
+      }
+    }
+  }
+}`;
+
+  try {
+    const r = await fetch("https://api-v6.streeteasy.com/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Mozilla/5.0 (compatible)" },
+      body: JSON.stringify({ query }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) return { listings: [], median_price: null, total: 0 };
+    const d = await r.json();
+    const result = d?.data?.searchSales;
+    if (!result) return { listings: [], median_price: null, total: 0 };
+    const listings: Listing[] = (result.edges || [])
+      .map((e: any) => e?.node).filter(Boolean)
+      .map((n: any) => ({
+        address: [n.street, n.unit].filter(Boolean).join(" #"),
+        price: Number(n.price)||0,
+        beds: n.bedroomCount ?? null, baths: n.fullBathroomCount ?? null,
+        sqft: n.livingAreaSize ?? null, days_on_market: n.daysOnMarket ?? null,
+        url: n.urlPath ? `https://streeteasy.com${n.urlPath}` : "",
+        building_type: n.buildingType || "",
+      })).filter((l: Listing) => l.price > 0);
+    const prices = listings.map(l=>l.price).sort((a,b)=>a-b);
+    const median = prices.length ? prices[Math.floor(prices.length/2)] : null;
+    return { listings, median_price: median, total: result.totalCount || 0 };
+  } catch { return { listings: [], median_price: null, total: 0 }; }
+}
 const boroughFromZip = (z: string): string => {
   const n = Number(z);
   if (n >= 10001 && n <= 10282) return "1";
@@ -92,6 +167,7 @@ type Prop = {
   num_bldgs: number|null; assess_tot: number|null;
   owner: string|null;
   score: number; signals: string[]; why: string;
+  estate_type: "none"|"estate"|"executor"|"irrevocable_trust"|"trustee";
 };
 
 type Sale = { address: string; amount: number; date: string; bbl: string };
@@ -105,13 +181,15 @@ export default async function handler() {
     console.log(`\n── ZIP ${ZIP} ──`);
     const BORO = boroughFromZip(ZIP);
 
-    // ── 1. Fetch all signals for this ZIP in parallel ────────────────────────
-    const [lienRows, hpdRows, ecbRows, plutoRows] = await Promise.all([
+    // ── 1. Fetch all signals + live listings for this ZIP in parallel ─────────
+    const [lienRows, hpdRows, ecbRows, plutoRows, liveListingsResult] = await Promise.all([
       soql(LIEN, { $select:"borough,block,lot,house_number,street_name,zip_code,water_debt_only,cycle,month,building_class", $where:`zip_code='${esc(ZIP)}'`, $limit:"10000" }),
       soql(HPD,  { $select:"boroid,block,lot,boro", $where:`class='C' AND currentstatusid=2 AND zip='${esc(ZIP)}'`, $limit:"10000" }),
       soql(ECB,  { $select:"boro,block,lot,balance_due,respondent_zip", $where:`ecb_violation_status='ACTIVE' AND balance_due>0 AND respondent_zip='${esc(ZIP)}'`, $limit:"10000" }),
       soql(PLUTO, { $select:"bbl,address,ownername,lotarea,bldgclass,yearbuilt,numbldgs,assesstot", $where:`zipcode='${esc(ZIP)}'`, $limit:"50000" }),
+      fetchListings(ZIP),  // live StreetEasy for-sale listings
     ]);
+    const { listings: liveListings, median_price: liveMedian, total: liveTotal } = liveListingsResult;
 
     // ── 2. Build PLUTO lookup map for fast enrichment ────────────────────────
     const plutoByBBL = new Map<string,any>();
@@ -131,6 +209,7 @@ export default async function handler() {
         lot_area:null, bldg_class:null, year_built:null,
         num_bldgs:null, assess_tot:null, owner:null,
         score:0, signals:[], why:"",
+        estate_type: "none",
       });
       return props.get(bbl)!;
     };
@@ -171,6 +250,19 @@ export default async function handler() {
       p.year_built = pl.yearbuilt || null;
       p.num_bldgs  = pl.numbldgs  != null ? Number(pl.numbldgs) : null;
       p.assess_tot = pl.assesstot ? Math.round(Number(pl.assesstot)) : null;
+
+      // Detect estate/trust ownership from ownername
+      if (p.owner) {
+        const n = p.owner.toUpperCase();
+        if (/ESTATE OF/.test(n))
+          p.estate_type = "estate";
+        else if (/EXECUTOR|ADMINISTRATOR OF ESTATE|ADMINISTRATRIX/.test(n))
+          p.estate_type = "executor";
+        else if (/IRREVOCABLE TRUST/.test(n))
+          p.estate_type = "irrevocable_trust";
+        else if (/AS TRUSTEE|TRUSTEE OF|, TRUSTEE/.test(n))
+          p.estate_type = "trustee";
+      }
     }
 
     // ── 5. Lis pendens — check ACRIS for foreclosure filings ─────────────────
@@ -264,12 +356,31 @@ export default async function handler() {
         s += 5; sig.push("Low assessed value vs lot size — likely long-hold owner");
       }
 
+      // Estate / trust ownership — heirs and probate are highly motivated sellers
+      if (p.estate_type === "estate") {
+        s += 15; sig.push("🪦 Owner deceased — ESTATE OF " + (p.owner||"").replace(/ESTATE OF /i,"").split(",")[0]);
+      } else if (p.estate_type === "executor") {
+        s += 20; sig.push("⚖️ Executor/administrator — probate in progress, heirs want to liquidate");
+      } else if (p.estate_type === "irrevocable_trust") {
+        s += 8; sig.push("📋 Irrevocable trust — often indicates owner incapacitated or deceased");
+      } else if (p.estate_type === "trustee") {
+        s += 3; sig.push("📋 Held in trust");
+      }
+
       p.score = Math.min(s, 100);
       p.signals = sig;
 
       // Human-readable why
       if (p.lis_pendens && p.lien_stage === "final_sale")
         p.why = "Court foreclosure + lien sold — owner has lost near-total control. Maximum motivation to exit on any terms.";
+      else if (p.estate_type === "executor" && p.lien_stage !== "none")
+        p.why = "Estate in probate + active tax lien — heirs are legally obligated to resolve debts. Strong motivation to close quickly.";
+      else if (p.estate_type === "executor")
+        p.why = "Executor managing estate — heirs want to distribute proceeds, not manage real estate. Probate courts push for timely resolution.";
+      else if (p.estate_type === "estate" && p.lien_stage !== "none")
+        p.why = `Owner deceased, estate has ${p.lien_type||"tax lien"} — heirs face mounting costs with no income. Highly motivated.`;
+      else if (p.estate_type === "estate")
+        p.why = "Owner deceased — heirs typically lack attachment to the property and want to convert to cash.";
       else if (p.lis_pendens)
         p.why = "Lis pendens filed — foreclosure action is underway in court. Owner needs a deal before judgment.";
       else if (p.lien_stage === "final_sale" && p.hpd_c > 0)
@@ -279,15 +390,17 @@ export default async function handler() {
       else if (p.lien_years.size >= 3 && p.hpd_c > 0)
         p.why = `${p.lien_years.size} years of tax arrears + ${p.hpd_c} open violations — owner unable or unwilling to manage this property.`;
       else if (p.lien_years.size >= 3)
-        p.why = `${p.lien_years.size} consecutive years on the lien list — this is chronic, not a one-time slip. Owner is financially stuck.`;
+        p.why = `${p.lien_years.size} consecutive years on the lien list — chronic, not a one-time slip. Owner is financially stuck.`;
+      else if (p.estate_type === "irrevocable_trust" && p.lien_stage !== "none")
+        p.why = "Irrevocable trust with tax lien — trustee has fiduciary duty to resolve debts, sale is path of least resistance.";
       else if (p.lien_years.size === 2 && p.ecb_balance > 5000)
         p.why = `2 years of liens + $${p.ecb_balance.toLocaleString()} in unpaid DOB fines — multiple layers of financial pressure.`;
       else if (isVacantLot && p.lien_stage !== "none")
         p.why = "Vacant lot with tax lien — owner paying to hold nothing. Every month is a net loss with no income.";
       else if (p.hpd_c >= 4)
-        p.why = `${p.hpd_c} immediately hazardous violations — liability is mounting. Owner risks DHCR action and cannot rent legally.`;
+        p.why = `${p.hpd_c} immediately hazardous violations — liability mounting. Owner risks DHCR action.`;
       else if (p.ecb_balance > 10000)
-        p.why = `$${p.ecb_balance.toLocaleString()} in unpaid city fines — fines compound and can result in judgment liens.`;
+        p.why = `$${p.ecb_balance.toLocaleString()} in unpaid city fines — compounds and can result in judgment liens.`;
       else
         p.why = "Multiple public distress signals — owner is under financial and/or legal pressure.";
     }
@@ -326,6 +439,18 @@ export default async function handler() {
         <td style="padding:10px 8px;text-align:right;color:#2FE0C6;font-size:13px;font-weight:700;white-space:nowrap">$${s.amount.toLocaleString()}</td>
         <td style="padding:10px 8px;text-align:right;color:#8A97A8;font-size:11px;white-space:nowrap">${s.date}</td>
       </tr>`).join("") : `<tr><td colspan="3" style="padding:12px 8px;color:#8A97A8;font-size:13px">No deed transfers found in last 6 months</td></tr>`;
+
+    // Live listings rows from StreetEasy
+    const liveRows = liveListings.length ? liveListings.map(l=>`
+      <tr style="border-bottom:1px solid #1C2532">
+        <td style="padding:10px 8px">
+          <a href="${l.url}" style="color:#EAF0F6;font-size:13px;text-decoration:none">${l.address||"—"}</a>
+          <span style="color:#8A97A8;font-size:11px;margin-left:6px">${l.building_type}</span>
+          <div style="color:#8A97A8;font-size:11px;margin-top:2px">${[l.beds!=null?l.beds+'bd':null,l.baths!=null?l.baths+'ba':null,l.sqft?l.sqft.toLocaleString()+' sf':null].filter(Boolean).join(' · ')}</div>
+        </td>
+        <td style="padding:10px 8px;text-align:right;color:#2FE0C6;font-size:13px;font-weight:700;white-space:nowrap">$${l.price.toLocaleString()}</td>
+        <td style="padding:10px 8px;text-align:right;color:#8A97A8;font-size:11px;white-space:nowrap">${l.days_on_market!=null?l.days_on_market+'d on mkt':''}</td>
+      </tr>`).join("") : `<tr><td colspan="3" style="padding:12px 8px;color:#8A97A8;font-size:13px">No active listings found on StreetEasy for this area</td></tr>`;
 
     const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#0A0E14;font-family:system-ui,sans-serif">
 <div style="max-width:720px;margin:0 auto;padding:32px 16px">
@@ -380,18 +505,37 @@ export default async function handler() {
     </table>
   </div>
 
-  <!-- Market comparison -->
+  <!-- Live listings: what's ON MARKET right now -->
+  <div style="background:#141B26;border-radius:12px;overflow:hidden;margin-bottom:16px">
+    <div style="padding:12px 16px;border-bottom:1px solid #28323F">
+      <span style="color:#8A97A8;font-size:11px;text-transform:uppercase;letter-spacing:.08em">🏠 Active Listings — StreetEasy</span>
+      ${liveTotal>0?`<span style="float:right;color:#2FE0C6;font-size:11px">${liveTotal.toLocaleString()} active · ${liveMedian?'median $'+liveMedian.toLocaleString():''}</span>`:''}
+    </div>
+    <div style="padding:8px 16px;color:#8A97A8;font-size:12px;border-bottom:1px solid #1C2532">
+      What asking prices look like <em>right now</em>. Compare against your distressed leads to gauge the discount you're getting.
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="border-bottom:1px solid #28323F">
+        <th style="padding:8px;color:#8A97A8;font-size:11px;text-align:left">Listing (StreetEasy)</th>
+        <th style="padding:8px;color:#8A97A8;font-size:11px;text-align:right">Ask Price</th>
+        <th style="padding:8px;color:#8A97A8;font-size:11px;text-align:right">Days on Mkt</th>
+      </tr></thead>
+      <tbody>${liveRows}</tbody>
+    </table>
+  </div>
+
+  <!-- Closed sales: what's actually transacted -->
   <div style="background:#141B26;border-radius:12px;overflow:hidden;margin-bottom:24px">
     <div style="padding:12px 16px;border-bottom:1px solid #28323F;color:#8A97A8;font-size:11px;text-transform:uppercase;letter-spacing:.08em">
-      📊 What's Actually Selling in ZIP ${ZIP} — last 6 months (ACRIS deeds)
+      📋 Recent Closed Sales — ACRIS (last 6 months)
     </div>
-    <div style="padding:10px 16px;color:#8A97A8;font-size:12px;border-bottom:1px solid #1C2532">
-      Compare your leads against real market transactions. Use this to calibrate offer prices and spot deals.
+    <div style="padding:8px 16px;color:#8A97A8;font-size:12px;border-bottom:1px solid #1C2532">
+      Actual recorded deed transfers. This is what buyers actually paid — not ask prices. Use to anchor your offer logic.
     </div>
     <table style="width:100%;border-collapse:collapse">
       <thead><tr style="border-bottom:1px solid #28323F">
         <th style="padding:8px;color:#8A97A8;font-size:11px;text-align:left">Address</th>
-        <th style="padding:8px;color:#8A97A8;font-size:11px;text-align:right">Sale Price</th>
+        <th style="padding:8px;color:#8A97A8;font-size:11px;text-align:right">Closed Price</th>
         <th style="padding:8px;color:#8A97A8;font-size:11px;text-align:right">Date</th>
       </tr></thead>
       <tbody>${salesRows}</tbody>
@@ -399,7 +543,7 @@ export default async function handler() {
   </div>
 
   <p style="color:#28323F;font-size:11px;text-align:center;margin-top:20px">
-    R Shark · All data from NYC public records. Informational only — not legal or investment advice. Verify before acting.
+    R Shark · All data from NYC public records + StreetEasy. Informational only — not legal or investment advice. Verify before acting.
   </p>
 </div></body></html>`;
 
