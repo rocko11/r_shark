@@ -1596,9 +1596,9 @@ netlifyIdentity.on('login', user => {
 });
 netlifyIdentity.on('logout', () => applyAuthState(null));
 
-// Pass the site URL explicitly so the widget finds the Identity endpoint
-// regardless of whether the user is on rshark.net or rshark.netlify.app.
-netlifyIdentity.init({ APIUrl: 'https://rshark.net/.netlify/identity' });
+// The Netlify Identity widget must point to the *.netlify.app URL internally,
+// even when the site is served from a custom domain (rshark.net).
+netlifyIdentity.init({ APIUrl: 'https://rshark.netlify.app/.netlify/identity' });
 </script>
 </body>
 </html>
