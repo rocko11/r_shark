@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Site Report — NYC</title>
+<title>R Shark — NYC Property Intelligence</title>
+<script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62.5..125,400..700&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -354,9 +355,72 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
   .grow{transform-origin:left;animation:grow .55s cubic-bezier(.2,.8,.3,1) both}
   @keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 }
+
+/* ---------- auth gate ---------- */
+#auth-gate{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;
+  background:var(--abyss);
+  background-image:
+    radial-gradient(1200px 600px at 80% -10%, rgba(47,224,198,.10), transparent 60%),
+    radial-gradient(900px 500px at 0% 100%, rgba(47,224,198,.05), transparent 55%);}
+#auth-gate.hidden{display:none}
+.gate-card{text-align:center;max-width:360px;padding:0 24px}
+.gate-fin{width:110px;height:84px;margin:0 auto 24px;filter:drop-shadow(0 0 32px rgba(47,224,198,.5))}
+.gate-title{font-family:var(--display);font-weight:700;font-size:52px;letter-spacing:-.02em;
+  color:var(--chrome);margin:0 0 6px;line-height:1}
+.gate-sub{font-family:var(--body);font-size:16px;color:var(--fog);margin:0 0 40px}
+.gate-btn{display:flex;align-items:center;justify-content:center;gap:12px;
+  width:100%;padding:14px 20px;border:none;border-radius:12px;cursor:pointer;
+  background:var(--chrome);color:var(--abyss);font-family:var(--display);font-weight:700;font-size:15px;
+  transition:opacity .15s}
+.gate-btn:hover{opacity:.88}
+.gate-btn svg{width:20px;height:20px;flex:none}
+.gate-pending{margin-top:28px;font-family:var(--mono);font-size:12px;color:var(--fog);
+  padding:14px 18px;border:1px solid var(--line);border-radius:10px;line-height:1.6}
+.gate-pending strong{color:var(--shark)}
+.gate-signout{margin-top:14px;background:none;border:none;color:var(--fog);
+  font-family:var(--mono);font-size:11px;cursor:pointer;text-decoration:underline}
+.gate-signout:hover{color:var(--chrome)}
 </style>
 </head>
 <body>
+
+<!-- Auth gate — shown until user is authenticated and confirmed -->
+<div id="auth-gate">
+  <div class="gate-card">
+    <!-- Wave-R fin logo -->
+    <svg class="gate-fin" viewBox="0 0 110 84" aria-hidden="true">
+      <path d="M72 52 C 56 50, 44 42, 41 14 C 30 30, 22 42, 16 52 C 30 52, 52 52, 72 52 Z" fill="var(--shark)"/>
+      <path d="M6 60 C 22 56, 44 56, 60 59 C 74 62, 86 60, 102 57" fill="none" stroke="var(--shark)" stroke-width="3" stroke-linecap="round" opacity=".45"/>
+      <path d="M 14 6 C 12 20, 13 38, 12 62" fill="none" stroke="white" stroke-width="8.5" stroke-linecap="round"/>
+      <path d="M 14 6 C 26 1, 58 4, 68 20 C 78 36, 66 52, 14 52" fill="none" stroke="white" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M 36 52 C 58 56, 80 60, 98 64" fill="none" stroke="white" stroke-width="7.5" stroke-linecap="round"/>
+      <path d="M 98 64 C 103 60, 104 54, 100 50" fill="none" stroke="white" stroke-width="5.5" stroke-linecap="round"/>
+    </svg>
+    <h1 class="gate-title">R SHARK</h1>
+    <p class="gate-sub">The real shark of NYC property.</p>
+    <!-- Sign-in button (shown when not logged in) -->
+    <div id="gate-signin">
+      <button class="gate-btn" data-netlify-identity-button onclick="netlifyIdentity.open('login')">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+          <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+        Continue with Google
+      </button>
+    </div>
+    <!-- Pending approval (shown when logged in but not yet confirmed) -->
+    <div id="gate-pending" style="display:none">
+      <div class="gate-pending">
+        <strong>You're in line.</strong><br>
+        Your account is pending approval. You'll get access as soon as the R Shark team confirms you.
+      </div>
+      <button class="gate-signout" onclick="netlifyIdentity.logout()">Sign out</button>
+    </div>
+  </div>
+</div>
+
 <div class="wrap">
 
   <header class="mast">
@@ -1275,13 +1339,14 @@ function setSMode(m) {
       <div class="sfield"><label>ZIP</label><input id="s_zip" placeholder="11238"></div>
       <div class="sfield"><label>Community district</label><input id="s_cd" placeholder="304"></div>
       <div class="sfield"><label>Borough (1–5)</label><input id="s_boro" placeholder="3"></div>
-      <div class="sfield"><label>Building class prefix</label><input id="s_class" placeholder="V = vacant, C = walk-up"></div>
+      <div class="sfield"><label>Building class prefix</label><input id="s_class" placeholder="e.g. V, C, R4"></div>
       <div class="sfield"><label>Min lot area (sf)</label><input id="s_minlot" placeholder="2500"></div>
       <div class="sfield"><label>Max lot area (sf)</label><input id="s_maxlot" placeholder=""></div>
       <div class="sfield"><label>Year built ≥</label><input id="s_yearmin" placeholder=""></div>
       <div class="sfield"><label>Year built ≤</label><input id="s_yearmax" placeholder="1974"></div>
       <div class="sfield"><label>Min residential units</label><input id="s_unitsmin" placeholder="6"></div>
       </div>
+      <p style="font-family:var(--mono);font-size:11px;color:var(--fog);margin:0 0 10px">Building class: <strong style="color:var(--chrome)">V</strong> = vacant · <strong style="color:var(--chrome)">C</strong> = walk-up · <strong style="color:var(--chrome)">D</strong> = elevator · <strong style="color:var(--chrome)">R4</strong> = condo · <strong style="color:var(--chrome)">S</strong> = mixed-use · <strong style="color:var(--chrome)">F</strong> = factory/industrial · <strong style="color:var(--chrome)">G</strong> = garage/warehouse · <strong style="color:var(--chrome)">L</strong> = loft</p>
       <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:6px 0 10px"><input type="checkbox" id="s_vacant"> Vacant lots only</label>
       ${go}
       <p class="hint" style="margin-top:8px">Combine any filters. Example: ZIP + vacant + min lot area to find development sites.</p>`;
@@ -1291,15 +1356,25 @@ function setSMode(m) {
       <div class="sfield"><label>ZIP</label><input id="s_zip" placeholder="11238"></div>
       <div class="sfield"><label>Community district</label><input id="s_cd" placeholder="303"></div>
       </div>
-      <div class="sfield" style="margin-top:6px"><label>Lien type</label>
-        <select id="s_kind"><option value="all">Tax + water liens</option><option value="tax">Tax liens only</option><option value="water">Water/sewer liens only</option></select></div>
-      <p class="hint" style="margin:8px 0 6px">Optional — also filter by lot size (combines distressed + size):</p>
+      <div class="sfilters" style="margin-top:8px">
+      <div class="sfield"><label>Distress type</label>
+        <select id="s_kind">
+          <option value="all">Tax + water liens (lien sale list)</option>
+          <option value="tax">Tax liens only</option>
+          <option value="water">Water/sewer liens only</option>
+          <option value="hpd_c">HPD Class C violations (hazardous)</option>
+          <option value="ecb">ECB open fines (unpaid DOB penalties)</option>
+        </select></div>
+      <div class="sfield"><label>Building class prefix</label><input id="s_class" placeholder="e.g. V, C, R4, F, G"></div>
+      </div>
+      <p style="font-family:var(--mono);font-size:11px;color:var(--fog);margin:2px 0 10px">Building class: <strong style="color:var(--chrome)">V</strong> = vacant · <strong style="color:var(--chrome)">C</strong> = walk-up · <strong style="color:var(--chrome)">D</strong> = elevator · <strong style="color:var(--chrome)">R4</strong> = condo · <strong style="color:var(--chrome)">F</strong> = factory · <strong style="color:var(--chrome)">G</strong> = garage/warehouse</p>
+      <p class="hint" style="margin:4px 0 6px">Optional — also filter by lot size (liens only):</p>
       <div class="sfilters">
       <div class="sfield"><label>Min lot area (sf)</label><input id="s_minlot" placeholder="e.g. 5000" onkeydown="if(event.key==='Enter')runSearch()"></div>
       <div class="sfield"><label>Max lot area (sf)</label><input id="s_maxlot" placeholder="" onkeydown="if(event.key==='Enter')runSearch()"></div>
       </div>
       ${go}
-      <p class="hint" style="margin-top:8px">From the DOF Tax Lien Sale List — properties with unpaid property tax or water/sewer charges the City can sell as a lien. Often a precursor to foreclosure. Pick at least a borough. Add a lot-size range to find, e.g., large distressed development sites. <strong>Note:</strong> when you filter by size, condo unit liens (no PLUTO lot area) are excluded. Full foreclosure/lis-pendens isn't searchable citywide — each property's report checks it in the title section.</p>`;
+      <p class="hint" style="margin-top:8px"><strong>Tax/water liens</strong> — DOF lien sale list, often a foreclosure precursor. <strong>HPD Class C</strong> — immediately hazardous open violations (no heat, structural, vermin). <strong>ECB open fines</strong> — unpaid DOB penalties, sorted by balance. All three are real distress signals. Lis-pendens/foreclosure isn't searchable citywide — it shows in each property's report.</p>`;
   } else if (m === 'lotsize') {
     f.innerHTML = `<div class="sfilters">
       <div class="sfield"><label>Min lot area (sf)</label><input id="s_minlot" placeholder="5000" onkeydown="if(event.key==='Enter')runSearch()"></div>
@@ -1335,7 +1410,7 @@ async function runSearch() {
     });
     if (document.getElementById('s_vacant')?.checked) p.set('vacant', '1');
   } else if (sMode === 'distress') {
-    ['zip','cd','boro:borough','minlot','maxlot'].forEach(pair => {
+    ['zip','cd','boro:borough','minlot','maxlot','class'].forEach(pair => {
       const [fid, key] = pair.includes(':') ? pair.split(':') : [pair, pair];
       const v = val('s_' + fid); if (v) p.set(key, v);
     });
@@ -1357,7 +1432,7 @@ async function runSearch() {
     window.__searchResults = d.results;
     window.__searchMeta = { mode: sMode, count: d.count };
     res.innerHTML = `<div style="display:flex;align-items:center;gap:12px;margin:10px 0;flex-wrap:wrap">
-        <span class="hint" style="margin:0">${d.count} result${d.count===1?'':'s'}${d.count>=60?' (showing first 60, largest lots first)':''} — click any to open its report.</span>
+        <span class="hint" style="margin:0">${d.count} result${d.count===1?'':'s'} — click any to open its report.</span>
         <button class="sgo" style="margin:0;padding:6px 12px;font-size:11px" onclick="downloadSearchCsv()">⭳ Download to Excel</button>
       </div>`
       + d.results.map(x => `<div class="srow" onclick="loadBBL('${esc(x.bbl)}')">
@@ -1480,6 +1555,34 @@ out.innerHTML = `
        <button class="link" onclick="q.value='1 Bedford Ave Brooklyn';run()">1 Bedford Ave</button>,
        or paste a BBL.</p>
   </div>`;
+</script>
+
+<script>
+// ---------- Netlify Identity auth gate ----------
+const gate    = document.getElementById('auth-gate');
+const gSignin = document.getElementById('gate-signin');
+const gPending= document.getElementById('gate-pending');
+
+function applyAuthState(user) {
+  if (!user) {
+    gate.classList.remove('hidden');
+    gSignin.style.display  = '';
+    gPending.style.display = 'none';
+    return;
+  }
+  if (user.confirmed_at) {
+    gate.classList.add('hidden');
+  } else {
+    gate.classList.remove('hidden');
+    gSignin.style.display  = 'none';
+    gPending.style.display = '';
+  }
+}
+
+netlifyIdentity.on('init', user => applyAuthState(user));
+netlifyIdentity.on('login', user => { netlifyIdentity.close(); applyAuthState(user); });
+netlifyIdentity.on('logout', () => applyAuthState(null));
+netlifyIdentity.init({ APIUrl: 'https://rshark.netlify.app/.netlify/identity' });
 </script>
 </body>
 </html>
