@@ -1596,8 +1596,9 @@ netlifyIdentity.on('login', user => {
 });
 netlifyIdentity.on('logout', () => applyAuthState(null));
 
-// Boot the widget (reads the current session from localStorage).
-netlifyIdentity.init();
+// Pass the site URL explicitly so the widget finds the Identity endpoint
+// regardless of whether the user is on rshark.net or rshark.netlify.app.
+netlifyIdentity.init({ APIUrl: 'https://rshark.net/.netlify/identity' });
 </script>
 </body>
 </html>
