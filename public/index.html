@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R Shark — NYC Property Intelligence</title>
-<script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62.5..125,400..700&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -400,7 +399,7 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
     <p class="gate-sub">The real shark of NYC property.</p>
     <!-- Sign-in button (shown when not logged in) -->
     <div id="gate-signin">
-      <button class="gate-btn" onclick="netlifyIdentity.open('login')">
+      <button class="gate-btn" id="gate-google-btn">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
           <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -1558,47 +1557,89 @@ out.innerHTML = `
 </script>
 
 <script>
-// ---------- Netlify Identity auth gate ----------
-// The gate stays visible until the user is both authenticated AND confirmed.
-// "Confirmed" = Netlify has verified their email (or they used Google OAuth).
-// Unconfirmed users see the "pending approval" message instead of the app.
+// ---------- Auth gate — direct Netlify Identity OAuth ----------
+// No widget, no library. Netlify Identity exposes a standard OAuth redirect:
+//   /.netlify/identity/authorize?provider=google&redirect_to=<return_url>
+// After Google auth, Netlify redirects back with #access_token=... in the hash.
+// We grab that token, verify the user object, and store it locally.
 
-const gate      = document.getElementById('auth-gate');
-const gSignin   = document.getElementById('gate-signin');
-const gPending  = document.getElementById('gate-pending');
+const IDENTITY = 'https://rshark.netlify.app/.netlify/identity';
+const gate     = document.getElementById('auth-gate');
+const gSignin  = document.getElementById('gate-signin');
+const gPending = document.getElementById('gate-pending');
+const STORE_KEY = 'rshark_user';
 
 function applyAuthState(user) {
   if (!user) {
-    // Not logged in — show the sign-in button.
     gate.classList.remove('hidden');
     gSignin.style.display  = '';
     gPending.style.display = 'none';
     return;
   }
-  // Logged in — check if their account is confirmed (approved by you).
-  // Netlify Identity sets user.confirmed_at once you confirm them in the dashboard.
   if (user.confirmed_at) {
-    // Approved — hide the gate, show the app.
     gate.classList.add('hidden');
   } else {
-    // Logged in but not yet approved — show pending message.
     gate.classList.remove('hidden');
     gSignin.style.display  = 'none';
     gPending.style.display = '';
   }
 }
 
-// Initialise once the Identity widget is ready.
-netlifyIdentity.on('init', user => applyAuthState(user));
-netlifyIdentity.on('login', user => {
-  netlifyIdentity.close();
-  applyAuthState(user);
-});
-netlifyIdentity.on('logout', () => applyAuthState(null));
+function signInWithGoogle() {
+  // Redirect to Netlify Identity's Google OAuth. After login, Google redirects
+  // back to this page with #access_token=... in the URL hash.
+  const returnTo = encodeURIComponent(location.origin + location.pathname);
+  location.href = IDENTITY + '/authorize?provider=google&redirect_to=' + returnTo;
+}
 
-// The Netlify Identity widget must point to the *.netlify.app URL internally,
-// even when the site is served from a custom domain (rshark.net).
-netlifyIdentity.init({ APIUrl: 'https://rshark.netlify.app/.netlify/identity' });
+async function handleOAuthCallback() {
+  // Parse the access_token from the URL hash that Netlify Identity adds after login.
+  if (!location.hash.includes('access_token')) return null;
+  const params = {};
+  location.hash.slice(1).split('&').forEach(p => {
+    const [k, v] = p.split('=');
+    params[decodeURIComponent(k)] = decodeURIComponent(v || '');
+  });
+  if (!params.access_token) return null;
+  // Exchange the token for the user object via the Netlify Identity API.
+  try {
+    const r = await fetch(IDENTITY + '/user', {
+      headers: { Authorization: 'Bearer ' + params.access_token }
+    });
+    if (!r.ok) return null;
+    const user = await r.json();
+    user._token = params.access_token;
+    // Persist so the user stays logged in on next visit.
+    localStorage.setItem(STORE_KEY, JSON.stringify(user));
+    // Clean the hash from the URL.
+    history.replaceState(null, '', location.pathname + location.search);
+    return user;
+  } catch(e) { return null; }
+}
+
+function getStoredUser() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return null;
+    const user = JSON.parse(raw);
+    // Basic check that the stored object looks valid.
+    return (user && user.email) ? user : null;
+  } catch(e) { return null; }
+}
+
+document.getElementById('gate-google-btn').onclick = signInWithGoogle;
+const signOutBtn = document.getElementById('gate-signout');
+if (signOutBtn) signOutBtn.onclick = () => {
+  localStorage.removeItem(STORE_KEY);
+  applyAuthState(null);
+};
+
+// On load: handle OAuth callback first, then check stored session.
+(async () => {
+  const callbackUser = await handleOAuthCallback();
+  if (callbackUser) { applyAuthState(callbackUser); return; }
+  applyAuthState(getStoredUser());
+})();
 </script>
 </body>
 </html>
