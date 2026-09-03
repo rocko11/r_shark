@@ -97,6 +97,11 @@ body{
 .tagline{font-family:var(--body);font-size:18px;color:var(--fog);margin:0;letter-spacing:.01em}
 .mast-meta{font-family:var(--display);font-weight:600;font-size:16px;color:var(--shark);
            letter-spacing:.01em;padding-bottom:4px}
+.run-report-btn{font-family:var(--display);font-weight:700;font-size:11px;letter-spacing:.04em;
+  text-transform:uppercase;background:var(--shark);color:var(--abyss);border:none;
+  border-radius:8px;padding:7px 14px;cursor:pointer;transition:opacity .15s;white-space:nowrap}
+.run-report-btn:hover{opacity:.85}
+.run-report-btn:disabled{opacity:.45;cursor:not-allowed}
 
 /* ---------- tabs ---------- */
 .tabs{display:flex;gap:8px;margin-bottom:20px}
@@ -449,7 +454,10 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
         <p class="tagline">The real shark of NYC property.</p>
       </div>
     </div>
-    <div class="mast-meta">Address in. Deal out.</div>
+    <div class="mast-meta" style="display:flex;align-items:center;gap:14px">
+      <span>Address in. Deal out.</span>
+      <button class="run-report-btn no-print" onclick="triggerDailyReport()" title="Run your daily motivated seller report now">⚡ Run Report</button>
+    </div>
   </header>
 
   <div class="tabs" id="tabs">
@@ -1449,7 +1457,33 @@ async function runSearch() {
   }
 }
 
-// Export the current search results as a CSV that opens directly in Excel. No dependencies —
+// Manually trigger the daily motivated-seller report on demand.
+// Calls the background function which runs all ZIPs and emails the results.
+async function triggerDailyReport() {
+  const btn = document.querySelector('.run-report-btn');
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  const orig = btn.innerText;
+  btn.innerText = '⏳ Sending...';
+  try {
+    // Invoke the scheduled function via its HTTP endpoint (background = non-blocking)
+    const r = await fetch('/.netlify/functions/daily-report-background', { method: 'POST' });
+    if (r.ok || r.status === 202) {
+      btn.innerText = '✓ Report sent!';
+      btn.style.background = 'var(--fog)';
+      setTimeout(() => { btn.innerText = orig; btn.disabled = false; btn.style.background = ''; }, 5000);
+    } else {
+      throw new Error('HTTP ' + r.status);
+    }
+  } catch(e) {
+    btn.innerText = '✗ Failed';
+    btn.style.background = 'var(--blood)';
+    btn.style.color = 'white';
+    setTimeout(() => { btn.innerText = orig; btn.disabled = false; btn.style.background = ''; btn.style.color = ''; }, 4000);
+    console.error('Report trigger failed:', e.message);
+  }
+}
+ No dependencies —
 // builds the file in-browser and triggers a download.
 function downloadSearchCsv() {
   const rows = window.__searchResults || [];
