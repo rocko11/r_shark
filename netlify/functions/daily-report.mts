@@ -16,9 +16,14 @@ import type { Config } from "@netlify/functions";
 //   LEGAL PRESSURE (from ACRIS):
 //     Lis pendens filed (foreclosure action)    +35  ← court already involved
 //
-//   CODE VIOLATIONS (from HPD + DOB):
+//   CODE VIOLATIONS (from HPD + DOB + ECB):
 //     HPD Class C (immediately hazardous)       +5 each, max +20
 //     ECB unpaid DOB fines                      +1 per $1k, max +15
+//     DOB civil violations (open)               +3 each, max +12
+//
+//   STALLED CONSTRUCTION (from DOB BIS + DOB NOW):
+//     Stop Work Order active                    +30  ← DOB shut it down
+//     Stalled/on-hold/expired permit            +20  ← developer stuck
 //
 //   PROPERTY SIGNALS (from PLUTO):
 //     Vacant lot (no building)                  +15  ← pure carrying cost
@@ -48,6 +53,10 @@ const HPD    = "https://data.cityofnewyork.us/resource/wvxf-dwi5.json";
 const ECB    = "https://data.cityofnewyork.us/resource/6bgk-3dad.json";
 const ACRIS_LEGAL  = "https://data.cityofnewyork.us/resource/8h5j-fqxa.json";
 const ACRIS_MASTER = "https://data.cityofnewyork.us/resource/bnx9-e6tj.json";
+// DOB: stalled construction + stop work orders + civil violations
+const DOB_JOBS = "https://data.cityofnewyork.us/resource/ic3t-wcy2.json";  // BIS job applications
+const DOB_NOW  = "https://data.cityofnewyork.us/resource/ipu4-2q9a.json";  // DOB NOW permits
+const DOB_VIOL = "https://data.cityofnewyork.us/resource/3h2n-5cm9.json";  // DOB civil violations
 const RESEND = "https://api.resend.com/emails";
 
 const TOKEN = process.env.SOCRATA_APP_TOKEN;
@@ -168,6 +177,10 @@ type Prop = {
   owner: string|null;
   score: number; signals: string[]; why: string;
   estate_type: "none"|"estate"|"executor"|"irrevocable_trust"|"trustee";
+  joint_ownership: boolean;  // two individuals jointly own (potential couple)
+  stalled_jobs: number;      // open construction jobs that are stalled/suspended/on-hold
+  stop_work_orders: number;  // active stop work orders from DOB
+  dob_violations: number;    // open DOB civil violations
 };
 
 type Sale = { address: string; amount: number; date: string; bbl: string };
@@ -182,12 +195,18 @@ export default async function handler() {
     const BORO = boroughFromZip(ZIP);
 
     // ── 1. Fetch all signals + live listings for this ZIP in parallel ─────────
-    const [lienRows, hpdRows, ecbRows, plutoRows, liveListingsResult] = await Promise.all([
+    const [lienRows, hpdRows, ecbRows, plutoRows, liveListingsResult, dobJobRows, dobNowRows, dobViolRows] = await Promise.all([
       soql(LIEN, { $select:"borough,block,lot,house_number,street_name,zip_code,water_debt_only,cycle,month,building_class", $where:`zip_code='${esc(ZIP)}'`, $limit:"10000" }),
       soql(HPD,  { $select:"boroid,block,lot,boro", $where:`class='C' AND currentstatusid=2 AND zip='${esc(ZIP)}'`, $limit:"10000" }),
       soql(ECB,  { $select:"boro,block,lot,balance_due,respondent_zip", $where:`ecb_violation_status='ACTIVE' AND balance_due>0 AND respondent_zip='${esc(ZIP)}'`, $limit:"10000" }),
       soql(PLUTO, { $select:"bbl,address,ownername,lotarea,bldgclass,yearbuilt,numbldgs,assesstot", $where:`zipcode='${esc(ZIP)}'`, $limit:"50000" }),
-      fetchListings(ZIP),  // live StreetEasy for-sale listings
+      fetchListings(ZIP),
+      // DOB BIS stalled jobs: status U=On Hold, H=Permit Renewal Pending (expired/stalled)
+      soql(DOB_JOBS, { $select:"block,lot,borough,job__,job_type,job_status,job_status_descrp", $where:`zip_code='${esc(ZIP)}' AND (job_status='U' OR job_status='H') AND job_type='NB'`, $limit:"2000" }),
+      // DOB NOW stalled/expired permits
+      soql(DOB_NOW, { $select:"block,lot,borough,job__,job_type,job_status,stop_work_order", $where:`zip_code='${esc(ZIP)}' AND (job_status='STALLED' OR job_status='EXPIRED' OR stop_work_order='Y')`, $limit:"2000" }),
+      // DOB civil violations (open, not resolved)
+      soql(DOB_VIOL, { $select:"block,lot,boro,violation_type_code,issue_date,description", $where:`boro='${esc(BORO)}' AND disposition_date IS NULL`, $limit:"5000" }),
     ]);
     const { listings: liveListings, median_price: liveMedian, total: liveTotal } = liveListingsResult;
 
@@ -210,6 +229,8 @@ export default async function handler() {
         num_bldgs:null, assess_tot:null, owner:null,
         score:0, signals:[], why:"",
         estate_type: "none",
+        joint_ownership: false,
+        stalled_jobs: 0, stop_work_orders: 0, dob_violations: 0,
       });
       return props.get(bbl)!;
     };
@@ -237,6 +258,26 @@ export default async function handler() {
       get(bbl, bbl).ecb_balance += Math.round(Number(r.balance_due)||0);
     }
 
+    // DOB BIS stalled/on-hold construction jobs (NB = New Building)
+    for (const r of dobJobRows) {
+      const bbl = mkBBL(String(r.borough||BORO), r.block, r.lot); if (!bbl) continue;
+      const p = props.get(bbl) || get(bbl, bbl);
+      p.stalled_jobs++;
+    }
+    // DOB NOW stalled/expired + stop work orders
+    for (const r of dobNowRows) {
+      const bbl = mkBBL(String(r.borough||BORO), r.block, r.lot); if (!bbl) continue;
+      const p = props.get(bbl) || get(bbl, bbl);
+      if (String(r.stop_work_order||"").toUpperCase()==="Y") p.stop_work_orders++;
+      else p.stalled_jobs++;
+    }
+    // DOB civil violations
+    for (const r of dobViolRows) {
+      const bbl = mkBBL(String(r.boro||BORO), r.block, r.lot); if (!bbl) continue;
+      const p = props.get(bbl); if (!p) continue; // only enrich existing distressed props
+      p.dob_violations++;
+    }
+
     if (!props.size) { console.log(`ZIP ${ZIP}: no distressed properties`); continue; }
 
     // ── 4. Enrich from PLUTO lookup map ──────────────────────────────────────
@@ -262,6 +303,22 @@ export default async function handler() {
           p.estate_type = "irrevocable_trust";
         else if (/AS TRUSTEE|TRUSTEE OF|, TRUSTEE/.test(n))
           p.estate_type = "trustee";
+
+        // Detect joint individual ownership (two people = potential couple).
+        // Pattern: "JOHN SMITH AND JANE SMITH" or "JOHN & JANE SMITH"
+        // Exclude LLCs, corps, trusts, estates.
+        const isEntity = /LLC|CORP|INC|TRUST|ESTATE|ASSOC|REALTY|PROP|MGMT|HOLDINGS|GROUP/.test(n);
+        if (!isEntity && (/ AND | & /.test(n))) {
+          // Make sure it looks like two people (has first names, not two companies)
+          const parts = n.split(/ AND | & /);
+          if (parts.length === 2 && parts.every(p => p.trim().length > 3 && !/LLC|CORP|INC/.test(p)))
+            p.joint_ownership = true;
+        }
+
+        // Also check if "DIVORCED" appears explicitly (from ACRIS deed transfer)
+        if (/DIVORCED|A\/K\/A.*DIVORCED|N\/K\/A.*DIVORCED/.test(n)) {
+          p.joint_ownership = true; // treat as couple separation signal
+        }
       }
     }
 
@@ -346,6 +403,15 @@ export default async function handler() {
       // Code violations
       if (p.hpd_c > 0)        { const pts = Math.min(p.hpd_c*5,20);              s += pts; sig.push(`${p.hpd_c} open HPD Class C violation${p.hpd_c>1?"s":""}`); }
       if (p.ecb_balance > 0)  { const pts = Math.min(Math.floor(p.ecb_balance/1000),15); s += pts; sig.push(`$${p.ecb_balance.toLocaleString()} unpaid DOB fines`); }
+      if (p.dob_violations > 0) { const pts = Math.min(p.dob_violations * 3, 12); s += pts; sig.push(`${p.dob_violations} open DOB civil violation${p.dob_violations>1?"s":""}`); }
+
+      // Stalled construction — developer out of money or stuck
+      if (p.stop_work_orders > 0) {
+        s += 30; sig.push(`🚧 Stop Work Order issued — construction halted by DOB`);
+      }
+      if (p.stalled_jobs > 0 && p.stop_work_orders === 0) {
+        s += 20; sig.push(`🚧 ${p.stalled_jobs} stalled construction permit${p.stalled_jobs>1?"s":""} (on hold / expired)`);
+      }
 
       // Property signals
       const isVacantLot = p.num_bldgs === 0 || p.bldg_class?.startsWith("V");
@@ -356,7 +422,7 @@ export default async function handler() {
         s += 5; sig.push("Low assessed value vs lot size — likely long-hold owner");
       }
 
-      // Estate / trust ownership — heirs and probate are highly motivated sellers
+      // Estate / trust / joint ownership
       if (p.estate_type === "estate") {
         s += 15; sig.push("🪦 Owner deceased — ESTATE OF " + (p.owner||"").replace(/ESTATE OF /i,"").split(",")[0]);
       } else if (p.estate_type === "executor") {
@@ -367,11 +433,32 @@ export default async function handler() {
         s += 3; sig.push("📋 Held in trust");
       }
 
+      // Joint individual ownership — potential couple, higher motivation when combined with distress
+      if (p.joint_ownership) {
+        // Alone: weak signal (+5). With any financial distress: much stronger (+15).
+        const hasDistress = p.lien_stage !== "none" || p.lis_pendens || p.ecb_balance > 0 || p.stalled_jobs > 0;
+        if (hasDistress) {
+          s += 15; sig.push("👫 Joint ownership + financial distress — couple likely needs to resolve and split proceeds");
+        } else {
+          s += 5; sig.push("👫 Joint individual ownership — two people, easier to motivate toward a sale");
+        }
+      }
+
       p.score = Math.min(s, 100);
       p.signals = sig;
 
       // Human-readable why
-      if (p.lis_pendens && p.lien_stage === "final_sale")
+      if (p.stop_work_orders > 0 && (p.lien_stage !== "none" || p.ecb_balance > 0))
+        p.why = `Stop Work Order + financial distress — construction is halted by DOB and the developer has mounting debt. Extremely motivated to exit.`;
+      else if (p.stop_work_orders > 0)
+        p.why = "Stop Work Order issued — construction halted by DOB. Developer cannot proceed, likely needs to sell to recoup.";
+      else if (p.stalled_jobs > 0 && p.lien_stage !== "none")
+        p.why = "Stalled construction + tax lien — developer ran out of money and can't pay carrying costs. Motivated to exit at a discount.";
+      else if (p.stalled_jobs > 0 && p.ecb_balance > 5000)
+        p.why = `Stalled construction + $${p.ecb_balance.toLocaleString()} in unpaid DOB fines — project is stuck with no path forward.`;
+      else if (p.stalled_jobs > 0)
+        p.why = "Stalled construction permit — developer unable to complete the project. Site sitting idle while carrying costs mount.";
+      else if (p.lis_pendens && p.lien_stage === "final_sale")
         p.why = "Court foreclosure + lien sold — owner has lost near-total control. Maximum motivation to exit on any terms.";
       else if (p.estate_type === "executor" && p.lien_stage !== "none")
         p.why = "Estate in probate + active tax lien — heirs are legally obligated to resolve debts. Strong motivation to close quickly.";
@@ -401,6 +488,10 @@ export default async function handler() {
         p.why = `${p.hpd_c} immediately hazardous violations — liability mounting. Owner risks DHCR action.`;
       else if (p.ecb_balance > 10000)
         p.why = `$${p.ecb_balance.toLocaleString()} in unpaid city fines — compounds and can result in judgment liens.`;
+      else if (p.joint_ownership && p.lien_stage !== "none")
+        p.why = "Joint owners with tax/water lien — two people splitting carrying costs. Disagreements on who pays accelerate motivation to sell.";
+      else if (p.joint_ownership && (p.hpd_c > 2 || p.ecb_balance > 5000))
+        p.why = "Joint owners with code violations and fines — shared liability creates pressure on both parties to exit.";
       else
         p.why = "Multiple public distress signals — owner is under financial and/or legal pressure.";
     }
@@ -487,7 +578,7 @@ export default async function handler() {
   <div style="margin-bottom:14px;font-size:11px;color:#8A97A8">
     <strong>Score model:</strong>
     Lien at auction (+40) · Active lien (+20) · Lis pendens/foreclosure (+35) · Chronic 3yr lien (+15) ·
-    HPD Class C (+5 each) · ECB fines (+$1k) · Vacant lot (+15) · Large lot (+5) · Low assessed value (+5)
+    HPD Class C (+5 each) · ECB fines (+$1k) · Stop Work Order (+30) · Stalled permit (+20) · Vacant lot (+15) · Large lot (+5) · Low assessed value (+5)
   </div>
 
   <!-- Motivated sellers table -->
