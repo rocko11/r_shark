@@ -579,6 +579,11 @@ async function run() {
       return;
     }
     render(d);
+    // Push this BBL to browser history so the back button works between properties.
+    if (d.bbl) {
+      const url = `${location.pathname}?bbl=${d.bbl}`;
+      if (location.search !== `?bbl=${d.bbl}`) history.pushState({ bbl: d.bbl }, '', url);
+    }
   } catch (err) {
     out.innerHTML = `<div class="err"><strong>Request failed.</strong><br>
       ${esc(err.message)}. Check the API is running and the Socrata token is set in Netlify.</div>`;
@@ -1554,6 +1559,19 @@ out.innerHTML = `
        <button class="link" onclick="q.value='1 Bedford Ave Brooklyn';run()">1 Bedford Ave</button>,
        or paste a BBL.</p>
   </div>`;
+
+// ---------- Browser back/forward navigation between properties ----------
+// When the user presses Back or Forward, restore the property that was showing.
+window.addEventListener('popstate', function(e) {
+  const bbl = e.state?.bbl || new URLSearchParams(location.search).get('bbl');
+  if (bbl) { q.value = bbl; showTab('report'); run(); }
+});
+
+// On page load, if a ?bbl= param is present (direct link or page refresh), load it.
+(function() {
+  const bbl = new URLSearchParams(location.search).get('bbl');
+  if (bbl) { q.value = bbl; showTab('report'); run(); }
+})();
 </script>
 
 <script>
