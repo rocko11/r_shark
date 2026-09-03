@@ -484,6 +484,7 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
       <button class="smode" data-m="cd" onclick="setSMode('cd')">By community board</button>
       <button class="smode" data-m="block" onclick="setSMode('block')">By block</button>
       <button class="smode" data-m="distress" onclick="setSMode('distress')">Tax / water liens</button>
+      <button class="smode" data-m="foreclosure" onclick="setSMode('foreclosure')">⚖️ Pre-foreclosure / Auction</button>
       <button class="smode" data-m="lotsize" onclick="setSMode('lotsize')">By lot size</button>
       <button class="smode" data-m="filter" onclick="setSMode('filter')">By filters</button>
     </div>
@@ -1387,6 +1388,41 @@ function setSMode(m) {
       </div>
       ${go}
       <p class="hint" style="margin-top:8px"><strong>Tax/water liens</strong> — DOF lien sale list, often a foreclosure precursor. <strong>HPD Class C</strong> — immediately hazardous open violations (no heat, structural, vermin). <strong>ECB open fines</strong> — unpaid DOB penalties, sorted by balance. All three are real distress signals. Lis-pendens/foreclosure isn't searchable citywide — it shows in each property's report.</p>`;
+  } else if (m === 'foreclosure') {
+    f.innerHTML = `
+      <div class="sfilters">
+        <div class="sfield"><label>Borough</label>
+          <select id="s_boro">
+            <option value="">All boroughs</option>
+            <option value="1">1 — Manhattan</option>
+            <option value="2">2 — Bronx</option>
+            <option value="3">3 — Brooklyn (Kings County)</option>
+            <option value="4">4 — Queens</option>
+            <option value="5">5 — Staten Island</option>
+          </select>
+        </div>
+        <div class="sfield"><label>ZIP (optional)</label><input id="s_zip" placeholder="11238" onkeydown="if(event.key==='Enter')runSearch()"></div>
+      </div>
+      <div class="sfilters" style="margin-top:8px">
+        <div class="sfield"><label>Foreclosure stage</label>
+          <select id="s_fc_stage">
+            <option value="all">All pre-foreclosure (90-day / 60-day / 30-day notices)</option>
+            <option value="90day">⭐ 90-Day Notice — best window to approach owner directly</option>
+            <option value="60day">60-Day Notice — auction approaching, owner under pressure</option>
+            <option value="judgment">Court Judgment filed — foreclosure ordered by court</option>
+            <option value="final_sale">Final Sale — lien already sold (less useful for direct deal)</option>
+          </select>
+        </div>
+        <div class="sfield"><label>Building class (optional)</label><input id="s_class" placeholder="e.g. V, C, A, B"></div>
+      </div>
+      ${go}
+      <p class="hint" style="margin-top:8px">
+        <strong style="color:var(--shark)">⭐ 90-Day Notice</strong> — the best window. City lien not yet sold. Owner still has time to avoid losing the lien — approach them directly with a deal. Results sorted most-actionable first.<br><br>
+        <strong>60-Day Notice</strong> — pressure is mounting, owner is running out of time and options.<br>
+        <strong>Court Judgment</strong> — court has entered a foreclosure judgment. Sale is ordered but can still be stopped by a deal.<br>
+        <strong style="color:var(--fog)">Final Sale</strong> — lien already sold to a third-party investor. To play here you'd need to buy the lien from them or bid at auction — less useful for direct owner negotiation.<br><br>
+        Kings County (Brooklyn) auctions: every Thursday 2:30 PM, Room 224 · Queens: every Tuesday.
+      </p>`;
   } else if (m === 'lotsize') {
     f.innerHTML = `<div class="sfilters">
       <div class="sfield"><label>Min lot area (sf)</label><input id="s_minlot" placeholder="5000" onkeydown="if(event.key==='Enter')runSearch()"></div>
@@ -1427,6 +1463,11 @@ async function runSearch() {
       const v = val('s_' + fid); if (v) p.set(key, v);
     });
     p.set('kind', document.getElementById('s_kind')?.value || 'all');
+  } else if (sMode === 'foreclosure') {
+    if (val('s_boro')) p.set('borough', val('s_boro'));
+    if (val('s_zip')) p.set('zip', val('s_zip'));
+    p.set('stage', document.getElementById('s_fc_stage')?.value || 'all');
+    if (val('s_class')) p.set('class', val('s_class'));
   } else if (sMode === 'lotsize') {
     p.set('mode', 'filter'); // backend handles lot size under the filter mode
     ['zip','cd','boro:borough','minlot','maxlot'].forEach(pair => {
@@ -1449,7 +1490,10 @@ async function runSearch() {
       </div>`
       + d.results.map(x => `<div class="srow" onclick="loadBBL('${esc(x.bbl)}')">
           <div><div class="a">${esc(x.address || x.bbl)}</div>
-            <div class="m">${x.lien_type ? '<span class="neg">' + esc(x.lien_type) + '</span>' + (x.cycle ? ' · ' + esc(x.cycle) : '') : (esc(x.owner || '') + (x.bldg_class ? ' · ' + esc(x.bldg_class) : ''))}${x.zip ? ' · ' + esc(x.zip) : ''}</div></div>
+            <div class="m">${x.fc_stage
+              ? `<span class="neg" style="font-weight:700">${esc(x.fc_stage)}</span>${x.lien_type ? ' · '+esc(x.lien_type) : ''}${x.source && x.source!=='DOF Lien Sale' ? ' · '+esc(x.source) : ''}${x.fc_date ? ' · '+esc(x.fc_date) : ''}`
+              : x.lien_type ? '<span class="neg">' + esc(x.lien_type) + '</span>' + (x.cycle ? ' · ' + esc(x.cycle) : '') : (esc(x.owner || '') + (x.bldg_class ? ' · ' + esc(x.bldg_class) : ''))
+            }${x.zip ? ' · ' + esc(x.zip) : ''}</div></div>
           <div class="m" style="text-align:right;white-space:nowrap">${x.lot_area ? x.lot_area.toLocaleString() + ' sf' : ''}${x.units_res ? '<br>' + x.units_res + ' units' : ''}${x.year_built ? '<br>built ' + x.year_built : ''}</div>
         </div>`).join('');
   } catch (e) {
@@ -1495,6 +1539,7 @@ function downloadSearchCsv() {
     ["Building class", "bldg_class"], ["Lot area (sf)", "lot_area"],
     ["Residential units", "units_res"], ["Year built", "year_built"],
     ["ZIP", "zip"], ["Lien type", "lien_type"], ["Lien cycle", "cycle"],
+    ["Foreclosure stage", "fc_stage"], ["Foreclosure date", "fc_date"], ["Source", "source"],
     ["Is condo", "is_condo"],
     ["Report URL", null],
   ];
