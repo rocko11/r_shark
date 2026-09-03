@@ -1467,7 +1467,7 @@ async function triggerDailyReport() {
   btn.innerText = '⏳ Sending...';
   try {
     // Invoke the scheduled function via its HTTP endpoint (background = non-blocking)
-    const r = await fetch('/.netlify/functions/daily-report-background', { method: 'POST' });
+    const r = await fetch('/api/run-report', { method: 'POST' });
     if (r.ok || r.status === 202) {
       btn.innerText = '✓ Report sent!';
       btn.style.background = 'var(--fog)';
