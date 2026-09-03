@@ -1483,7 +1483,9 @@ async function triggerDailyReport() {
     console.error('Report trigger failed:', e.message);
   }
 }
- No dependencies —
+
+// Export the current search results as a CSV that opens directly in Excel.
+// No dependencies —
 // builds the file in-browser and triggers a download.
 function downloadSearchCsv() {
   const rows = window.__searchResults || [];
