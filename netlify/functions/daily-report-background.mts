@@ -658,7 +658,6 @@ export default async function handler() {
 
 export const config: Config = {
   schedule: "0 11 * * *",  // 7 AM ET = 11 AM UTC
-  path: "/api/run-report",  // HTTP endpoint so the UI can trigger it on demand
 };
 
 // Background functions (-background suffix) get 15 minutes and return 202
