@@ -62,24 +62,82 @@ export default async (req: Request, _ctx: Context) => {
     const unitsmin = Number(u.get("unitsmin")); if (unitsmin > 0) clauses.push(`unitsres>=${unitsmin}`);
     if (!clauses.length) return json({ error: "Pick at least one filter (ZIP, community district, borough, vacant, class, size, year, or units)." }, 400);
   } else if (mode === "distress") {
-    // Distressed properties from the DOF Tax Lien Sale List (9rz4-mjek), filtered by area.
-    // kind=tax  -> water_debt_only='NO' (tax arrears)
-    // kind=water-> water_debt_only='YES' (water/sewer arrears)
-    // kind=all  -> both
+    const boro = (u.get("borough") || "").replace(/\D/g, "");
+    const zip  = (u.get("zip") || "").replace(/\D/g, "");
+    const cd   = (u.get("cd") || "").replace(/\D/g, "");
+    const cls  = (u.get("class") || "").trim().toUpperCase();
+    const kind = (u.get("kind") || "liens").toLowerCase();
+
+    // Helper: build BBL from boro+block+lot strings.
+    const mkBBL = (b: string, blk: string, lt: string) => {
+      const bd = b.replace(/\D/g,""), bk = blk.replace(/\D/g,"").padStart(5,"0"), l = lt.replace(/\D/g,"").padStart(4,"0");
+      return (bd && bk && l) ? bd+bk+l : null;
+    };
+    // Helper: boro name → digit (used by HPD).
+    const BORO_D: Record<string,string> = {MANHATTAN:"1",BRONX:"2",BROOKLYN:"3",QUEENS:"4","STATEN ISLAND":"5"};
+
+    if (kind === "hpd_c" || kind === "ecb") {
+      // --- HPD Class C (immediately hazardous, open) ---
+      if (kind === "hpd_c") {
+        const HPD = "https://data.cityofnewyork.us/resource/wvxf-dwi5.json";
+        const wc: string[] = [`class='C'`, `currentstatusid=2`];
+        if (boro) wc.push(`boroid=${Number(boro)}`);
+        const pp = new URLSearchParams({ $select:"boro,block,lot,novdescription,novissueddate,currentstatus", $where:wc.join(" AND "), $order:"novissueddate DESC", $limit:"50000" });
+        if (APP_TOKEN) pp.set("$$app_token", APP_TOKEN);
+        let rows: any[];
+        try { const r = await fetch(`${HPD}?${pp}`); if (!r.ok) return json({error:`HPD ${r.status}`},502); rows = await r.json(); }
+        catch(e){ return json({error:`HPD request failed: ${(e as Error).message}`.slice(0,160)},502); }
+        // Group by BBL — one entry per property even if multiple violations.
+        const byBBL = new Map<string, any>();
+        for (const r of rows) {
+          const bdig = BORO_D[String(r.boro||"").toUpperCase().trim()] || "";
+          const bbl = mkBBL(bdig, r.block||"", r.lot||"");
+          if (!bbl) continue;
+          if (!byBBL.has(bbl)) byBBL.set(bbl, { bbl, address: null, owner: null, bldg_class: null, lot_area: null, units_res: null, year_built: null, zip: zip||null,
+            lien_type: `HPD Class C violation`, cycle: r.currentstatus||null, is_condo: false, viol_count: 0 });
+          byBBL.get(bbl).viol_count++;
+        }
+        const results = [...byBBL.values()].map(r => ({...r, lien_type:`HPD Class C · ${r.viol_count} open violation${r.viol_count>1?"s":""}`}));
+        return json({ mode, kind, count: results.length, results });
+      }
+      // --- ECB open fines (unpaid DOB/ECB balance) ---
+      if (kind === "ecb") {
+        const ECB = "https://data.cityofnewyork.us/resource/6bgk-3dad.json";
+        const wc: string[] = [`ecb_violation_status='ACTIVE'`, `balance_due>0`];
+        if (boro) wc.push(`boro='${esc(boro)}'`);
+        if (zip.length === 5) wc.push(`respondent_zip='${esc(zip)}'`);
+        if (cls) wc.push(`starts_with(upper(violation_type),'${esc(cls)}')`);
+        // No location filter = city-wide ECB search
+        const pp = new URLSearchParams({ $select:"boro,block,lot,violation_type,balance_due,violation_description,issue_date,severity", $where:wc.join(" AND "), $order:"balance_due DESC", $limit:"50000" });
+        if (APP_TOKEN) pp.set("$$app_token", APP_TOKEN);
+        let rows: any[];
+        try { const r = await fetch(`${ECB}?${pp}`); if (!r.ok) return json({error:`ECB ${r.status}`},502); rows = await r.json(); }
+        catch(e){ return json({error:`ECB request failed: ${(e as Error).message}`.slice(0,160)},502); }
+        const byBBL = new Map<string,any>();
+        for (const r of rows) {
+          const bbl = mkBBL(String(r.boro||""), r.block||"", r.lot||"");
+          if (!bbl) continue;
+          const bal = Math.round(Number(r.balance_due)||0);
+          if (!byBBL.has(bbl)) byBBL.set(bbl, { bbl, address: null, owner: null, bldg_class: null, lot_area: null, units_res: null, year_built: null, zip: zip||null,
+            lien_type: `ECB open fines`, cycle: r.severity||null, is_condo: false, total_balance: 0, viol_count: 0 });
+          const g = byBBL.get(bbl); g.viol_count++; g.total_balance += bal;
+        }
+        const results = [...byBBL.values()].map(r=>({...r, lien_type:`ECB fines · $${r.total_balance.toLocaleString()} unpaid · ${r.viol_count} violation${r.viol_count>1?"s":""}`}));
+        results.sort((a,b)=>b.total_balance-a.total_balance);
+        return json({ mode, kind, count: results.length, results });
+      }
+    }
+
+    // --- Default: Tax / water lien sale list ---
     const LIEN = "https://data.cityofnewyork.us/resource/9rz4-mjek.json";
     const lc: string[] = [];
-    const zip = (u.get("zip") || "").replace(/\D/g, "");
-    const cd = (u.get("cd") || "").replace(/\D/g, "");
-    const boro = (u.get("borough") || "").replace(/\D/g, "");
     if (zip.length === 5) lc.push(`zip_code='${esc(zip)}'`);
     if (cd) lc.push(`community_board='${esc(cd)}'`);
     if (boro) lc.push(`borough='${esc(boro)}'`);
-    const kind = (u.get("kind") || "all").toLowerCase();
     if (kind === "water") lc.push(`upper(water_debt_only)='YES'`);
     else if (kind === "tax") lc.push(`upper(water_debt_only)='NO'`);
-    const cls = (u.get("class") || "").trim().toUpperCase();
     if (cls) lc.push(`starts_with(upper(building_class),'${esc(cls)}')`);
-    if (!lc.length) return json({ error: "Pick a borough, ZIP, or community district to search liens." }, 400);
+    // No location filter = city-wide search (up to 50,000 results from Socrata)
 
     const lp = new URLSearchParams({
       $select: "borough,block,lot,house_number,street_name,zip_code,cycle,water_debt_only,building_class,community_board",
