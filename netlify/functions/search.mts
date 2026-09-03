@@ -261,6 +261,157 @@ export default async (req: Request, _ctx: Context) => {
     }
 
     return json({ mode, kind, count: results.length, results });
+  } else if (mode === "foreclosure") {
+    // Pre-foreclosure & auction search
+    // Sources: DOF Lien Sale List (Final Sale + 90/60-day notices) + ACRIS JUDG
+    const LIEN   = "https://data.cityofnewyork.us/resource/9rz4-mjek.json";
+    const ACRIS  = "https://data.cityofnewyork.us/resource/bnx9-e6tj.json";
+    const ACRIS_LEGALS = "https://data.cityofnewyork.us/resource/8h5j-fqxa.json";
+
+    const borough = u.get("borough") || "";
+    const zip     = u.get("zip") || "";
+    const stage   = u.get("stage") || "all";
+    const cls     = u.get("class") || "";
+    const tok     = APP_TOKEN ? `&$$app_token=${APP_TOKEN}` : "";
+    const esc2    = (s: string) => s.replace(/'/g, "''");
+
+    // Build lien list query based on stage
+    const stageCycles: Record<string, string[]> = {
+      final_sale:   ["Final Sale"],
+      "90day":      ["90 Day Notice", "90 Days Notice"],
+      "60day":      ["60 Day Notice", "60 Days Notice"],
+      judgment:     [],  // handled via ACRIS JUDG separately
+      // "all" = pre-auction notices + judgments only (Final Sale excluded — lien already sold)
+      all:          ["90 Day Notice", "90 Days Notice", "60 Day Notice", "60 Days Notice", "30 Day Notice", "30 Days Notice", "10 Day Notice", "10 Days Notice"],
+    };
+
+    const cycles = stageCycles[stage] || stageCycles.all;
+    const cycleWhere = cycles.map(c => `upper(cycle)='${esc2(c.toUpperCase())}'`).join(" OR ");
+    const lienWhere: string[] = [`(${cycleWhere})`];
+    if (borough) lienWhere.push(`borough='${esc2(borough)}'`);
+    if (zip)     lienWhere.push(`zip_code='${esc2(zip)}'`);
+    if (cls)     lienWhere.push(`starts_with(upper(building_class),'${esc2(cls.toUpperCase())}')`);
+
+    try {
+      const lienUrl = `${LIEN}?$select=borough,block,lot,house_number,street_name,zip_code,cycle,month,building_class,water_debt_only&$where=${encodeURIComponent(lienWhere.join(" AND "))}&$order=month DESC&$limit=50000${tok}`;
+      const lienResp = await fetch(lienUrl, { signal: AbortSignal.timeout(10000) });
+      if (!lienResp.ok) return json({ error: `Lien list ${lienResp.status}` }, 502);
+      const lienRows: any[] = await lienResp.json();
+
+      // Also fetch ACRIS JUDG records if stage includes judgment or all
+      let judgRows: any[] = [];
+      if (stage === "all" || stage === "judgment") {
+        try {
+          const boroNum = borough || "";
+          const judgWhere = [`doc_type='JUDG'`, `document_date>'2023-01-01'`];
+          if (boroNum) judgWhere.push(`recorded_borough=${esc2(boroNum)}`);
+          const judgUrl = `${ACRIS}?$select=document_id,doc_type,document_date,recorded_borough,crfn&$where=${encodeURIComponent(judgWhere.join(" AND "))}&$order=document_date DESC&$limit=5000${tok}`;
+          const jResp = await fetch(judgUrl, { signal: AbortSignal.timeout(8000) });
+          if (jResp.ok) {
+            const jData: any[] = await jResp.json();
+            // Get corresponding property addresses from ACRIS legals
+            if (jData.length) {
+              const docIds = jData.slice(0, 100).map((d: any) => `'${esc2(d.document_id)}'`).join(",");
+              const legalsUrl = `${ACRIS_LEGALS}?$select=document_id,borough,block,lot,street_number,street_name&$where=document_id in(${docIds})&$limit=500${tok}`;
+              const lResp = await fetch(legalsUrl, { signal: AbortSignal.timeout(8000) });
+              if (lResp.ok) {
+                const legals: any[] = await lResp.json();
+                // Merge judgment date with address
+                for (const judg of jData.slice(0, 100)) {
+                  const leg = legals.find((l: any) => l.document_id === judg.document_id);
+                  if (leg) {
+                    judgRows.push({
+                      _source: "ACRIS JUDG",
+                      borough: leg.borough, block: leg.block, lot: leg.lot,
+                      house_number: leg.street_number, street_name: leg.street_name,
+                      cycle: "Court Judgment",
+                      month: judg.document_date, zip_code: zip,
+                      building_class: "", water_debt_only: "NO",
+                    });
+                  }
+                }
+              }
+            }
+          }
+        } catch (_) { /* JUDG lookup is best-effort */ }
+      }
+
+      const allRows = [...lienRows, ...judgRows];
+
+      // Enrich with PLUTO to get addresses and property details
+      // Build BBLs
+      const BORO_D: Record<string,string> = { "1":"1","2":"2","3":"3","4":"4","5":"5" };
+      const mkBBL = (b: string, blk: string, lt: string) => {
+        const bd = b.replace(/\D/g,""), bk = blk.replace(/\D/g,"").padStart(5,"0"), l = lt.replace(/\D/g,"").padStart(4,"0");
+        return (bd && bk !== "00000" && l !== "0000") ? bd+bk+l : null;
+      };
+
+      // Deduplicate by BBL, keep most recent/severe cycle
+      const byBBL = new Map<string, any>();
+      for (const r of allRows) {
+        const bbl = mkBBL(String(r.borough||""), String(r.block||""), String(r.lot||""));
+        if (!bbl) continue;
+        const existing = byBBL.get(bbl);
+        // Prioritize: Court Judgment > Final Sale > 90 Day > 60 Day
+      // Priority: pre-auction notices > Court Judgment > Final Sale (lien already sold, less actionable)
+      const priority: Record<string,number> = {
+        "90 Day Notice":5, "90 Days Notice":5,    // ← best window: owner still negotiable
+        "60 Day Notice":4, "60 Days Notice":4,    // ← approaching auction, pressure mounting
+        "Court Judgment":3,                        // ← court ordered, owner losing property
+        "Final Sale":1,    // ← lien already sold to 3rd party — least actionable for direct deal
+      };
+        const newPri = priority[r.cycle||""] || 0;
+        const existPri = priority[existing?.cycle||""] || 0;
+        if (!existing || newPri > existPri) byBBL.set(bbl, { ...r, bbl });
+      }
+
+      const bbls = [...byBBL.keys()];
+
+      // PLUTO enrichment in chunks
+      let results: any[] = [];
+      const CHUNK = 200;
+      for (let i = 0; i < bbls.length; i += CHUNK) {
+        const chunk = bbls.slice(i, i+CHUNK).map(Number).join(",");
+        const plutoUrl = `${PLUTO}?$select=bbl,address,ownername,bldgclass,lotarea,unitsres,yearbuilt,zipcode,latitude,longitude&$where=bbl in(${chunk})&$limit=500${tok}`;
+        const pResp = await fetch(plutoUrl, { signal: AbortSignal.timeout(8000) });
+        if (!pResp.ok) continue;
+        const pRows: any[] = await pResp.json();
+        for (const p of pRows) {
+          const bbl = String(p.bbl||"").split(".")[0].padStart(10,"0");
+          const lien = byBBL.get(bbl);
+          if (!lien) continue;
+          results.push({
+            bbl,
+            address: p.address || [lien.house_number, lien.street_name].filter(Boolean).join(" "),
+            owner: p.ownername || "",
+            bldg_class: p.bldgclass || lien.building_class || "",
+            lot_area: p.lotarea ? Math.round(Number(p.lotarea)) : null,
+            units_res: p.unitsres || null,
+            year_built: p.yearbuilt || null,
+            zip: p.zipcode || lien.zip_code || "",
+            lat: p.latitude || null, lon: p.longitude || null,
+            // Foreclosure-specific fields
+            fc_stage: lien.cycle || "",
+            fc_date: (lien.month||"").slice(0,10),
+            lien_type: String(lien.water_debt_only||"").toUpperCase()==="YES" ? "Water/sewer lien" : "Tax lien",
+            source: lien._source || "DOF Lien Sale",
+          });
+        }
+      }
+
+      // Sort: pre-auction notices first (most actionable for direct deals), Final Sale last
+      const pri: Record<string,number> = {
+        "90 Day Notice":5,"90 Days Notice":5,
+        "60 Day Notice":4,"60 Days Notice":4,
+        "Court Judgment":3,
+        "Final Sale":1,
+      };
+      results.sort((a,b) => (pri[b.fc_stage]||0) - (pri[a.fc_stage]||0) || b.fc_date.localeCompare(a.fc_date));
+
+      return json({ mode, stage, count: results.length, results });
+    } catch(e) {
+      return json({ error: `Foreclosure search failed: ${(e as Error).message}`.slice(0,160) }, 502);
+    }
   } else {
     return json({ error: "Unknown search mode." }, 400);
   }
