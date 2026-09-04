@@ -294,7 +294,9 @@ export default async (req: Request, _ctx: Context) => {
 
     try {
       const lienUrl = `${LIEN}?$select=borough,block,lot,house_number,street_name,zip_code,cycle,month,building_class,water_debt_only&$where=${encodeURIComponent(lienWhere.join(" AND "))}&$order=month DESC&$limit=50000${tok}`;
-      const lienResp = await fetch(lienUrl, { signal: AbortSignal.timeout(10000) });
+      // Borough-only queries can be large — give 20 seconds; ZIP-scoped = faster
+      const lienTimeout = zip ? 10000 : 20000;
+      const lienResp = await fetch(lienUrl, { signal: AbortSignal.timeout(lienTimeout) });
       if (!lienResp.ok) return json({ error: `Lien list ${lienResp.status}` }, 502);
       const lienRows: any[] = await lienResp.json();
 
