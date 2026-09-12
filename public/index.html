@@ -1323,10 +1323,13 @@ function loadBBL(bbl) {
 function showTab(name) {
   document.getElementById('panel-report').hidden = name !== 'report';
   document.getElementById('panel-search').hidden = name !== 'search';
+  const pp = document.getElementById('panel-pacer');
+  if (pp) pp.hidden = name !== 'pacer';
   document.querySelectorAll('#tabs .tab').forEach(t => t.classList.toggle('tab-on', t.dataset.tab === name));
   if (name === 'search' && !document.getElementById('sform').innerHTML) setSMode('owner');
-  // Let Leaflet recalculate its container size after any panel visibility change.
   if (name === 'report' && window._map) setTimeout(() => _map.invalidateSize(), 50);
+  // Sync mobile nav
+  if (typeof mnavActive === 'function') mnavActive(name === 'report' ? 'mnav-report' : 'mnav-hunt');
 }
 
 /* ---------- property search ---------- */
