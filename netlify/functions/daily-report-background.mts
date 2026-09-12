@@ -194,8 +194,8 @@ type Sale = { address: string; amount: number; date: string; bbl: string };
 // Cost: $0.10/page but case searches return up to 54 results per page — typically
 // less than $1/day for a daily scan.
 
-const PACER_AUTH_URL = "https://pacer.uscourts.gov/services/cso-auth";
-const PACER_PCL_URL  = "https://pcl.uscourts.gov/pcl/api/cases";
+const PACER_AUTH_URL = "https://pacer.login.uscourts.gov/services/cso-auth";  // Official production auth URL
+const PACER_PCL_URL  = "https://pcl.uscourts.gov/pcl-public-api/rest/cases/find";  // Official PCL case search endpoint
 
 async function getPacerToken(): Promise<string|null> {
   const user = process.env.PACER_USERNAME;
@@ -238,47 +238,55 @@ type PacerCase = {
 };
 
 async function fetchPacerForeclosures(token: string): Promise<PacerCase[]> {
-  // Nature of suit 220 = Foreclosure, 290 = All Other Real Property
-  // Courts: nyed = Eastern District NY (Brooklyn/Queens), nysd = Southern (Manhattan)
-  const courts = ["nyed", "nysd"];
+  // Official court IDs per PACER docs Appendix A:
+  //   nysdc = New York Southern District Court (Manhattan/Westchester)
+  //   nyedc = New York Eastern District Court (Brooklyn/Queens/Long Island)
+  // Nature of suit 220 = Real Property: Foreclosure
+  const courts = [
+    { id: "nysdc", name: "SDNY (Manhattan)" },
+    { id: "nyedc", name: "EDNY (Brooklyn/Queens)" },
+  ];
   const results: PacerCase[] = [];
-  const since = new Date(Date.now() - 90 * 24 * 3600000).toISOString().slice(0,10); // last 90 days
+  const since = new Date(Date.now() - 90 * 24 * 3600000).toISOString().slice(0,10);
 
   for (const court of courts) {
-    for (const nos of ["220","290"]) {
-      try {
-        const params = new URLSearchParams({
-          court, natureOfSuit: nos,
-          dateFiledStart: since,
-          courtType: "DI", // District courts
-          pageNumber: "1", recordsPerPage: "54",
+    try {
+      // PCL case search: POST with JSON body (not GET with params)
+      const r = await fetch(PACER_PCL_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "X-NEXT-GEN-CSO": token,
+        },
+        body: JSON.stringify({
+          natureOfSuit: ["220"],   // Real Property: Foreclosure
+          courtId: [court.id],
+          dateFiledFrom: since,
+          jurisdictionType: "cv",
+        }),
+        signal: AbortSignal.timeout(12000),
+      });
+      console.log(`PACER PCL ${court.id} status: ${r.status}`);
+      if (!r.ok) {
+        const errText = await r.text().catch(()=>"");
+        console.log(`PACER PCL ${court.id} error: ${errText.slice(0,150)}`);
+        continue;
+      }
+      const d = await r.json();
+      const cases: any[] = d?.content || [];
+      console.log(`PACER ${court.id}: ${d?.pageInfo?.totalElements||0} total, ${cases.length} on page 1`);
+      for (const c of cases) {
+        results.push({
+          caseTitle: c.caseTitle || "",
+          caseNumber: c.caseNumberFull || "",
+          dateFiled: c.dateFiled || "",
+          court: court.name,
+          natureOfSuit: "Foreclosure (220)",
         });
-        const r = await fetch(`${PACER_PCL_URL}?${params}`, {
-          headers: {
-            "X-NEXT-GEN-CSO": token,
-            "Cookie": `nextGenCSO=${token}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-          },
-          signal: AbortSignal.timeout(10000),
-        });
-        if (!r.ok) {
-          console.log(`PACER PCL ${court} nos=${nos} status: ${r.status}`);
-          continue;
-        }
-        if (!r.ok) continue;
-        const d = await r.json();
-        const cases = d?.cases || d?.content || [];
-        for (const c of cases) {
-          results.push({
-            caseTitle: c.caseTitle || c.caseName || "",
-            caseNumber: c.caseNumberFull || c.caseNumber || "",
-            dateFiled: c.dateFiled || c.dateFiledFull || "",
-            court: court === "nyed" ? "EDNY (Brooklyn/Queens)" : "SDNY (Manhattan)",
-            natureOfSuit: nos === "220" ? "Foreclosure" : "Real Property",
-          });
-        }
-      } catch (_) { /* best-effort */ }
+      }
+    } catch(e) {
+      console.log(`PACER ${court.id} exception: ${(e as Error).message?.slice(0,100)}`);
     }
   }
   return results.sort((a,b) => b.dateFiled.localeCompare(a.dateFiled)).slice(0, 50);
@@ -339,7 +347,7 @@ export default async function handler() {
     pacerCases = await fetchPacerForeclosures(pacerToken);
     console.log(`PACER: ${pacerCases.length} federal foreclosure cases fetched`);
   } else {
-    console.log("PACER: auth failed — check PACER_USERNAME/PACER_PASSWORD and ensure MFA is disabled on your PACER account");
+    console.log("PACER: auth failed or token empty — check credentials and ensure MFA is OFF on pacer.uscourts.gov");
   }
 
   for (const ZIP of ZIPS) {
