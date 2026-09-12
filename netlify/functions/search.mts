@@ -431,22 +431,82 @@ export default async (req: Request, _ctx: Context) => {
     const courtNames: Record<string,string> = { nysdc:"SDNY (Manhattan)", nyedc:"EDNY (Brooklyn/Queens)" };
     const ids = courtIds[court] || ["nysdc","nyedc"];
 
-    const results: any[] = [];
+    // Try to extract property address from case title
+    // Many NYC foreclosure LLCs encode the address: "CAP 159 W 228 PROPERTY OWNER" → 159 W 228
+    // Pattern 1: number + direction + number (e.g. "159 W 228", "45 E 72")
+    // Pattern 2: number + street name before "LLC/CORP/INC"
+    function extractAddressFromTitle(title: string): string {
+      const t = title.toUpperCase();
+      // Extract the defendant side (after " v. " or " VS ")
+      const def = t.split(/ V\. | VS\.? /)[1] || t;
+      // Street address patterns in LLC names
+      const patterns = [
+        /(\d+[-\w]* (?:EAST|WEST|NORTH|SOUTH|E|W|N|S) \d+(?:ST|ND|RD|TH)?(?:\s+STREET|\s+AVE\w*|\s+BLVD|\s+LANE|\s+DRIVE|\s+PLACE|\s+ROAD)?)/i,
+        /(\d+[-\w]* (?:STREET|AVENUE|AVE|BOULEVARD|BLVD|LANE|DRIVE|PLACE|ROAD|WAY|COURT|TERRACE|PARKWAY)[^,\s]*)/i,
+        /(\d{1,5}\s+[A-Z][A-Z\s]{2,30}(?:STREET|AVENUE|AVE|BLVD|LANE|DRIVE|PLACE|ROAD))/i,
+      ];
+      for (const pat of patterns) {
+        const m = def.match(pat);
+        if (m) return m[1].trim();
+      }
+      // Try numeric address from LLC name: "159 W 228" or "45 EAST 72"
+      const llcAddr = def.match(/(\d+\s+(?:[NSEW](?:ORTH|OUTH|AST|EST)?\s+)?\d+(?:ST|ND|RD|TH)?)/i);
+      if (llcAddr) return llcAddr[1].trim();
+      return "";
+    }
+
+    // Enrich with PLUTO address lookup for defendant party name
+    async function lookupPlutoByOwner(defendant: string): Promise<string> {
+      if (!defendant || defendant.length < 4) return "";
+      // Clean up: remove "ET AL", "LLC", common suffixes for cleaner search
+      const clean = defendant
+        .replace(/\s+ET AL\.?$/i, "").replace(/\s*,\s*LLC.*$/i, "").replace(/\s+LLC$/i, "")
+        .replace(/\s+CORP\.?$/i, "").replace(/\s+INC\.?$/i, "").trim();
+      if (clean.length < 4) return "";
+      try {
+        const enc = encodeURIComponent(clean.toUpperCase().slice(0, 40));
+        const r = await fetch(
+          `${PLUTO}?$select=address,zipcode&$where=upper(ownername) like '${clean.toUpperCase().replace(/'/g,"''").slice(0,35)}%25'&$limit=1`,
+          { signal: AbortSignal.timeout(4000) }
+        );
+        if (!r.ok) return "";
+        const rows = await r.json();
+        if (rows?.[0]?.address) return `${rows[0].address}${rows[0].zipcode ? " ("+rows[0].zipcode+")" : ""}`;
+      } catch {}
+      return "";
+    }
+
+    const rawResults: any[] = [];
     for (const cid of ids) {
       const cases = await pacerSearch(token, [cid], since);
       for (const c of cases) {
-        results.push({
-          caseTitle:   c.caseTitle || "",
-          caseNumber:  c.caseNumberFull || c.caseNumber || "",
-          dateFiled:   c.dateFiled || "",
-          court:       courtNames[cid] || cid,
+        // Extract defendant name from title (after "v.")
+        const titleParts = (c.caseTitle || "").split(/ v\. | vs\.? /i);
+        const defendant = (titleParts[1] || "").replace(/ et al\.?$/i, "").trim();
+        const addressFromTitle = extractAddressFromTitle(c.caseTitle || "");
+        rawResults.push({
+          caseTitle:    c.caseTitle || "",
+          caseNumber:   c.caseNumberFull || c.caseNumber || "",
+          dateFiled:    c.dateFiled || "",
+          court:        courtNames[cid] || cid,
           natureOfSuit: "Foreclosure (220)",
-          caseLink:    c.caseLink || "",
+          caseLink:     c.caseLink || "",
+          defendant,
+          address:      addressFromTitle,  // populated below if empty
         });
       }
     }
-    results.sort((a,b) => b.dateFiled.localeCompare(a.dateFiled));
-    return json({ mode, total: results.length, results });
+
+    // For cases with no address from title, try PLUTO lookup (batched, 3 at a time)
+    const needsLookup = rawResults.filter(r => !r.address && r.defendant);
+    for (let i = 0; i < Math.min(needsLookup.length, 20); i += 3) {
+      const batch = needsLookup.slice(i, i+3);
+      const addrs = await Promise.all(batch.map(r => lookupPlutoByOwner(r.defendant)));
+      batch.forEach((r, bi) => { if (addrs[bi]) r.address = addrs[bi]; });
+    }
+
+    rawResults.sort((a,b) => b.dateFiled.localeCompare(a.dateFiled));
+    return json({ mode, total: rawResults.length, results: rawResults });
 
   } else if (mode === "pacer_trend") {
     // 10-year ZIP-level trend — annual foreclosure counts from PACER
