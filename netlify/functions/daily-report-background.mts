@@ -200,18 +200,33 @@ const PACER_PCL_URL  = "https://pcl.uscourts.gov/pcl/api/cases";
 async function getPacerToken(): Promise<string|null> {
   const user = process.env.PACER_USERNAME;
   const pass = process.env.PACER_PASSWORD;
-  if (!user || !pass) return null;
+  if (!user || !pass) { console.log("PACER env vars missing"); return null; }
   try {
     const r = await fetch(PACER_AUTH_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify({ loginId: user, password: pass, clientCode: "rshark" }),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(10000),
     });
-    if (!r.ok) return null;
-    const d = await r.json();
-    return d?.loginResult?.nextGenCSO || d?.nextGenCSO || null;
-  } catch { return null; }
+    console.log("PACER auth status:", r.status);
+    if (!r.ok) {
+      const err = await r.text().catch(()=>"");
+      console.log("PACER auth error:", err.slice(0,200));
+      return null;
+    }
+    // Token returned in JSON body AND as a cookie
+    const d = await r.json().catch(()=>null);
+    const token = d?.loginResult?.nextGenCSO || d?.nextGenCSO || null;
+    // Also try to extract from Set-Cookie header
+    const cookie = r.headers.get("set-cookie") || "";
+    const cookieToken = cookie.match(/nextGenCSO=([^;]+)/)?.[1] || null;
+    const finalToken = token || cookieToken;
+    console.log("PACER token obtained:", !!finalToken);
+    return finalToken;
+  } catch(e) {
+    console.log("PACER auth exception:", (e as Error).message?.slice(0,100));
+    return null;
+  }
 }
 
 type PacerCase = {
@@ -241,10 +256,16 @@ async function fetchPacerForeclosures(token: string): Promise<PacerCase[]> {
         const r = await fetch(`${PACER_PCL_URL}?${params}`, {
           headers: {
             "X-NEXT-GEN-CSO": token,
+            "Cookie": `nextGenCSO=${token}`,
+            "Content-Type": "application/json",
             "Accept": "application/json",
           },
           signal: AbortSignal.timeout(10000),
         });
+        if (!r.ok) {
+          console.log(`PACER PCL ${court} nos=${nos} status: ${r.status}`);
+          continue;
+        }
         if (!r.ok) continue;
         const d = await r.json();
         const cases = d?.cases || d?.content || [];
@@ -318,7 +339,7 @@ export default async function handler() {
     pacerCases = await fetchPacerForeclosures(pacerToken);
     console.log(`PACER: ${pacerCases.length} federal foreclosure cases fetched`);
   } else {
-    console.log("PACER: no credentials set (add PACER_USERNAME + PACER_PASSWORD to Netlify env vars)");
+    console.log("PACER: auth failed — check PACER_USERNAME/PACER_PASSWORD and ensure MFA is disabled on your PACER account");
   }
 
   for (const ZIP of ZIPS) {
