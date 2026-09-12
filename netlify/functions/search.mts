@@ -414,6 +414,83 @@ export default async (req: Request, _ctx: Context) => {
     } catch(e) {
       return json({ error: `Foreclosure search failed: ${(e as Error).message}`.slice(0,160) }, 502);
     }
+  } else if (mode === "pacer") {
+    // Live PACER search — federal foreclosure cases
+    const token = await pacerToken();
+    if (!token) return json({ error: "PACER credentials not configured or auth failed." }, 503);
+
+    const court = u.get("court") || "all";
+    const days  = Math.min(Number(u.get("days") || "90"), 365);
+    const since = new Date(Date.now() - days * 86400000).toISOString().slice(0,10);
+
+    const courtIds: Record<string,string[]> = {
+      all:   ["nysdc","nyedc"],
+      nysdc: ["nysdc"],
+      nyedc: ["nyedc"],
+    };
+    const courtNames: Record<string,string> = { nysdc:"SDNY (Manhattan)", nyedc:"EDNY (Brooklyn/Queens)" };
+    const ids = courtIds[court] || ["nysdc","nyedc"];
+
+    const results: any[] = [];
+    for (const cid of ids) {
+      const cases = await pacerSearch(token, [cid], since);
+      for (const c of cases) {
+        results.push({
+          caseTitle:   c.caseTitle || "",
+          caseNumber:  c.caseNumberFull || c.caseNumber || "",
+          dateFiled:   c.dateFiled || "",
+          court:       courtNames[cid] || cid,
+          natureOfSuit: "Foreclosure (220)",
+          caseLink:    c.caseLink || "",
+        });
+      }
+    }
+    results.sort((a,b) => b.dateFiled.localeCompare(a.dateFiled));
+    return json({ mode, total: results.length, results });
+
+  } else if (mode === "pacer_trend") {
+    // 10-year ZIP-level trend — annual foreclosure counts from PACER
+    const token = await pacerToken();
+    if (!token) return json({ error: "PACER credentials not configured." }, 503);
+
+    const zips  = (u.get("zips") || "").split(",").map(z=>z.trim()).filter(z=>/^\d{5}$/.test(z)).slice(0,5);
+    const yearsRaw = (u.get("years") || "").split(",").map(Number).filter(Boolean);
+    if (!zips.length) return json({ error: "No valid ZIPs provided." }, 400);
+
+    // Map ZIP → court district
+    const zipToCourt = (zip: string): string[] => {
+      const n = Number(zip);
+      // Manhattan/Westchester → SDNY; Brooklyn/Queens/LI → EDNY
+      if ((n>=10001&&n<=10282)||(n>=10451&&n<=10475)) return ["nysdc"];
+      if ((n>=11001&&n<=11699)||(n>=11201&&n<=11256)) return ["nyedc"];
+      return ["nysdc","nyedc"]; // default both
+    };
+
+    const data: Record<string, Record<number,number>> = {};
+    for (const zip of zips) {
+      data[zip] = {};
+      const courts = zipToCourt(zip);
+      for (const yr of yearsRaw) {
+        const from = `${yr}-01-01`;
+        const to   = `${yr}-12-31`;
+        let count = 0;
+        for (const cid of courts) {
+          const r = await fetch(PACER_PCL, {
+            method: "POST",
+            headers: { "Content-Type":"application/json","Accept":"application/json","X-NEXT-GEN-CSO": token },
+            body: JSON.stringify({ natureOfSuit:["220"], courtId:[cid], dateFiledFrom:from, dateFiledTo:to, jurisdictionType:"cv" }),
+            signal: AbortSignal.timeout(10000),
+          });
+          if (!r.ok) continue;
+          const d = await r.json().catch(()=>null);
+          count += d?.pageInfo?.totalElements || 0;
+        }
+        data[zip][yr] = count;
+        await new Promise(r=>setTimeout(r,200)); // rate limit courtesy
+      }
+    }
+    return json({ mode, zips, years: yearsRaw, data });
+
   } else {
     return json({ error: "Unknown search mode." }, 400);
   }
@@ -448,5 +525,41 @@ export default async (req: Request, _ctx: Context) => {
 
   return json({ mode, count: results.length, results });
 };
+
+// ── PACER Federal Foreclosure Search modes ───────────────────────────────────
+// Called from the owner-only Federal tab in R Shark.
+// Authenticates with PACER and searches for foreclosure cases.
+
+const PACER_AUTH = "https://pacer.login.uscourts.gov/services/cso-auth";
+const PACER_PCL  = "https://pcl.uscourts.gov/pcl-public-api/rest/cases/find";
+
+async function pacerToken(): Promise<string|null> {
+  const user = process.env.PACER_USERNAME;
+  const pass = process.env.PACER_PASSWORD;
+  if (!user || !pass) return null;
+  try {
+    const r = await fetch(PACER_AUTH, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ loginId: user, password: pass, clientCode: "rshark" }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!r.ok) return null;
+    const d = await r.json().catch(()=>null);
+    return d?.loginResult?.nextGenCSO || d?.nextGenCSO || null;
+  } catch { return null; }
+}
+
+async function pacerSearch(token: string, courtId: string[], dateFrom: string): Promise<any[]> {
+  const r = await fetch(PACER_PCL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json", "X-NEXT-GEN-CSO": token },
+    body: JSON.stringify({ natureOfSuit: ["220"], courtId, dateFiledFrom: dateFrom, jurisdictionType: "cv" }),
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!r.ok) return [];
+  const d = await r.json().catch(()=>null);
+  return d?.content || [];
+}
 
 export const config: Config = { path: "/api/search" };
