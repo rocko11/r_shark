@@ -1676,11 +1676,12 @@ async function runPacer() {
           </tr></thead>
           <tbody>
             ${d.results.map(c => `
-              <tr style="border-bottom:1px solid var(--line);cursor:default" title="${esc(c.caseNumber||'')}">
+              <tr style="border-bottom:1px solid var(--line);cursor:default">
                 <td style="padding:11px 12px">
-                  <div style="color:var(--chrome);font-size:14px;font-weight:600">${esc(c.caseTitle||'—')}</div>
+                  ${c.address ? `<div style="color:var(--shark);font-size:15px;font-weight:700;margin-bottom:3px">📍 ${esc(c.address)}</div>` : ''}
+                  <div style="color:var(--chrome);font-size:13px;font-weight:600">${esc(c.caseTitle||'—')}</div>
                   <div style="color:var(--ink-2);font-size:11px;margin-top:2px;font-family:var(--mono)">${esc(c.caseNumber||'')} · ${esc(c.natureOfSuit||'')}</div>
-                  ${c.caseLink ? `<a href="${esc(c.caseLink)}" target="_blank" rel="noopener" style="color:var(--shark);font-size:11px">View on PACER →</a>` : ''}
+                  ${c.caseLink ? `<a href="${esc(c.caseLink)}" target="_blank" rel="noopener" style="color:var(--shark);font-size:11px;margin-top:3px;display:inline-block">View on PACER →</a>` : ''}
                 </td>
                 <td style="padding:11px 12px;color:var(--shark);font-size:12px;white-space:nowrap">${esc(c.court||'')}</td>
                 <td style="padding:11px 12px;color:var(--ink-2);font-size:12px;text-align:right;white-space:nowrap;font-family:var(--mono)">${esc((c.dateFiled||'').slice(0,10))}</td>
