@@ -170,6 +170,7 @@ type Prop = {
   bbl: string; address: string; zip: string;
   lien_stage: "none"|"active"|"final_sale";
   lien_type: string; lien_years: Set<number>;
+  lien_latest_month: string; lien_cycle: string;
   lis_pendens: boolean;
   hpd_c: number; ecb_balance: number;
   lot_area: number|null; bldg_class: string|null; year_built: string|null;
@@ -177,6 +178,7 @@ type Prop = {
   owner: string|null;
   score: number; signals: string[]; why: string;
   estate_type: "none"|"estate"|"executor"|"irrevocable_trust"|"trustee";
+  bank_owned: boolean;    // REO — bank holds title after foreclosure
   joint_ownership: boolean;  // two individuals jointly own (potential couple)
   stalled_jobs: number;      // open construction jobs that are stalled/suspended/on-hold
   stop_work_orders: number;  // active stop work orders from DOB
@@ -185,10 +187,139 @@ type Prop = {
 
 type Sale = { address: string; amount: number; date: string; bbl: string };
 
+// ── PACER: Federal Foreclosure Cases ────────────────────────────────────────
+// Queries the PACER Case Locator (PCL) API for active Real Property foreclosure
+// cases in SDNY (Manhattan/Westchester) and EDNY (Brooklyn/Queens/LI).
+// Requires PACER_USERNAME + PACER_PASSWORD env vars.
+// Cost: $0.10/page but case searches return up to 54 results per page — typically
+// less than $1/day for a daily scan.
+
+const PACER_AUTH_URL = "https://pacer.uscourts.gov/services/cso-auth";
+const PACER_PCL_URL  = "https://pcl.uscourts.gov/pcl/api/cases";
+
+async function getPacerToken(): Promise<string|null> {
+  const user = process.env.PACER_USERNAME;
+  const pass = process.env.PACER_PASSWORD;
+  if (!user || !pass) return null;
+  try {
+    const r = await fetch(PACER_AUTH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ loginId: user, password: pass, clientCode: "rshark" }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d?.loginResult?.nextGenCSO || d?.nextGenCSO || null;
+  } catch { return null; }
+}
+
+type PacerCase = {
+  caseTitle: string;
+  caseNumber: string;
+  dateFiled: string;
+  court: string;
+  natureOfSuit: string;
+};
+
+async function fetchPacerForeclosures(token: string): Promise<PacerCase[]> {
+  // Nature of suit 220 = Foreclosure, 290 = All Other Real Property
+  // Courts: nyed = Eastern District NY (Brooklyn/Queens), nysd = Southern (Manhattan)
+  const courts = ["nyed", "nysd"];
+  const results: PacerCase[] = [];
+  const since = new Date(Date.now() - 90 * 24 * 3600000).toISOString().slice(0,10); // last 90 days
+
+  for (const court of courts) {
+    for (const nos of ["220","290"]) {
+      try {
+        const params = new URLSearchParams({
+          court, natureOfSuit: nos,
+          dateFiledStart: since,
+          courtType: "DI", // District courts
+          pageNumber: "1", recordsPerPage: "54",
+        });
+        const r = await fetch(`${PACER_PCL_URL}?${params}`, {
+          headers: {
+            "X-NEXT-GEN-CSO": token,
+            "Accept": "application/json",
+          },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!r.ok) continue;
+        const d = await r.json();
+        const cases = d?.cases || d?.content || [];
+        for (const c of cases) {
+          results.push({
+            caseTitle: c.caseTitle || c.caseName || "",
+            caseNumber: c.caseNumberFull || c.caseNumber || "",
+            dateFiled: c.dateFiled || c.dateFiledFull || "",
+            court: court === "nyed" ? "EDNY (Brooklyn/Queens)" : "SDNY (Manhattan)",
+            natureOfSuit: nos === "220" ? "Foreclosure" : "Real Property",
+          });
+        }
+      } catch (_) { /* best-effort */ }
+    }
+  }
+  return results.sort((a,b) => b.dateFiled.localeCompare(a.dateFiled)).slice(0, 50);
+}
+
+// Compute human-readable auction date info from the lien cycle and notice date.
+// The NYC annual lien sale follows a fixed sequence ending in May/June.
+// cycle: 90 Day → 60 Day → 30 Day → 10 Day → Final Sale
+// Typical timeline: 90-day notice in Feb, auction in June (4 months later).
+function auctionInfo(cycle: string, latestMonth: string): { label: string; urgency: "sold"|"imminent"|"soon"|"watch" } {
+  if (!cycle) return { label: "", urgency: "watch" };
+  const c = cycle.toUpperCase();
+  const noticeDate = latestMonth ? new Date(latestMonth) : null;
+
+  if (c.includes("FINAL SALE")) {
+    // Lien was sold — find out when
+    const saleYear = noticeDate ? noticeDate.getFullYear() : new Date().getFullYear();
+    const saleMonth = noticeDate ? noticeDate.toLocaleDateString("en-US",{month:"long",year:"numeric"}) : `${saleYear}`;
+    return { label: `Lien sold at auction — ${saleMonth}`, urgency: "sold" };
+  }
+  if (c.includes("10 DAY") || c.includes("10DAYS")) {
+    return { label: "⏰ 10-Day Notice — auction days away", urgency: "imminent" };
+  }
+  if (c.includes("30 DAY") || c.includes("30DAYS")) {
+    return { label: "⚠️ 30-Day Notice — auction ~1 month away", urgency: "imminent" };
+  }
+  if (c.includes("60 DAY") || c.includes("60DAYS")) {
+    // Estimate auction: notice date + 3 months
+    if (noticeDate) {
+      const auctionEst = new Date(noticeDate);
+      auctionEst.setMonth(auctionEst.getMonth() + 3);
+      const est = auctionEst.toLocaleDateString("en-US",{month:"long",year:"numeric"});
+      return { label: `60-Day Notice — auction est. ${est}`, urgency: "soon" };
+    }
+    return { label: "60-Day Notice — auction ~2 months away", urgency: "soon" };
+  }
+  if (c.includes("90 DAY") || c.includes("90DAYS")) {
+    if (noticeDate) {
+      const auctionEst = new Date(noticeDate);
+      auctionEst.setMonth(auctionEst.getMonth() + 4);
+      const est = auctionEst.toLocaleDateString("en-US",{month:"long",year:"numeric"});
+      return { label: `90-Day Notice — auction est. ${est}`, urgency: "watch" };
+    }
+    return { label: "90-Day Notice — auction ~3 months away", urgency: "watch" };
+  }
+  return { label: cycle, urgency: "watch" };
+}
+
 export default async function handler() {
   if (!process.env.RESEND_API_KEY) { console.log("RESEND_API_KEY not set"); return; }
   if (!process.env.REPORT_EMAIL_TO) { console.log("REPORT_EMAIL_TO not set"); return; }
   console.log(`R Shark daily scan — ZIPs: ${ZIPS.join(", ")}`);
+
+  // Fetch PACER federal foreclosure cases once (covers all boroughs)
+  let pacerCases: PacerCase[] = [];
+  const pacerToken = await getPacerToken();
+  if (pacerToken) {
+    pacerCases = await fetchPacerForeclosures(pacerToken);
+    console.log(`PACER: ${pacerCases.length} federal foreclosure cases fetched`);
+  } else {
+    console.log("PACER: no credentials set (add PACER_USERNAME + PACER_PASSWORD to Netlify env vars)");
+  }
 
   for (const ZIP of ZIPS) {
     console.log(`\n── ZIP ${ZIP} ──`);
@@ -222,13 +353,14 @@ export default async function handler() {
     const get = (bbl: string, addr: string): Prop => {
       if (!props.has(bbl)) props.set(bbl, {
         bbl, address: addr, zip: ZIP,
-        lien_stage:"none", lien_type:"", lien_years:new Set(),
+        lien_stage:"none", lien_type:"", lien_years:new Set(), lien_latest_month:"", lien_cycle:"",
         lis_pendens: false,
         hpd_c:0, ecb_balance:0,
         lot_area:null, bldg_class:null, year_built:null,
         num_bldgs:null, assess_tot:null, owner:null,
         score:0, signals:[], why:"",
         estate_type: "none",
+        bank_owned: false,
         joint_ownership: false,
         stalled_jobs: 0, stop_work_orders: 0, dob_violations: 0,
       });
@@ -244,7 +376,14 @@ export default async function handler() {
       if (isFinal) p.lien_stage = "final_sale";
       else if (p.lien_stage !== "final_sale") p.lien_stage = "active";
       p.lien_type = String(r.water_debt_only||"").toUpperCase()==="YES" ? "Water/sewer lien" : "Tax lien";
-      if (r.month) p.lien_years.add(new Date(r.month).getFullYear());
+      if (r.month) {
+        p.lien_years.add(new Date(r.month).getFullYear());
+        // Track the latest (most recent) notice date and its cycle
+        if (!p.lien_latest_month || r.month > p.lien_latest_month) {
+          p.lien_latest_month = r.month;
+          p.lien_cycle = String(r.cycle||"");
+        }
+      }
     }
     // HPD Class C
     for (const r of hpdRows) {
@@ -313,6 +452,13 @@ export default async function handler() {
           const parts = n.split(/ AND | & /);
           if (parts.length === 2 && parts.every(p => p.trim().length > 3 && !/LLC|CORP|INC/.test(p)))
             p.joint_ownership = true;
+        }
+
+        // Detect bank/lender ownership — REO (Real Estate Owned) after foreclosure
+        // Banks that commonly hold NYC REO: major servicers + GSEs
+        const BANK_RE = /\bBANK\b|\bN\.A\.|NATIONAL ASSOC|WELLS FARGO|CITIBANK|JPMORGAN|CHASE|BANK OF AMERICA|U\.S\. BANK|DEUTSCHE BANK|FLAGSTAR|NATIONSTAR|OCWEN|SPECIALIZED LOAN|SELENE FINANCE|FANNIE MAE|FREDDIE MAC|FEDERAL NATIONAL|FEDERAL HOME LOAN|FNMA|FHLMC|MTGLQ|MORTGAGE LLC|PHH MORTGAGE|CARRINGTON MORTGAGE|NEWREZ|SHELLPOINT/;
+        if (BANK_RE.test(n) && !/LLC OF BANK/.test(n)) {
+          p.bank_owned = true;
         }
 
         // Also check if "DIVORCED" appears explicitly (from ACRIS deed transfer)
@@ -391,8 +537,28 @@ export default async function handler() {
       let s = 0; const sig: string[] = [];
 
       // Financial distress
-      if (p.lien_stage === "final_sale") { s += 40; sig.push("⚠️ Lien SOLD at auction"); }
-      else if (p.lien_stage === "active") { s += 20; sig.push(p.lien_type); }
+      // NOTE: Active pre-auction notices rank HIGHER than Final Sale.
+      // Final Sale = lien already sold to a third-party investor — less actionable
+      // for a direct owner deal. Pre-auction = owner still reachable, motivated.
+      const ai = auctionInfo(p.lien_cycle, p.lien_latest_month);
+      const lienicle = (p.lien_cycle||"").toUpperCase();
+      if (p.lien_stage === "final_sale") {
+        // Lien sold — still distressed but less useful for direct negotiation
+        s += 15;  // was 40 — demoted because lien is already owned by third party
+        sig.push("⚠️ " + (ai.label || "Lien SOLD at auction — approach owner, not lien buyer"));
+      } else if (p.lien_stage === "active") {
+        // Pre-auction — score based on how close to auction (more urgent = higher score)
+        if (lienicle.includes("10 DAY") || lienicle.includes("10DAYS")) {
+          s += 40; // highest — auction days away, owner desperate
+        } else if (lienicle.includes("30 DAY") || lienicle.includes("30DAYS")) {
+          s += 35;
+        } else if (lienicle.includes("60 DAY") || lienicle.includes("60DAYS")) {
+          s += 28;
+        } else {
+          s += 22; // 90-day or unknown — still pre-auction, good window
+        }
+        sig.push(p.lien_type + (ai.label ? " · " + ai.label : ""));
+      }
       if (p.lien_type === "Water/sewer lien") { s += 10; sig.push("No water usage — likely vacant"); }
       if (p.lien_years.size >= 3)      { s += 15; sig.push(`Chronic: on lien list ${p.lien_years.size} years`); }
       else if (p.lien_years.size === 2) { s += 8;  sig.push("On lien list 2 years"); }
@@ -431,6 +597,12 @@ export default async function handler() {
         s += 8; sig.push("📋 Irrevocable trust — often indicates owner incapacitated or deceased");
       } else if (p.estate_type === "trustee") {
         s += 3; sig.push("📋 Held in trust");
+      }
+
+      // Bank-owned REO — lender holds title, motivated to sell at loan balance or less
+      if (p.bank_owned) {
+        s += 25; // Banks don't want real estate — they want to be repaid
+        sig.push("🏦 Bank-owned REO — lender took title after foreclosure");
       }
 
       // Joint individual ownership — potential couple, higher motivation when combined with distress
@@ -488,6 +660,10 @@ export default async function handler() {
         p.why = `${p.hpd_c} immediately hazardous violations — liability mounting. Owner risks DHCR action.`;
       else if (p.ecb_balance > 10000)
         p.why = `$${p.ecb_balance.toLocaleString()} in unpaid city fines — compounds and can result in judgment liens.`;
+      else if (p.bank_owned && p.lien_stage !== "none")
+        p.why = "Bank-owned REO + active tax lien — double motivation. Banks accept discounts to avoid compounding carrying costs.";
+      else if (p.bank_owned)
+        p.why = "Bank-owned REO — lender took title after foreclosure. Banks are not in the real estate business; they accept discounts to recover loan balance.";
       else if (p.joint_ownership && p.lien_stage !== "none")
         p.why = "Joint owners with tax/water lien — two people splitting carrying costs. Disagreements on who pays accelerate motivation to sell.";
       else if (p.joint_ownership && (p.hpd_c > 2 || p.ecb_balance > 5000))
@@ -509,18 +685,27 @@ export default async function handler() {
       return `<span style="background:${c};color:#0A0E14;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px">${s} ${lbl}</span>`;
     };
 
-    const tableRows = top.map((p,i)=>`
+    const tableRows = top.map((p,i)=>{
+      const ai = auctionInfo(p.lien_cycle, p.lien_latest_month);
+      const auctionColor = ai.urgency==="imminent"?"#FF4B3E":ai.urgency==="soon"?"#FFB03A":ai.urgency==="sold"?"#8A97A8":"#2FE0C6";
+      const auctionBlock = ai.label ? `
+        <div style="margin-top:6px;padding:5px 10px;background:rgba(47,224,198,.08);border-left:3px solid ${auctionColor};border-radius:0 4px 4px 0">
+          <span style="color:${auctionColor};font-size:12px;font-weight:700">📅 ${ai.label}</span>
+        </div>` : "";
+      return `
       <tr style="border-bottom:1px solid #1C2532;vertical-align:top">
         <td style="padding:14px 8px;text-align:center;color:#8A97A8;font-size:13px;white-space:nowrap">${i+1}</td>
         <td style="padding:14px 8px">
           <a href="https://rshark.net/?bbl=${p.bbl}" style="color:#EAF0F6;font-weight:700;font-size:15px;text-decoration:none">${p.address||p.bbl}</a>
           ${p.owner?`<span style="color:#8A97A8;font-size:12px"> · ${p.owner}</span>`:""}
           <div style="color:#2FE0C6;font-size:12px;margin-top:5px;font-style:italic">${p.why}</div>
+          ${auctionBlock}
           <div style="margin-top:6px">${p.signals.map(sig=>`<span style="background:#1C2532;color:#8A97A8;font-size:11px;padding:2px 8px;border-radius:4px;margin:2px 2px 2px 0;display:inline-block">${sig}</span>`).join("")}</div>
           <div style="color:#8A97A8;font-size:11px;margin-top:5px">BBL: ${p.bbl}${p.bldg_class?` · Class ${p.bldg_class}`:""}${p.year_built&&p.year_built!="0"?` · Built ${p.year_built}`:""}${p.lot_area?` · ${p.lot_area.toLocaleString()} sf`:""}</div>
         </td>
         <td style="padding:14px 8px;text-align:right;white-space:nowrap">${scoreBar(p.score)}</td>
-      </tr>`).join("");
+      </tr>`;
+    }).join("");
 
     const salesRows = recentSales.length ? recentSales.map(s=>`
       <tr style="border-bottom:1px solid #1C2532">
@@ -633,8 +818,37 @@ export default async function handler() {
     </table>
   </div>
 
+  ${pacerCases.length > 0 ? `
+  <!-- PACER Federal Foreclosure Cases -->
+  <div style="background:#141B26;border-radius:12px;overflow:hidden;margin-bottom:24px">
+    <div style="padding:12px 16px;border-bottom:1px solid #28323F">
+      <span style="color:#8A97A8;font-size:11px;text-transform:uppercase;letter-spacing:.08em">🏛️ Federal Foreclosure Cases — PACER (SDNY + EDNY)</span>
+      <span style="float:right;color:#FF4B3E;font-size:11px">${pacerCases.length} active cases · last 90 days</span>
+    </div>
+    <div style="padding:8px 16px;color:#8A97A8;font-size:12px;border-bottom:1px solid #1C2532">
+      Federal foreclosure actions filed in Southern District (Manhattan/Westchester) and Eastern District (Brooklyn/Queens/Long Island). These are bank-initiated actions — the lender is forcing a sale. Contact the property owner directly while the case is pending.
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="border-bottom:1px solid #28323F">
+        <th style="padding:8px;color:#8A97A8;font-size:11px;text-align:left">Case</th>
+        <th style="padding:8px;color:#8A97A8;font-size:11px;text-align:left">Court</th>
+        <th style="padding:8px;color:#8A97A8;font-size:11px;text-align:right;white-space:nowrap">Filed</th>
+      </tr></thead>
+      <tbody>
+        ${pacerCases.slice(0,20).map(c=>`<tr style="border-bottom:1px solid #1C2532">
+          <td style="padding:10px 8px">
+            <div style="color:#EAF0F6;font-size:13px;font-weight:600">${c.caseTitle||"—"}</div>
+            <div style="color:#8A97A8;font-size:11px;margin-top:2px">${c.caseNumber} · ${c.natureOfSuit}</div>
+          </td>
+          <td style="padding:10px 8px;color:#2FE0C6;font-size:12px;white-space:nowrap">${c.court}</td>
+          <td style="padding:10px 8px;color:#8A97A8;font-size:11px;text-align:right;white-space:nowrap">${c.dateFiled?.slice(0,10)||"—"}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>
+  </div>` : ""}
+
   <p style="color:#28323F;font-size:11px;text-align:center;margin-top:20px">
-    R Shark · All data from NYC public records + StreetEasy. Informational only — not legal or investment advice. Verify before acting.
+    R Shark · NYC public records + StreetEasy + PACER federal courts. Informational only — not legal or investment advice. Verify before acting.
   </p>
 </div></body></html>`;
 
@@ -658,7 +872,7 @@ export default async function handler() {
 
 export const config: Config = {
   path: "/api/run-report",
-  background: true,  // 15-minute timeout, returns 202 immediately
+  background: true,
 };
 
 // Background functions (-background suffix) get 15 minutes and return 202
