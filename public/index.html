@@ -463,6 +463,7 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
   <div class="tabs" id="tabs">
     <button class="tab tab-on" data-tab="report" onclick="showTab('report')">Property report</button>
     <button class="tab" data-tab="search" onclick="showTab('search')">Hunt properties</button>
+    <button class="tab" data-tab="pacer" id="tab-pacer" onclick="showTab('pacer')" style="display:none">🏛️ Federal</button>
   </div>
 
   <div id="panel-report">
@@ -1641,6 +1642,142 @@ out.innerHTML = `
        or paste a BBL.</p>
   </div>`;
 
+// ── PACER Federal Foreclosure Search (owner-only tab) ──────────────────────
+
+async function runPacer() {
+  const out = document.getElementById('pacer-out');
+  const court = document.getElementById('pacer-court').value;
+  const days = document.getElementById('pacer-days').value;
+  out.innerHTML = '<p class="loading">Querying PACER federal courts…</p>';
+
+  try {
+    const p = new URLSearchParams({ mode: 'pacer', court, days });
+    const r = await fetch('/api/search?' + p.toString());
+    const d = await r.json();
+
+    if (d.error) { out.innerHTML = `<div class="err">${esc(d.error)}</div>`; return; }
+    if (!d.results?.length) { out.innerHTML = '<div class="empty"><p>No federal foreclosure cases found for this period.</p></div>'; return; }
+
+    const courtLabel = { all:'SDNY + EDNY', nysdc:'SDNY (Manhattan)', nyedc:'EDNY (Brooklyn/Queens)' }[court] || court;
+    out.innerHTML = `
+      <div style="background:var(--steel);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;align-items:center">
+          <span style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)">🏛️ Federal Foreclosures — ${esc(courtLabel)}</span>
+          <span style="color:var(--shark);font-size:12px;font-weight:700">${d.total || d.results.length} cases</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="border-bottom:1px solid var(--rule)">
+            <th style="padding:9px 12px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);text-align:left">Case</th>
+            <th style="padding:9px 12px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);text-align:left">Court</th>
+            <th style="padding:9px 12px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);text-align:right">Filed</th>
+          </tr></thead>
+          <tbody>
+            ${d.results.map(c => `
+              <tr style="border-bottom:1px solid var(--line);cursor:default" title="${esc(c.caseNumber||'')}">
+                <td style="padding:11px 12px">
+                  <div style="color:var(--chrome);font-size:14px;font-weight:600">${esc(c.caseTitle||'—')}</div>
+                  <div style="color:var(--ink-2);font-size:11px;margin-top:2px;font-family:var(--mono)">${esc(c.caseNumber||'')} · ${esc(c.natureOfSuit||'')}</div>
+                  ${c.caseLink ? `<a href="${esc(c.caseLink)}" target="_blank" rel="noopener" style="color:var(--shark);font-size:11px">View on PACER →</a>` : ''}
+                </td>
+                <td style="padding:11px 12px;color:var(--shark);font-size:12px;white-space:nowrap">${esc(c.court||'')}</td>
+                <td style="padding:11px 12px;color:var(--ink-2);font-size:12px;text-align:right;white-space:nowrap;font-family:var(--mono)">${esc((c.dateFiled||'').slice(0,10))}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  } catch(e) {
+    out.innerHTML = `<div class="err">PACER search failed: ${esc(e.message)}</div>`;
+  }
+}
+
+async function runPacerTrend() {
+  const trend = document.getElementById('pacer-trend');
+  const raw = document.getElementById('pacer-zips').value;
+  const zips = raw.split(/[,\s]+/).map(z=>z.trim()).filter(z=>/^\d{5}$/.test(z));
+  if (!zips.length) { trend.innerHTML = '<div class="err">Enter at least one 5-digit ZIP code.</div>'; return; }
+
+  trend.innerHTML = '<p class="loading">Pulling 10-year foreclosure data from PACER…</p>';
+
+  // Query each year 2015–2024 for each ZIP
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({length:10}, (_,i) => currentYear - 10 + i + 1); // last 10 full years
+
+  try {
+    const p = new URLSearchParams({ mode: 'pacer_trend', zips: zips.join(','), years: years.join(',') });
+    const r = await fetch('/api/search?' + p.toString());
+    const d = await r.json();
+
+    if (d.error) { trend.innerHTML = `<div class="err">${esc(d.error)}</div>`; return; }
+
+    // Render inline SVG chart
+    const data = d.data; // { zip: { year: count } }
+    if (!data) { trend.innerHTML = '<div class="empty"><p>No trend data returned.</p></div>'; return; }
+
+    const colors = ['#2FE0C6','#FF4B3E','#FFB03A','#9B59B6','#3498DB'];
+    const allCounts = Object.values(data).flatMap(yd => Object.values(yd));
+    const maxVal = Math.max(...allCounts, 1);
+    const W = 600, H = 260, padL = 45, padB = 32, padT = 20, padR = 20;
+    const chartW = W - padL - padR;
+    const chartH = H - padB - padT;
+    const xStep = chartW / (years.length - 1);
+
+    const lines = zips.map((zip, zi) => {
+      const yd = data[zip] || {};
+      const pts = years.map((yr, xi) => {
+        const v = yd[yr] || 0;
+        const x = padL + xi * xStep;
+        const y = padT + chartH - (v / maxVal) * chartH;
+        return `${x},${y}`;
+      });
+      return `<polyline points="${pts.join(' ')}" fill="none" stroke="${colors[zi%colors.length]}" stroke-width="2.5" stroke-linejoin="round"/>
+              ${years.map((yr, xi) => {
+        const v = yd[yr]||0;
+        const x = padL + xi * xStep;
+        const y = padT + chartH - (v/maxVal)*chartH;
+        return `<circle cx="${x}" cy="${y}" r="4" fill="${colors[zi%colors.length]}" title="${yr}: ${v}"/>
+                <title>${yr}: ${v} cases</title>`;
+      }).join('')}`;
+    });
+
+    // Y axis labels
+    const yTicks = [0, Math.round(maxVal/4), Math.round(maxVal/2), Math.round(3*maxVal/4), maxVal];
+    const yLabels = yTicks.map(v => {
+      const y = padT + chartH - (v/maxVal)*chartH;
+      return `<line x1="${padL-4}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#1C2532" stroke-width="1"/>
+              <text x="${padL-8}" y="${y+4}" text-anchor="end" fill="#8A97A8" font-size="10" font-family="monospace">${v}</text>`;
+    }).join('');
+
+    // X axis labels
+    const xLabels = years.map((yr, xi) => {
+      const x = padL + xi * xStep;
+      return `<text x="${x}" y="${H-8}" text-anchor="middle" fill="#8A97A8" font-size="10" font-family="monospace">${yr}</text>`;
+    }).join('');
+
+    // Legend
+    const legend = zips.map((zip, zi) => 
+      `<rect x="${padL + zi*90}" y="${H-2}" width="12" height="12" fill="${colors[zi%colors.length]}" rx="2"/>
+       <text x="${padL + zi*90 + 16}" y="${H+9}" fill="#EAF0F6" font-size="11" font-family="monospace">${zip}</text>`
+    ).join('');
+
+    trend.innerHTML = `
+      <div style="background:var(--steel);border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin-top:8px">
+        <div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin-bottom:14px">
+          📊 Federal Foreclosures by ZIP — ${years[0]}–${years[years.length-1]}
+        </div>
+        <svg viewBox="0 0 ${W} ${H+20}" width="100%" style="overflow:visible;max-width:${W}px">
+          ${yLabels}
+          <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT+chartH}" stroke="#28323F" stroke-width="1.5"/>
+          <line x1="${padL}" y1="${padT+chartH}" x2="${W-padR}" y2="${padT+chartH}" stroke="#28323F" stroke-width="1.5"/>
+          ${xLabels}
+          ${lines.join('')}
+          ${legend}
+        </svg>
+      </div>`;
+  } catch(e) {
+    trend.innerHTML = `<div class="err">Trend fetch failed: ${esc(e.message)}</div>`;
+  }
+}
+
 // ---------- Browser back/forward navigation between properties ----------
 // When the user presses Back or Forward, restore the property that was showing.
 window.addEventListener('popstate', function(e) {
@@ -1674,6 +1811,11 @@ function applyAuthState(user) {
     gSignin.style.display  = '';
     gPending.style.display = 'none';
     return;
+  }
+  // Show PACER tab only for the app owner
+  const pacerTab = document.getElementById('tab-pacer');
+  if (pacerTab) {
+    pacerTab.style.display = (user && user.email === 'roeipaz@gmail.com') ? '' : 'none';
   }
   if (user.confirmed_at) {
     gate.classList.add('hidden');
@@ -1740,5 +1882,51 @@ if (signOutBtn) signOutBtn.onclick = () => {
   applyAuthState(getStoredUser());
 })();
 </script>
+
+<!-- ── PACER Federal Foreclosure Tab (Roei-only, gated) ── -->
+<div id="panel-pacer" class="wrap" hidden>
+  <div style="margin-bottom:18px">
+    <!-- Controls row -->
+    <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      <div class="sfield" style="margin:0">
+        <label>Court</label>
+        <select id="pacer-court" style="font-size:14px">
+          <option value="all">SDNY + EDNY (both)</option>
+          <option value="nysdc">SDNY — Manhattan</option>
+          <option value="nyedc">EDNY — Brooklyn / Queens</option>
+        </select>
+      </div>
+      <div class="sfield" style="margin:0">
+        <label>Filed within</label>
+        <select id="pacer-days" style="font-size:14px">
+          <option value="90">Last 90 days</option>
+          <option value="180">Last 6 months</option>
+          <option value="365">Last year</option>
+        </select>
+      </div>
+      <button class="sgo" onclick="runPacer()" style="margin:0;padding:10px 20px">Search PACER →</button>
+    </div>
+
+    <!-- 10-year trend row -->
+    <div style="background:var(--steel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px">
+      <div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--shark);margin-bottom:10px">📊 10-Year Foreclosure Trend — Compare ZIPs</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div class="sfield" style="margin:0;flex:1;min-width:180px">
+          <label>ZIP codes (comma-separated)</label>
+          <input id="pacer-zips" placeholder="11238, 11206, 11221" onkeydown="if(event.key==='Enter')runPacerTrend()" style="width:100%">
+        </div>
+        <button class="sgo" onclick="runPacerTrend()" style="margin:0;padding:10px 20px">Compare →</button>
+      </div>
+      <p class="hint" style="margin:8px 0 0">Pulls annual foreclosure counts from PACER for each ZIP across the last 10 years. Shows which neighborhoods are trending up or down.</p>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="pacer-out"></div>
+
+  <!-- Trend chart -->
+  <div id="pacer-trend"></div>
+</div>
+
 </body>
 </html>
