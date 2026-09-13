@@ -458,20 +458,32 @@ export default async (req: Request, _ctx: Context) => {
     // Enrich with PLUTO address lookup for defendant party name
     async function lookupPlutoByOwner(defendant: string): Promise<string> {
       if (!defendant || defendant.length < 4) return "";
-      // Clean up: remove "ET AL", "LLC", common suffixes for cleaner search
+      // Clean: remove "ET AL", entity suffixes
       const clean = defendant
-        .replace(/\s+ET AL\.?$/i, "").replace(/\s*,\s*LLC.*$/i, "").replace(/\s+LLC$/i, "")
-        .replace(/\s+CORP\.?$/i, "").replace(/\s+INC\.?$/i, "").trim();
+        .replace(/\s+ET AL\.?$/i, "")
+        .replace(/,\s*(LLC|CORP|INC|LTD|LP|L\.P\.|TRUST).*$/i, "")
+        .replace(/\s+(LLC|CORP|INC|LTD|LP|TRUST)$/i, "")
+        .trim();
       if (clean.length < 4) return "";
+      const upper = clean.toUpperCase().replace(/'/g, "''");
       try {
-        const enc = encodeURIComponent(clean.toUpperCase().slice(0, 40));
-        const r = await fetch(
-          `${PLUTO}?$select=address,zipcode&$where=upper(ownername) like '${clean.toUpperCase().replace(/'/g,"''").slice(0,35)}%25'&$limit=1`,
+        // Try exact match first (more reliable)
+        const r1 = await fetch(
+          `${PLUTO}?$select=address,zipcode,ownername&$where=upper(ownername)='${upper.slice(0,60)}'&$limit=1`,
           { signal: AbortSignal.timeout(4000) }
         );
-        if (!r.ok) return "";
-        const rows = await r.json();
-        if (rows?.[0]?.address) return `${rows[0].address}${rows[0].zipcode ? " ("+rows[0].zipcode+")" : ""}`;
+        if (r1.ok) {
+          const rows1 = await r1.json();
+          if (rows1?.[0]?.address) return `${rows1[0].address}${rows1[0].zipcode ? " ("+rows1[0].zipcode+")" : ""}`;
+        }
+        // Fallback: starts-with match
+        const r2 = await fetch(
+          `${PLUTO}?$select=address,zipcode&$where=upper(ownername) like '${upper.slice(0,30)}%25'&$limit=1`,
+          { signal: AbortSignal.timeout(4000) }
+        );
+        if (!r2.ok) return "";
+        const rows2 = await r2.json();
+        if (rows2?.[0]?.address) return `${rows2[0].address}${rows2[0].zipcode ? " ("+rows2[0].zipcode+")" : ""}`;
       } catch {}
       return "";
     }
