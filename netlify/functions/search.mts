@@ -497,10 +497,20 @@ export default async (req: Request, _ctx: Context) => {
       }
     }
 
-    // For cases with no address from title, try PLUTO lookup (batched, 3 at a time)
-    const needsLookup = rawResults.filter(r => !r.address && r.defendant);
-    for (let i = 0; i < Math.min(needsLookup.length, 20); i += 3) {
+    // For cases with no address from title, try:
+    // 1. PACER party search (gets defendant address from court records) — most accurate
+    // 2. PLUTO owner name lookup — fallback for NYC properties
+    const needsLookup = rawResults.filter(r => !r.address);
+    // Batch PACER party lookups (max 15 to keep under timeout)
+    for (let i = 0; i < Math.min(needsLookup.length, 15); i += 3) {
       const batch = needsLookup.slice(i, i+3);
+      const addrs = await Promise.all(batch.map(r => pacerPartyAddress(token, r.caseNumber)));
+      batch.forEach((r, bi) => { if (addrs[bi]) r.address = addrs[bi]; });
+    }
+    // For any still without address, try PLUTO by owner name
+    const stillNeeds = rawResults.filter(r => !r.address && r.defendant);
+    for (let i = 0; i < Math.min(stillNeeds.length, 20); i += 3) {
+      const batch = stillNeeds.slice(i, i+3);
       const addrs = await Promise.all(batch.map(r => lookupPlutoByOwner(r.defendant)));
       batch.forEach((r, bi) => { if (addrs[bi]) r.address = addrs[bi]; });
     }
@@ -608,6 +618,33 @@ async function pacerToken(): Promise<string|null> {
     const d = await r.json().catch(()=>null);
     return d?.loginResult?.nextGenCSO || d?.nextGenCSO || null;
   } catch { return null; }
+}
+
+// Fetch party details (including address) for a specific case
+async function pacerPartyAddress(token: string, caseId: string): Promise<string> {
+  try {
+    const r = await fetch("https://pcl.uscourts.gov/pcl-public-api/rest/parties/find", {
+      method: "POST",
+      headers: { "Content-Type":"application/json","Accept":"application/json","X-NEXT-GEN-CSO":token },
+      body: JSON.stringify({ caseNumberFull: caseId }),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!r.ok) return "";
+    const d = await r.json();
+    // Find defendant party and their address
+    const parties: any[] = d?.content || [];
+    // Look for defendant roles (dft = defendant) and their address
+    for (const p of parties) {
+      const role = (p.partyRole||"").toLowerCase();
+      if (role.includes("dft") || role.includes("defendant") || role === "res") {
+        // Address fields: address1, address2, city, state, zip
+        const addr = [p.address1, p.address2, p.city, p.state, p.zip]
+          .filter(Boolean).join(", ");
+        if (addr && addr.length > 5) return addr;
+      }
+    }
+    return "";
+  } catch { return ""; }
 }
 
 async function pacerSearch(token: string, courtId: string[], dateFrom: string): Promise<any[]> {
