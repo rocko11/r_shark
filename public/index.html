@@ -48,6 +48,8 @@ body{
   font-family:var(--body);
   font-size:15px;
   line-height:1.5;
+  overscroll-behavior-y:none;
+  -webkit-overflow-scrolling:touch;
   -webkit-font-smoothing:antialiased;
   /* deep-water gradient: a faint teal glow rising from the depths */
   background-image:
@@ -55,7 +57,7 @@ body{
     radial-gradient(900px 500px at 0% 100%, rgba(47,224,198,.05), transparent 55%);
   background-attachment:fixed;
 }
-.wrap{max-width:1040px;margin:0 auto;padding:0 20px 96px}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px 96px;-webkit-overflow-scrolling:touch}
 /* Report + search sit on raised steel panels. */
 #out, .empty{background:var(--steel);border:1px solid var(--line);border-radius:14px;
   padding:26px 26px;margin-top:16px;box-shadow:0 20px 60px rgba(0,0,0,.45)}
@@ -346,7 +348,6 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
 @media (max-width:600px){
   .cell{border-right:none}
   .flag{flex-direction:column;gap:3px}
-  /* Tables become stacked records — a 5-column table at 390px is unreadable. */
   table.stack thead{display:none}
   table.stack tr{display:block;border-bottom:1px solid var(--rule);padding:9px 0}
   table.stack td{display:block;border:none;padding:1px 0;text-align:left}
@@ -354,7 +355,58 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
   table.stack td[data-l]::before{content:attr(data-l);font-family:var(--mono);
     font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);
     display:block;margin-top:5px}
+
+  /* Layout */
+  .wrap{padding:0 12px 80px}
+  .mast{flex-direction:row;align-items:center;padding:10px 0 6px;gap:8px;flex-wrap:nowrap}
+  .fin{width:40px;height:31px;flex:none}
+  .wordmark{font-size:24px;letter-spacing:-.01em;white-space:nowrap}
+  .tagline{display:none}
+  .mast-meta{flex-direction:column;align-items:flex-end;gap:4px;margin-left:auto;flex-shrink:0}
+  .mast-meta > span{display:none}
+  .run-report-btn{font-size:10px;padding:5px 10px;white-space:nowrap}
+  /* Hide desktop tabs — replaced by bottom nav */
+  .tabs{display:none}
+  /* Inputs: 16px prevents iOS auto-zoom */
+  .sfield input,.sfield select,#q{font-size:16px !important}
+  .sfield input,.sfield select{min-width:0;width:100%}
+  /* Forms: single column */
+  .sfilters{grid-template-columns:1fr}
+  /* Mode buttons: horizontal scroll */
+  .smodes{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    padding-bottom:6px;gap:6px;scrollbar-width:none}
+  .smodes::-webkit-scrollbar{display:none}
+  .smode{white-space:nowrap;flex-shrink:0}
+  /* Search rows */
+  .srow{padding:14px 12px;gap:8px}
+  .srow .a{font-size:15px}
+  /* Report panels */
+  #out,.empty{padding:16px 14px;border-radius:10px}
+  .flag-grid,.reclinks,.taxgrid{grid-template-columns:1fr !important}
+
+  /* ── Scroll fix: prevent iOS from snapping back to top ── */
+  html{overscroll-behavior-y:contain;height:100%}
+  body{height:auto;min-height:100%}
+  #panel-report,#panel-search,#panel-pacer{will-change:scroll-position}
+
+  /* ── Mobile bottom navigation bar ── */
+  #mobile-nav{
+    display:flex;position:fixed;bottom:0;left:0;right:0;
+    background:rgba(10,14,20,.97);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+    border-top:1px solid var(--line);z-index:200;
+    padding:6px 0 max(6px,env(safe-area-inset-bottom));
+  }
+  .mnav-btn{
+    flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+    background:none;border:none;cursor:pointer;padding:5px 0;
+    font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-2);transition:color .15s;
+    -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  }
+  .mnav-btn.active{color:var(--shark)}
+  .mnav-btn svg{width:22px;height:22px}
 }
+@media(min-width:601px){#mobile-nav{display:none}}
 @media (prefers-reduced-motion:no-preference){
   .grow{transform-origin:left;animation:grow .55s cubic-bezier(.2,.8,.3,1) both}
   @keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
@@ -1180,7 +1232,17 @@ function render(d) {
       ${d.provenance?.sources_failed && Object.keys(d.provenance.sources_failed).length
         ? ` · ${Object.keys(d.provenance.sources_failed).length} source(s) unavailable: ${esc(Object.keys(d.provenance.sources_failed).join(", "))}`
         : " · all sources responded"}</p>`;
-  window.scrollTo({top: 0, behavior: "smooth"});
+  // Only scroll to top when switching tabs, not on every re-render.
+  // On mobile, scrolling to top disrupts reading — skip it entirely.
+  if (window.innerWidth > 600) {
+    window.scrollTo({top: 0, behavior: "smooth"});
+  } else {
+    // On mobile: only scroll to top if we just switched TO the report tab
+    const reportPanel = document.getElementById('panel-report');
+    if (reportPanel && !reportPanel.hidden && document.getElementById('out').scrollTop > 0) {
+      document.getElementById('out').scrollTop = 0;
+    }
+  }
   lastReport = d;
   if (hasGeo && window.L) initBlockMap(lat, lng, d.bbl);
 }
@@ -1313,10 +1375,13 @@ async function initBlockMap(lat, lng, selfBbl) {
 // Clicking a neighbour pin loads that lot through the normal report path.
 function loadBBL(bbl) {
   q.value = bbl;
-  // Only switch tab if we're not already on the report panel — avoids
-  // collapsing the Leaflet map container mid-click (which eats the event).
-  if (document.getElementById('panel-report').hidden) showTab('report');
+  const wasHidden = document.getElementById('panel-report').hidden;
+  if (wasHidden) showTab('report');
   run();
+  // On mobile: scroll the output area to top when loading a new property
+  if (window.innerWidth <= 600) {
+    setTimeout(() => { document.getElementById('out')?.scrollIntoView({behavior:'smooth', block:'start'}); }, 100);
+  }
 }
 
 /* ---------- tabs ---------- */
@@ -1644,6 +1709,12 @@ out.innerHTML = `
        <button class="link" onclick="q.value='1 Bedford Ave Brooklyn';run()">1 Bedford Ave</button>,
        or paste a BBL.</p>
   </div>`;
+
+function mnavActive(id) {
+  document.querySelectorAll('.mnav-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById(id);
+  if (btn) btn.classList.add('active');
+}
 
 // ── PACER Federal Foreclosure Search (owner-only tab) ──────────────────────
 
@@ -1999,7 +2070,50 @@ if (signOutBtn) signOutBtn.onclick = () => {
 
   <!-- Trend chart -->
   <div id="pacer-trend"></div>
+
+  <!-- NYC Auction Calendar -->
+  <div style="background:var(--steel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-top:14px">
+    <div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--shark);margin-bottom:10px">📋 NYC Foreclosure Auction Calendar</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <div class="sfield" style="margin:0">
+        <label>Borough</label>
+        <select id="auction-boro" style="font-size:14px">
+          <option value="all">All boroughs</option>
+          <option value="kings">Brooklyn (Kings County)</option>
+          <option value="queens">Queens County</option>
+          <option value="manhattan">Manhattan (NY County)</option>
+          <option value="bronx">Bronx County</option>
+          <option value="richmond">Staten Island</option>
+        </select>
+      </div>
+      <button class="sgo" onclick="runAuctions()" style="margin:0;padding:10px 20px">Get Auctions →</button>
+    </div>
+    <p class="hint" style="margin:8px 0 0">Live auction schedule: exact date, time, property address, courthouse location, and attorney contact.</p>
+  </div>
+  <div id="auction-out" style="margin-top:14px"></div>
 </div>
+
+<!-- Mobile bottom navigation (hidden on desktop) -->
+<nav id="mobile-nav">
+  <button class="mnav-btn active" id="mnav-report" onclick="showTab('report');mnavActive('mnav-report')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+    </svg>
+    Report
+  </button>
+  <button class="mnav-btn" id="mnav-hunt" onclick="showTab('search');mnavActive('mnav-hunt')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    Hunt
+  </button>
+  <button class="mnav-btn" id="mnav-daily" onclick="triggerDailyReport()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+    </svg>
+    Daily
+  </button>
+</nav>
 
 </body>
 </html>
