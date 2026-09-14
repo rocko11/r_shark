@@ -573,6 +573,144 @@ export default async (req: Request, _ctx: Context) => {
     }
     return json({ mode, zips, years: yearsRaw, data });
 
+  } else if (mode === "auctions") {
+    // Scrape NYC foreclosure auction listings from law firm calendars
+    // Primary source: Roach & Lin (most comprehensive NYC foreclosure auction list)
+    // Returns: property address, auction date/time, location, case details, attorney
+    
+    const borough = u.get("borough") || "all"; // kings, queens, manhattan, bronx, richmond
+    const limit = Math.min(Number(u.get("limit")||"100"), 200);
+
+    // Borough keywords for filtering
+    const BORO_LOCATIONS: Record<string,string[]> = {
+      kings:     ["KINGS COUNTY", "BROOKLYN", "360 ADAMS"],
+      queens:    ["QUEENS COUNTY", "SUTPHIN BOULEVARD", "JAMAICA, NY"],
+      manhattan: ["NEW YORK COUNTY", "60 CENTRE STREET", "MANHATTAN"],
+      bronx:     ["BRONX COUNTY", "GRAND CONCOURSE"],
+      richmond:  ["RICHMOND COUNTY", "STATEN ISLAND"],
+      all:       [],
+    };
+    const boroKeywords = BORO_LOCATIONS[borough] || [];
+
+    // Fetch and parse Roach & Lin auction calendar (most comprehensive NYC source)
+    async function scrapeRoachLin(): Promise<any[]> {
+      try {
+        const pages = ["https://www.roachlin.com/fc-sales/", "https://www.roachlin.com/fc-sales/page/2/"];
+        const results: any[] = [];
+        for (const url of pages) {
+          const r = await fetch(url, {
+            headers: { "User-Agent": "Mozilla/5.0 (compatible; RShark/1.0)" },
+            signal: AbortSignal.timeout(10000),
+          });
+          if (!r.ok) continue;
+          const html = await r.text();
+          
+          // Each auction entry follows the pattern: DATE, TIME: PLAINTIFF v. DEFENDANT, INDEX NO., PREMISES: ADDRESS, FORECLOSURE SALE LOCATION: LOCATION
+          // Also check for CANCELLED/POSTPONED prefix
+          const entryPattern = /(?:(\(CANCELLED\)|\(POSTPONED[^)]*\))\s*)?((?:JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\s+\d+,\s*\d{4},\s*\d+:\d+\s*(?:AM|PM)):\s*(.+?)(?=(?:JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\s+\d+,\s*\d{4}|$)/gis;
+          
+          // Simpler approach: split by date patterns
+          const stripped = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+          
+          // Find all entries using a line-by-line approach
+          // Pattern: "MONTH DAY, YEAR, TIME: ... PREMISES: ADDRESS ... FORECLOSURE SALE LOCATION: LOCATION"
+          const dateRegex = /((?:JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\s+\d{1,2},\s*\d{4},\s*\d{1,2}:\d{2}\s*(?:AM|PM)):/gi;
+          const positions: number[] = [];
+          let m;
+          while ((m = dateRegex.exec(stripped)) !== null) positions.push(m.index);
+
+          for (let i = 0; i < positions.length; i++) {
+            const chunk = stripped.slice(positions[i], positions[i+1] || positions[i]+800);
+            
+            // Status
+            const beforeChunk = stripped.slice(Math.max(0, positions[i]-30), positions[i]);
+            const cancelled = /CANCELLED/i.test(beforeChunk);
+            const postponed = beforeChunk.match(/POSTPONED[^))]*/i)?.[0]?.trim() || "";
+            
+            // Parse date/time
+            const dateMatch = chunk.match(/((?:JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\s+\d{1,2},\s*\d{4}),\s*(\d{1,2}:\d{2}\s*(?:AM|PM))/i);
+            if (!dateMatch) continue;
+            const auctionDate = dateMatch[1].trim();
+            const auctionTime = dateMatch[2].trim();
+
+            // Parse premises (property address)
+            const premisesMatch = chunk.match(/PREMISES?:\s*([^,]+(?:,\s*[^,]+)?(?:,\s*NY\s+\d{5})?)/i);
+            const address = premisesMatch?.[1]?.trim() || "";
+
+            // Parse sale location
+            const locationMatch = chunk.match(/FORECLOSURE SALE LOCATION:\s*([^(]+(?:\([^)]+\))?[^,]*(?:,\s*[^\d]*(?:\d+[^,]+)?)?)/i);
+            const location = locationMatch?.[1]?.trim().replace(/\s+/g, ' ') || "";
+
+            // Parse case title (between time and INDEX NO or PREMISES)
+            const caseTitleMatch = chunk.match(/(?:AM|PM):\s*(.+?)(?:INDEX NO|PREMISES|$)/i);
+            const caseTitle = caseTitleMatch?.[1]?.replace(/,\s*$/, '').trim() || "";
+
+            // Parse index number
+            const indexMatch = chunk.match(/INDEX NO\.?:\s*([\w/]+)/i);
+            const indexNo = indexMatch?.[1]?.trim() || "";
+
+            // Filter by borough if specified
+            if (boroKeywords.length > 0) {
+              const locUpper = location.toUpperCase();
+              const addrUpper = address.toUpperCase();
+              const matches = boroKeywords.some(k => locUpper.includes(k) || addrUpper.includes(k));
+              if (!matches) continue;
+            }
+
+            // Only future or current auctions (skip dates more than 30 days ago)
+            const parsedDate = new Date(auctionDate);
+            const cutoff = new Date(Date.now() - 30 * 86400000);
+            if (parsedDate < cutoff) continue;
+
+            results.push({
+              date:         auctionDate,
+              time:         auctionTime,
+              status:       cancelled ? "CANCELLED" : postponed ? "POSTPONED" : "SCHEDULED",
+              postponed_to: postponed,
+              address:      address,
+              location:     location,
+              case_title:   caseTitle,
+              index_no:     indexNo,
+              attorney:     "Roach & Lin, P.C.",
+              attorney_phone: "516-938-3100",
+              attorney_email: "info@roachlin.com",
+              source:       url,
+            });
+          }
+        }
+        return results;
+      } catch(e) {
+        console.log("Roach & Lin scrape error:", (e as Error).message?.slice(0,100));
+        return [];
+      }
+    }
+
+    const allAuctions = await scrapeRoachLin();
+    
+    // Sort by date ascending (soonest first)
+    allAuctions.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    const scheduled = allAuctions.filter(a => a.status === "SCHEDULED");
+    const cancelled = allAuctions.filter(a => a.status !== "SCHEDULED");
+
+    return json({
+      mode,
+      borough,
+      total: allAuctions.length,
+      scheduled: scheduled.length,
+      cancelled: cancelled.length,
+      next_auction: scheduled[0] || null,
+      results: allAuctions.slice(0, limit),
+      // Venue info for context
+      venues: {
+        kings:     "Kings County Supreme Court, Room 224, 360 Adams St, Brooklyn — Thursdays 2:30 PM",
+        queens:    "Queens County Supreme Courthouse, Courtroom 25, 88-11 Sutphin Blvd, Jamaica — Fridays 10:00 AM",
+        manhattan: "NY County Courthouse, Room 252, 60 Centre St, Manhattan",
+        bronx:     "Bronx Supreme Court, 851 Grand Concourse",
+        richmond:  "Richmond County Courthouse, Room 112, 18 Richmond Terrace, Staten Island",
+      },
+    });
+
   } else {
     return json({ error: "Unknown search mode." }, 400);
   }
