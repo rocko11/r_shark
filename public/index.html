@@ -40,6 +40,34 @@
   --body:"Archivo",system-ui,-apple-system,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,monospace;
 }
+
+/* ── Light theme — toggled by data-theme="light" on <html> ── */
+[data-theme="light"]{
+  --abyss:#F2F5F8;
+  --steel:#FFFFFF;
+  --steel-2:#E6EBF1;
+  --line:#CDD4DE;
+  --chrome:#0D1117;
+  --fog:#5A6679;
+  --shark:#0E9E89;
+  --shark-deep:#0A7A6A;
+  --blood:#D93025;
+  --amber:#C87800;
+  --paper:#F2F5F8;
+  --paper-2:#FFFFFF;
+  --ink:#0D1117;
+  --ink-2:#5A6679;
+  --rule:#CDD4DE;
+  --rule-2:#CDD4DE;
+  --iron:#D93025;
+  --slate:#0E9E89;
+  --ochre:#C87800;
+  --moss:#0A7A6A;
+}
+[data-theme="light"] body{background:#F2F5F8}
+[data-theme="light"] #mobile-nav{background:rgba(242,245,248,.97)}
+[data-theme="light"] #auth-gate{background:#F2F5F8;background-image:radial-gradient(1200px 600px at 80% -10%,rgba(14,158,137,.07),transparent 60%)}
+
 *{box-sizing:border-box}
 html,body{margin:0}
 body{
@@ -509,6 +537,7 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
     <div class="mast-meta" style="display:flex;align-items:center;gap:14px">
       <span>Address in. Deal out.</span>
       <button class="run-report-btn no-print" onclick="triggerDailyReport()" title="Run your daily motivated seller report now">⚡ Run Report</button>
+      <button id="theme-toggle" onclick="toggleTheme()" title="Switch light/dark mode" style="background:none;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;padding:5px 8px;font-size:14px;line-height:1;color:var(--fog);transition:color .15s,border-color .15s" onmouseenter="this.style.borderColor='var(--shark)'" onmouseleave="this.style.borderColor='var(--line)'">🌙</button>
     </div>
   </header>
 
@@ -1921,6 +1950,32 @@ async function runAuctions() {
     out.innerHTML = `<div class="err">Auction scrape failed: ${esc(e.message)}</div>`;
   }
 }
+
+// ── Theme toggle (light / dark) ────────────────────────────────────────────
+function toggleTheme() {
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const next = isLight ? 'dark' : 'light';
+  applyTheme(next);
+  try { localStorage.setItem('rshark_theme', next); } catch(_){}
+}
+function applyTheme(theme) {
+  if (theme === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.textContent = '☀️';
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.textContent = '🌙';
+  }
+}
+// Apply saved theme on load
+(function(){
+  try {
+    const saved = localStorage.getItem('rshark_theme');
+    if (saved) applyTheme(saved);
+  } catch(_){}
+})();
 
 // ---------- Browser back/forward navigation between properties ----------
 // When the user presses Back or Forward, restore the property that was showing.
