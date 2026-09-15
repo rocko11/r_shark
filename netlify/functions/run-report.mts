@@ -881,6 +881,131 @@ export default async function handler() {
   </p>
 </div></body></html>`;
 
+    // Light-theme version of the same email
+const htmlLight = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#F2F5F8;font-family:system-ui,sans-serif">
+<div style="max-width:720px;margin:0 auto;padding:32px 16px">
+
+  <!-- Header -->
+  <table style="width:100%;margin-bottom:8px"><tr>
+    <td><table><tr>
+      <td style="padding-right:12px"><svg width="44" height="34" viewBox="0 0 110 84">
+        <path d="M72 52 C 56 50,44 42,41 14 C 30 30,22 42,16 52 C 30 52,52 52,72 52Z" fill="#0E9E89"/>
+        <path d="M 14 6 C 12 20,13 38,12 62" fill="none" stroke="#000000" stroke-width="8.5" stroke-linecap="round"/>
+        <path d="M 14 6 C 26 1,58 4,68 20 C 78 36,66 52,14 52" fill="none" stroke="#000000" stroke-width="8.5" stroke-linecap="round"/>
+        <path d="M 36 52 C 58 56,80 60,98 64" fill="none" stroke="#000000" stroke-width="7.5" stroke-linecap="round"/>
+        <path d="M 98 64 C 103 60,104 54,100 50" fill="none" stroke="#000000" stroke-width="5.5" stroke-linecap="round"/>
+      </svg></td>
+      <td><span style="color:#0D1117;font-size:26px;font-weight:700;letter-spacing:-0.02em">R SHARK</span></td>
+    </tr></table></td>
+    <td style="text-align:right;color:#5A6679;font-size:13px;vertical-align:bottom">
+      ZIP ${ZIP} · ${BORO_NAME[BORO]||""}<br>${today}
+    </td>
+  </tr></table>
+
+  <!-- Stats strip -->
+  <div style="background:#FFFFFF;border-radius:10px;padding:16px 20px;margin-bottom:20px">
+    <table style="width:100%"><tr>
+      <td style="color:#0D1117;font-size:14px"><strong>ZIP ${ZIP}</strong> · ${props.size.toLocaleString()} distressed properties</td>
+      <td style="text-align:right">
+        <span style="background:#D93025;color:#F2F5F8;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700">${top.filter(p=>p.score>=60).length} HOT</span>&nbsp;
+        <span style="background:#C87800;color:#F2F5F8;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700">${top.filter(p=>p.score>=35&&p.score<60).length} WATCH</span>
+      </td>
+    </tr></table>
+  </div>
+
+  <!-- Score key -->
+  <div style="margin-bottom:14px;font-size:11px;color:#5A6679">
+    <strong>Score model:</strong>
+    Lien at auction (+40) · Active lien (+20) · Lis pendens/foreclosure (+35) · Chronic 3yr lien (+15) ·
+    HPD Class C (+5 each) · ECB fines (+$1k) · Stop Work Order (+30) · Stalled permit (+20) · Vacant lot (+15) · Large lot (+5) · Low assessed value (+5)
+  </div>
+
+  <!-- Motivated sellers table -->
+  <div style="background:#FFFFFF;border-radius:12px;overflow:hidden;margin-bottom:28px">
+    <div style="padding:12px 16px;border-bottom:1px solid #CDD4DE;color:#5A6679;font-size:11px;text-transform:uppercase;letter-spacing:.08em">
+      Top ${top.length} Motivated Sellers — ranked by seller pressure score
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="border-bottom:1px solid #CDD4DE">
+        <th style="padding:10px 8px;color:#5A6679;font-size:11px;text-transform:uppercase;text-align:center">#</th>
+        <th style="padding:10px 8px;color:#5A6679;font-size:11px;text-transform:uppercase;text-align:left">Property · Why They'll Sell</th>
+        <th style="padding:10px 8px;color:#5A6679;font-size:11px;text-transform:uppercase;text-align:right">Score</th>
+      </tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+  </div>
+
+  <!-- Live listings: what's ON MARKET right now -->
+  <div style="background:#FFFFFF;border-radius:12px;overflow:hidden;margin-bottom:16px">
+    <div style="padding:12px 16px;border-bottom:1px solid #CDD4DE">
+      <span style="color:#5A6679;font-size:11px;text-transform:uppercase;letter-spacing:.08em">🏠 Active Listings — StreetEasy</span>
+      ${liveTotal>0?`<span style="float:right;color:#0E9E89;font-size:11px">${liveTotal.toLocaleString()} active · ${liveMedian?'median $'+liveMedian.toLocaleString():''}</span>`:''}
+    </div>
+    <div style="padding:8px 16px;color:#5A6679;font-size:12px;border-bottom:1px solid #EDF0F4">
+      What asking prices look like <em>right now</em>. Compare against your distressed leads to gauge the discount you're getting.
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="border-bottom:1px solid #CDD4DE">
+        <th style="padding:8px;color:#5A6679;font-size:11px;text-align:left">Listing (StreetEasy)</th>
+        <th style="padding:8px;color:#5A6679;font-size:11px;text-align:right">Ask Price</th>
+        <th style="padding:8px;color:#5A6679;font-size:11px;text-align:right">Days on Mkt</th>
+      </tr></thead>
+      <tbody>${liveRows}</tbody>
+    </table>
+  </div>
+
+  <!-- Closed sales: what's actually transacted -->
+  <div style="background:#FFFFFF;border-radius:12px;overflow:hidden;margin-bottom:24px">
+    <div style="padding:12px 16px;border-bottom:1px solid #CDD4DE;color:#5A6679;font-size:11px;text-transform:uppercase;letter-spacing:.08em">
+      📋 Recent Closed Sales — ACRIS (last 6 months)
+    </div>
+    <div style="padding:8px 16px;color:#5A6679;font-size:12px;border-bottom:1px solid #EDF0F4">
+      Actual recorded deed transfers. This is what buyers actually paid — not ask prices. Use to anchor your offer logic.
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="border-bottom:1px solid #CDD4DE">
+        <th style="padding:8px;color:#5A6679;font-size:11px;text-align:left">Address</th>
+        <th style="padding:8px;color:#5A6679;font-size:11px;text-align:right">Closed Price</th>
+        <th style="padding:8px;color:#5A6679;font-size:11px;text-align:right">Date</th>
+      </tr></thead>
+      <tbody>${salesRows}</tbody>
+    </table>
+  </div>
+
+  ${pacerCases.length > 0 ? `
+  <!-- PACER Federal Foreclosure Cases -->
+  <div style="background:#FFFFFF;border-radius:12px;overflow:hidden;margin-bottom:24px">
+    <div style="padding:12px 16px;border-bottom:1px solid #CDD4DE">
+      <span style="color:#5A6679;font-size:11px;text-transform:uppercase;letter-spacing:.08em">🏛️ Federal Foreclosure Cases — PACER (SDNY + EDNY)</span>
+      <span style="float:right;color:#D93025;font-size:11px">${pacerCases.length} active cases · last 90 days</span>
+    </div>
+    <div style="padding:8px 16px;color:#5A6679;font-size:12px;border-bottom:1px solid #EDF0F4">
+      Federal foreclosure actions filed in Southern District (Manhattan/Westchester) and Eastern District (Brooklyn/Queens/Long Island). These are bank-initiated actions — the lender is forcing a sale. Contact the property owner directly while the case is pending.
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="border-bottom:1px solid #CDD4DE">
+        <th style="padding:8px;color:#5A6679;font-size:11px;text-align:left">Case</th>
+        <th style="padding:8px;color:#5A6679;font-size:11px;text-align:left">Court</th>
+        <th style="padding:8px;color:#5A6679;font-size:11px;text-align:right;white-space:nowrap">Filed</th>
+      </tr></thead>
+      <tbody>
+        ${pacerCases.slice(0,20).map(c=>`<tr style="border-bottom:1px solid #EDF0F4">
+          <td style="padding:10px 8px">
+            <div style="color:#0D1117;font-size:13px;font-weight:600">${c.caseTitle||"—"}</div>
+            <div style="color:#5A6679;font-size:11px;margin-top:2px">${c.caseNumber} · ${c.natureOfSuit}</div>
+          </td>
+          <td style="padding:10px 8px;color:#0E9E89;font-size:12px;white-space:nowrap">${c.court}</td>
+          <td style="padding:10px 8px;color:#5A6679;font-size:11px;text-align:right;white-space:nowrap">${c.dateFiled?.slice(0,10)||"—"}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>
+  </div>` : ""}
+
+  <p style="color:#CDD4DE;font-size:11px;text-align:center;margin-top:20px">
+    R Shark · NYC public records + StreetEasy + PACER federal courts. Informational only — not legal or investment advice. Verify before acting.
+  </p>
+</div></body></html>`;
+
     // ── 10. Send ──────────────────────────────────────────────────────────────
     const res = await fetch(RESEND, {
       method:"POST",
@@ -889,7 +1014,8 @@ export default async function handler() {
         from: process.env.REPORT_EMAIL_FROM||"R Shark <reports@rshark.net>",
         to:   [process.env.REPORT_EMAIL_TO!],
         subject: `🦈 ZIP ${ZIP} — ${top.filter(p=>p.score>=60).length} HOT · ${top.length} motivated sellers · ${new Date().toLocaleDateString("en-US",{month:"short",day:"numeric"})}`,
-        html,
+        // REPORT_THEME: "dark" (default), "light", or "both"
+        html: (process.env.REPORT_THEME === "light") ? htmlLight : html,
       }),
     });
     const result = await res.json();
