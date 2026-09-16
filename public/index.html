@@ -65,6 +65,8 @@
   --moss:#0A7A6A;
 }
 [data-theme="light"] body{background:#F2F5F8}
+[data-theme="light"] .fin,
+[data-theme="light"] .gate-fin{color:#000000}  /* R strokes → black on light bg */
 [data-theme="light"] #mobile-nav{background:rgba(242,245,248,.97)}
 [data-theme="light"] #auth-gate{background:#F2F5F8;background-image:radial-gradient(1200px 600px at 80% -10%,rgba(14,158,137,.07),transparent 60%)}
 
@@ -120,7 +122,7 @@ body{
 .mast{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;
       padding:34px 0 22px;margin-bottom:22px;border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:16px}
-.fin{width:144px;height:110px;flex:none;filter:drop-shadow(0 0 32px rgba(47,224,198,.45))}
+.fin{width:144px;height:110px;flex:none;filter:drop-shadow(0 0 32px rgba(47,224,198,.45));color:white}
 .lock{display:flex;flex-direction:column;gap:2px}
 .wordmark{font-family:var(--display);font-weight:700;font-size:clamp(60px,10vw,92px);
           letter-spacing:-.02em;line-height:.95;margin:0;color:var(--chrome)}
@@ -448,7 +450,7 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
     radial-gradient(900px 500px at 0% 100%, rgba(47,224,198,.05), transparent 55%);}
 #auth-gate.hidden{display:none}
 .gate-card{text-align:center;max-width:360px;padding:0 24px}
-.gate-fin{width:110px;height:84px;margin:0 auto 24px;filter:drop-shadow(0 0 32px rgba(47,224,198,.5))}
+.gate-fin{width:110px;height:84px;margin:0 auto 24px;filter:drop-shadow(0 0 32px rgba(47,224,198,.5));color:white}
 .gate-title{font-family:var(--display);font-weight:700;font-size:52px;letter-spacing:-.02em;
   color:var(--chrome);margin:0 0 6px;line-height:1}
 .gate-sub{font-family:var(--body);font-size:16px;color:var(--fog);margin:0 0 40px}
@@ -475,10 +477,10 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
     <svg class="gate-fin" viewBox="0 0 110 84" aria-hidden="true">
       <path d="M72 52 C 56 50, 44 42, 41 14 C 30 30, 22 42, 16 52 C 30 52, 52 52, 72 52 Z" fill="var(--shark)"/>
       <path d="M6 60 C 22 56, 44 56, 60 59 C 74 62, 86 60, 102 57" fill="none" stroke="var(--shark)" stroke-width="3" stroke-linecap="round" opacity=".45"/>
-      <path d="M 14 6 C 12 20, 13 38, 12 62" fill="none" stroke="white" stroke-width="8.5" stroke-linecap="round"/>
-      <path d="M 14 6 C 26 1, 58 4, 68 20 C 78 36, 66 52, 14 52" fill="none" stroke="white" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M 36 52 C 58 56, 80 60, 98 64" fill="none" stroke="white" stroke-width="7.5" stroke-linecap="round"/>
-      <path d="M 98 64 C 103 60, 104 54, 100 50" fill="none" stroke="white" stroke-width="5.5" stroke-linecap="round"/>
+      <path d="M 14 6 C 12 20, 13 38, 12 62" fill="none" stroke="currentColor" stroke-width="8.5" stroke-linecap="round"/>
+      <path d="M 14 6 C 26 1, 58 4, 68 20 C 78 36, 66 52, 14 52" fill="none" stroke="currentColor" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M 36 52 C 58 56, 80 60, 98 64" fill="none" stroke="currentColor" stroke-width="7.5" stroke-linecap="round"/>
+      <path d="M 98 64 C 103 60, 104 54, 100 50" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"/>
     </svg>
     <h1 class="gate-title">R SHARK</h1>
     <p class="gate-sub">The real shark of NYC property.</p>
@@ -518,16 +520,16 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
         <!-- Custom wave-R — all paths hand-drawn, no font used -->
         <!-- Spine: tall left stroke, slight inward flex like a wave body -->
         <path d="M 14 6 C 12 20, 13 38, 12 62"
-              fill="none" stroke="white" stroke-width="8.5" stroke-linecap="round"/>
+              fill="none" stroke="currentColor" stroke-width="8.5" stroke-linecap="round"/>
         <!-- Bowl: rises like a cresting wave — wide arc that peaks high then returns -->
         <path d="M 14 6 C 26 1, 58 4, 68 20 C 78 36, 66 52, 14 52"
-              fill="none" stroke="white" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+              fill="none" stroke="currentColor" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
         <!-- Leg: shoots from bowl junction, sweeps right like a wave running ashore -->
         <path d="M 36 52 C 58 56, 80 60, 98 64"
-              fill="none" stroke="white" stroke-width="7.5" stroke-linecap="round"/>
+              fill="none" stroke="currentColor" stroke-width="7.5" stroke-linecap="round"/>
         <!-- Splash tip: wave lifts upward at the end — not a curl, a rising break -->
         <path d="M 98 64 C 103 60, 104 54, 100 50"
-              fill="none" stroke="white" stroke-width="5.5" stroke-linecap="round"/>
+              fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"/>
       </svg>
       <div class="lock">
         <h1 class="wordmark">SHARK</h1>
@@ -820,10 +822,10 @@ function render(d) {
       <svg viewBox="0 0 110 84" class="report-fin" aria-hidden="true">
         <path d="M72 52 C 56 50, 44 42, 41 14 C 30 30, 22 42, 16 52 C 30 52, 52 52, 72 52 Z" fill="var(--shark)"/>
         <path d="M6 60 C 22 56, 44 56, 60 59 C 74 62, 86 60, 102 57" fill="none" stroke="var(--shark)" stroke-width="3" stroke-linecap="round" opacity=".45"/>
-        <path d="M 14 6 C 12 20, 13 38, 12 62" fill="none" stroke="white" stroke-width="8.5" stroke-linecap="round"/>
-        <path d="M 14 6 C 26 1, 58 4, 68 20 C 78 36, 66 52, 14 52" fill="none" stroke="white" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M 36 52 C 58 56, 80 60, 98 64" fill="none" stroke="white" stroke-width="7.5" stroke-linecap="round"/>
-        <path d="M 98 64 C 103 60, 104 54, 100 50" fill="none" stroke="white" stroke-width="5.5" stroke-linecap="round"/>
+        <path d="M 14 6 C 12 20, 13 38, 12 62" fill="none" stroke="currentColor" stroke-width="8.5" stroke-linecap="round"/>
+        <path d="M 14 6 C 26 1, 58 4, 68 20 C 78 36, 66 52, 14 52" fill="none" stroke="currentColor" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M 36 52 C 58 56, 80 60, 98 64" fill="none" stroke="currentColor" stroke-width="7.5" stroke-linecap="round"/>
+        <path d="M 98 64 C 103 60, 104 54, 100 50" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"/>
       </svg>
       <span class="report-brand-name">SHARK</span>
       <span class="report-brand-sep"></span>
