@@ -10,7 +10,6 @@
 [functions]
   # esbuild bundles the shared netlify/lib/*.ts into each function.
   node_bundler = "esbuild"
-  timeout = 30
 
 # SPA-ish fallback: anything that isn't a function or a real file serves the app.
 [[redirects]]
