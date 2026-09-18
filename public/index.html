@@ -1587,15 +1587,9 @@ async function runSearch() {
     res.innerHTML = `<div style="display:flex;align-items:center;gap:12px;margin:10px 0;flex-wrap:wrap">
         <span class="hint" style="margin:0">${d.count} result${d.count===1?'':'s'} — click any to open its report.</span>
         <button class="sgo" style="margin:0;padding:6px 12px;font-size:11px" onclick="downloadSearchCsv()">⭳ Download to Excel</button>
+        <button class="sgo" id="bulk-skip-btn" style="margin:0;padding:6px 12px;font-size:11px;background:var(--teal);color:#0A0E14" onclick="bulkSkipTrace()">📞 Bulk skip-trace all (${Math.min(d.results.length,50)})</button>
       </div>`
-      + d.results.map(x => `<div class="srow" onclick="loadBBL('${esc(x.bbl)}')">
-          <div><div class="a">${esc(x.address || x.bbl)}</div>
-            <div class="m">${x.fc_stage
-              ? `<span class="neg" style="font-weight:700">${esc(x.fc_stage)}</span>${x.lien_type ? ' · '+esc(x.lien_type) : ''}${x.source && x.source!=='DOF Lien Sale' ? ' · '+esc(x.source) : ''}${x.fc_date ? ' · '+esc(x.fc_date) : ''}`
-              : x.lien_type ? '<span class="neg">' + esc(x.lien_type) + '</span>' + (x.cycle ? ' · ' + esc(x.cycle) : '') : (esc(x.owner || '') + (x.bldg_class ? ' · ' + esc(x.bldg_class) : ''))
-            }${x.zip ? ' · ' + esc(x.zip) : ''}</div></div>
-          <div class="m" style="text-align:right;white-space:nowrap">${x.lot_area ? x.lot_area.toLocaleString() + ' sf' : ''}${x.units_res ? '<br>' + x.units_res + ' units' : ''}${x.year_built ? '<br>built ' + x.year_built : ''}</div>
-        </div>`).join('');
+      + d.results.map(x => renderSearchRow(x)).join('');
   } catch (e) {
     res.innerHTML = '<div class="err">Search failed: ' + esc(String(e)) + '</div>';
   }
@@ -1628,12 +1622,125 @@ async function triggerDailyReport() {
   }
 }
 
+// Render a single Hunt result row, optionally with injected contact data.
+function renderSearchRow(x, contact) {
+  const bbl = esc(x.bbl);
+  const addr = esc(x.address || x.bbl);
+  const distress = x.fc_stage
+    ? `<span class="neg" style="font-weight:700">${esc(x.fc_stage)}</span>${x.lien_type ? ' · '+esc(x.lien_type) : ''}${x.source && x.source!=='DOF Lien Sale' ? ' · '+esc(x.source) : ''}${x.fc_date ? ' · '+esc(x.fc_date) : ''}`
+    : x.lien_type ? '<span class="neg">'+esc(x.lien_type)+'</span>'+(x.cycle?' · '+esc(x.cycle):'') : (esc(x.owner||'')+(x.bldg_class?' · '+esc(x.bldg_class):''));
+  const meta = `${x.lot_area ? x.lot_area.toLocaleString()+' sf' : ''}${x.units_res ? '<br>'+x.units_res+' units' : ''}${x.year_built ? '<br>built '+x.year_built : ''}`;
+
+  let contactHtml = '';
+  if (contact) {
+    if (contact.error) {
+      contactHtml = `<div class="ownnote" style="margin:4px 0 0;color:var(--iron)">Lookup error: ${esc(contact.error)}</div>`;
+    } else if (!contact.hit) {
+      contactHtml = `<div class="ownnote" style="margin:4px 0 0;color:var(--iron)">No match found</div>`;
+    } else {
+      const phones = (contact.phones||[]).map(p => {
+        let s = `<strong>${esc(p.number)}</strong>`;
+        if (p.type) s += ` <span style="color:var(--iron);font-size:10px">${esc(p.type)}</span>`;
+        if (p.dnc) s += ` <span style="color:var(--blood);font-size:10px">DNC</span>`;
+        if (p.litigator) s += ` <span style="color:var(--blood);font-size:10px">TCPA</span>`;
+        return s;
+      }).join(' &nbsp;·&nbsp; ');
+      const emails = (contact.emails||[]).map(e => esc(e)).join(', ');
+      contactHtml = `<div class="ownnote" style="margin:4px 0 0">`;
+      if (contact.owner_name) contactHtml += `<span style="color:var(--fog)">${esc(contact.owner_name)}</span> &nbsp;`;
+      if (phones) contactHtml += phones;
+      if (emails) contactHtml += (phones ? ' &nbsp;·&nbsp; ' : '') + `<span style="color:var(--teal)">${emails}</span>`;
+      if (!phones && !emails) contactHtml += '<span style="color:var(--iron)">No phone/email returned</span>';
+      contactHtml += `</div>`;
+    }
+  }
+
+  return `<div class="srow" id="srow-${bbl}" onclick="loadBBL('${bbl}')">
+    <div style="flex:1;min-width:0">
+      <div class="a">${addr}</div>
+      <div class="m">${distress}${x.zip ? ' · '+esc(x.zip) : ''}</div>
+      ${contactHtml}
+    </div>
+    <div class="m" style="text-align:right;white-space:nowrap;flex-shrink:0">${meta}</div>
+  </div>`;
+}
+
+// Bulk skip-trace all Hunt results (up to 50). Calls /api/skiptrace-bulk, then
+// re-renders each row with the returned contact data inline.
+async function bulkSkipTrace() {
+  const rows = window.__searchResults || [];
+  if (!rows.length) return;
+  const btn = document.getElementById('bulk-skip-btn');
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  const orig = btn.innerText;
+
+  const toTrace = rows.slice(0, 50).map(x => ({
+    bbl: x.bbl,
+    address: x.address || x.bbl,
+    city: /manhattan/i.test(x.borough||'') ? 'New York' : (x.borough || 'Brooklyn'),
+    state: 'NY',
+    zip: x.zip || '',
+  }));
+
+  const est = `~$${(toTrace.length * 0.04).toFixed(2)} if all match`;
+  btn.innerText = `⏳ Running ${toTrace.length} lookups (${est})…`;
+
+  try {
+    const r = await fetch('/api/skiptrace-bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ addresses: toTrace }),
+    });
+    const d = await r.json();
+
+    if (d.enabled === false) {
+      btn.innerText = '⚠ SKIPTRACE_API_KEY not set';
+      btn.disabled = false;
+      return;
+    }
+    if (d.error) throw new Error(d.error);
+
+    // Re-render each row with contact data
+    const contacts = d.results || {};
+    rows.forEach(x => {
+      const el = document.getElementById(`srow-${x.bbl}`);
+      if (!el) return;
+      const contact = contacts[x.bbl] || contacts[x.address];
+      const newHtml = renderSearchRow(x, contact);
+      el.outerHTML = newHtml;
+      // Re-attach click handler (outerHTML replaces the element)
+      const newEl = document.getElementById(`srow-${x.bbl}`);
+      if (newEl) newEl.onclick = () => loadBBL(x.bbl);
+    });
+
+    // Store contacts on results for CSV export
+    window.__searchResults = rows.map(x => ({
+      ...x,
+      _contact: contacts[x.bbl] || contacts[x.address],
+    }));
+
+    const hits = Object.values(contacts).filter(c => c && c.hit).length;
+    const cost = (d.total_cost || 0).toFixed(2);
+    btn.innerText = `✓ ${hits}/${toTrace.length} matched · $${cost} charged`;
+    btn.style.background = 'var(--fog)';
+  } catch (e) {
+    btn.innerText = '✗ Failed: ' + esc(String(e).slice(0,60));
+    btn.style.background = 'var(--blood)';
+    btn.style.color = 'white';
+    setTimeout(() => { btn.innerText = orig; btn.disabled = false; btn.style.background=''; btn.style.color=''; }, 5000);
+    return;
+  }
+  setTimeout(() => { btn.disabled = false; }, 3000);
+}
+
 // Export the current search results as a CSV that opens directly in Excel.
 // No dependencies —
 // builds the file in-browser and triggers a download.
 function downloadSearchCsv() {
   const rows = window.__searchResults || [];
   if (!rows.length) return;
+  const hasContact = rows.some(r => r._contact && r._contact.hit);
   const cols = [
     ["BBL", "bbl"], ["Address", "address"], ["Owner", "owner"],
     ["Building class", "bldg_class"], ["Lot area (sf)", "lot_area"],
@@ -1641,6 +1748,10 @@ function downloadSearchCsv() {
     ["ZIP", "zip"], ["Lien type", "lien_type"], ["Lien cycle", "cycle"],
     ["Foreclosure stage", "fc_stage"], ["Foreclosure date", "fc_date"], ["Source", "source"],
     ["Is condo", "is_condo"],
+    ...(hasContact ? [
+      ["Matched name", "_c_name"], ["Phone 1", "_c_phone1"], ["Phone 2", "_c_phone2"],
+      ["Email 1", "_c_email1"], ["Email 2", "_c_email2"], ["Mailing address", "_c_mailing"],
+    ] : []),
     ["Report URL", null],
   ];
   const q = v => {
@@ -1650,9 +1761,21 @@ function downloadSearchCsv() {
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
   const header = cols.map(c => c[0]).join(",");
-  const body = rows.map(r => cols.map(c =>
-    c[1] === null ? q("https://rshark.netlify.app/?bbl=" + (r.bbl || "")) : q(r[c[1]])
-  ).join(",")).join("\r\n");
+  const body = rows.map(r => {
+    const ct = r._contact && r._contact.hit ? r._contact : null;
+    const extra = {
+      _c_name: ct ? (ct.owner_name || '') : '',
+      _c_phone1: ct && ct.phones && ct.phones[0] ? ct.phones[0].number : '',
+      _c_phone2: ct && ct.phones && ct.phones[1] ? ct.phones[1].number : '',
+      _c_email1: ct && ct.emails && ct.emails[0] ? ct.emails[0] : '',
+      _c_email2: ct && ct.emails && ct.emails[1] ? ct.emails[1] : '',
+      _c_mailing: ct ? (ct.mailing_address || '') : '',
+    };
+    return cols.map(c =>
+      c[1] === null ? q("https://rshark.netlify.app/?bbl=" + (r.bbl || "")) :
+      (c[1].startsWith('_c_') ? q(extra[c[1]]) : q(r[c[1]]))
+    ).join(",");
+  }).join("\r\n");
   const csv = "\uFEFF" + header + "\r\n" + body; // BOM so Excel reads UTF-8 correctly
   const meta = window.__searchMeta || {};
   const stamp = new Date().toISOString().slice(0, 10);
