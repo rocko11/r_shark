@@ -38,7 +38,7 @@ export async function query(
   dataset: string | Dataset, opts: QueryOpts = {},
 ): Promise<any[]> {
   const ds = typeof dataset === "string" ? DATASETS[dataset] : dataset;
-  const { where, select, order, limit = 1000, retries = 2 } = opts;
+  const { where, select, order, limit = 1000, retries = 0 } = opts;
 
   const params = new URLSearchParams();
   params.set("$limit", String(limit));
