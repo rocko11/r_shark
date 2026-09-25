@@ -1873,6 +1873,82 @@ function mnavActive(id) {
   if (btn) btn.classList.add('active');
 }
 
+// ── LPC Landmark Search ────────────────────────────────────────────────────
+async function runLandmarkSearch() {
+  const out = document.getElementById('lm-out');
+  const borough = document.getElementById('lm-borough').value;
+  const zip = document.getElementById('lm-zip').value.trim();
+  const status = document.getElementById('lm-status').value;
+  out.innerHTML = '<p class="loading">Querying LPC landmarks…</p>';
+
+  const params = new URLSearchParams({ borough, status });
+  if (zip.length === 5) params.set('zip', zip);
+
+  try {
+    const r = await fetch('/api/landmark-search?' + params.toString());
+    const d = await r.json();
+    if (d.error) { out.innerHTML = `<div class="err">${esc(d.error)}</div>`; return; }
+    if (!d.results?.length) {
+      out.innerHTML = '<div class="empty"><p>No landmarks found for this search.</p></div>';
+      return;
+    }
+
+    const zipLabel = d.zip ? ` · ZIP ${d.zip}` : '';
+    let h = `<div style="display:flex;align-items:center;gap:12px;margin:10px 0 12px;flex-wrap:wrap">
+      <span class="hint" style="margin:0"><strong>${d.count}</strong> landmark${d.count===1?'':'s'} in ${esc(d.borough)}${zipLabel} — sorted by built FAR (underbuilt first)</span>
+      <button class="sgo" style="margin:0;padding:6px 12px;font-size:11px" onclick="downloadLandmarkCsv()">⭳ Download CSV</button>
+    </div>`;
+
+    h += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+    h += `<thead><tr style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--iron);border-bottom:1px solid var(--line)">
+      <th style="text-align:left;padding:6px 8px">Name / Address</th>
+      <th style="text-align:left;padding:6px 8px">Type</th>
+      <th style="text-align:right;padding:6px 8px">Lot sf</th>
+      <th style="text-align:right;padding:6px 8px">Built FAR</th>
+      <th style="text-align:right;padding:6px 8px">Max FAR</th>
+      <th style="text-align:left;padding:6px 8px">Owner</th>
+      <th style="text-align:left;padding:6px 8px">Designated</th>
+    </tr></thead><tbody>`;
+
+    for (const lm of d.results) {
+      const underbuilt = lm.built_far !== null && lm.max_res_far !== null && lm.built_far < lm.max_res_far * 0.5;
+      const rowStyle = underbuilt ? 'background:rgba(47,224,198,0.06)' : '';
+      h += `<tr style="border-bottom:1px solid var(--line);cursor:pointer;${rowStyle}" onclick="loadBBL('${esc(lm.bbl)}')">
+        <td style="padding:8px 8px">
+          <div style="font-weight:600;color:var(--fog)">${esc(lm.lm_name || '—')}</div>
+          ${lm.address ? `<div class="m">${esc(lm.address)}${lm.zip?' · '+esc(lm.zip):''}</div>` : `<div class="m">BBL ${esc(lm.bbl)}</div>`}
+        </td>
+        <td style="padding:8px 8px"><span class="m">${esc(lm.lm_type||'—')}</span></td>
+        <td style="padding:8px 8px;text-align:right" class="m">${lm.lot_area ? lm.lot_area.toLocaleString() : '—'}</td>
+        <td style="padding:8px 8px;text-align:right;${underbuilt?'color:var(--teal);font-weight:700':''}">${lm.built_far ?? '—'}</td>
+        <td style="padding:8px 8px;text-align:right" class="m">${lm.max_res_far ?? '—'}</td>
+        <td style="padding:8px 8px" class="m">${esc(lm.owner||'—')}</td>
+        <td style="padding:8px 8px" class="m">${lm.desig_date||'—'}</td>
+      </tr>`;
+    }
+    h += '</tbody></table>';
+    out.innerHTML = h;
+    window.__lmResults = d.results;
+  } catch(e) {
+    out.innerHTML = `<div class="err">Request failed: ${esc(String(e))}</div>`;
+  }
+}
+
+function downloadLandmarkCsv() {
+  const rows = window.__lmResults || [];
+  if (!rows.length) return;
+  const q = s => '"' + String(s||'').replace(/"/g,'""') + '"';
+  const header = ['BBL','Name','Type','Status','Address','ZIP','Owner','Lot sf','Built FAR','Max Res FAR','Year Built','Designated','Report URL'].map(q).join(',');
+  const body = rows.map(r => [
+    r.bbl, r.lm_name, r.lm_type, r.status, r.address, r.zip, r.owner,
+    r.lot_area, r.built_far, r.max_res_far, r.year_built, r.desig_date,
+    'https://rshark.net/?bbl=' + (r.bbl||''),
+  ].map(q).join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + header + '\r\n' + body], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'lpc_landmarks.csv'; a.click();
+}
+
 // ── PACER Federal Foreclosure Search (owner-only tab) ──────────────────────
 
 async function runPacer() {
@@ -2274,6 +2350,38 @@ if (signOutBtn) signOutBtn.onclick = () => {
     <p class="hint" style="margin:8px 0 0">Live auction schedule: exact date, time, property address, courthouse location, and attorney contact.</p>
   </div>
   <div id="auction-out" style="margin-top:14px"></div>
+
+  <!-- LPC Landmark Search -->
+  <div style="background:var(--steel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-top:14px">
+    <div style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--shark);margin-bottom:10px">🏛 LPC Landmark Search</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <div class="sfield" style="margin:0">
+        <label>Borough</label>
+        <select id="lm-borough" style="font-size:14px">
+          <option value="Brooklyn">Brooklyn</option>
+          <option value="Manhattan">Manhattan</option>
+          <option value="Queens">Queens</option>
+          <option value="Bronx">Bronx</option>
+          <option value="Staten Island">Staten Island</option>
+        </select>
+      </div>
+      <div class="sfield" style="margin:0">
+        <label>ZIP (optional)</label>
+        <input id="lm-zip" placeholder="e.g. 11238" maxlength="5" style="width:110px;font-size:14px" onkeydown="if(event.key==='Enter')runLandmarkSearch()">
+      </div>
+      <div class="sfield" style="margin:0">
+        <label>Status</label>
+        <select id="lm-status" style="font-size:14px">
+          <option value="DESIGNATED">Designated only</option>
+          <option value="CALENDARED">Calendared</option>
+          <option value="ALL">All</option>
+        </select>
+      </div>
+      <button class="sgo" onclick="runLandmarkSearch()" style="margin:0;padding:10px 20px">Search →</button>
+    </div>
+    <p class="hint" style="margin:8px 0 0">Returns all LPC-designated landmarks in the area sorted by built FAR — underbuilt landmarks first.</p>
+  </div>
+  <div id="lm-out" style="margin-top:14px"></div>
 </div>
 
 <!-- Mobile bottom navigation (hidden on desktop) -->
