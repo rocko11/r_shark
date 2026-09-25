@@ -210,10 +210,10 @@ export async function buildReport(bbl: string, bin: string | null = null) {
   const lpcRows = (data.lpc_landmarks || []) as any[];
   const landmark = lpcRows.length > 0 ? {
     is_landmark: true,
-    name: lpcRows[0].lm_name || null,
-    type: lpcRows[0].lm_type || null,
-    status: lpcRows[0].status || null,
-    desig_date: lpcRows[0].desig_date || null,
+    name: lpcRows[0].lpc_name || null,
+    type: lpcRows[0].landmarkty || null,
+    lpc_number: lpcRows[0].lpc_lpnumb || null,
+    desig_date: lpcRows[0].desdate ? String(lpcRows[0].desdate).slice(0, 10) : null,
   } : { is_landmark: false };
 
   // Title / ownership / liens / easements / foreclosure analysis from ACRIS docs.

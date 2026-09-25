@@ -84,9 +84,12 @@ export const DATASETS: Record<string, Dataset> = {
 
   // LPC Individual Landmarks: keyed by bbl. Covers individually designated and
   // interior landmarks. Historic district membership requires a separate geo lookup.
-  lpc_landmarks: { slug: "lpc_landmarks", socrataId: "jpkn-3nnt", key: "bbl",
-    verified: true, canaryField: "lm_name", bblField: "bbl",
-    notes: "Fields: bbl, lm_name, lm_type (Individual Landmark/Interior Landmark), desig_date, status (DESIGNATED/CALENDARED/etc)." },
+  // Individual Landmark Sites — buis-pvji. Has bbl (10-digit), lpc_name, landmarkty,
+  // lpc_lpnumb, desdate, borough, block, lot, address. Only individually designated
+  // landmarks; historic district buildings are in a separate polygon dataset.
+  lpc_landmarks: { slug: "lpc_landmarks", socrataId: "buis-pvji", key: "bbl",
+    verified: true, canaryField: "lpc_name", bblField: "bbl",
+    notes: "Fields: bbl, lpc_name, lpc_lpnumb, landmarkty, desdate, borough, block, lot, address." },
 
   tax_lien_sale: { slug: "tax_lien_sale", socrataId: "9rz4-mjek", key: "block",
     verified: false, canaryField: "cycle", bblField: null,
