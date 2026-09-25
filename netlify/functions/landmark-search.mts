@@ -1,9 +1,10 @@
 import type { Config, Context } from "@netlify/functions";
 
-// GET /api/landmark-search?borough=Brooklyn&zip=11238
-// Dataset buis-pvji: borough uses 2-char codes (BK/MN/BX/QN/SI)
-// lpc_sitest values: "Designated", "Amended", "Proposed", "Moved", "Heard"
-// desdate is a text field like "4/19/1966"
+// GET /api/landmark-search?borough=Brooklyn&zip=11222
+// Returns:
+//   1) LPC individually designated landmarks in the borough (buis-pvji)
+//   2) Buildings in LPC historic districts from PLUTO's histdist field
+// Both enriched with PLUTO lot data. ZIP filter applies to both.
 
 const BASE = "https://data.cityofnewyork.us/resource";
 const APP_TOKEN = process.env.SOCRATA_APP_TOKEN;
@@ -17,13 +18,16 @@ const BORO_CODE: Record<string, string> = {
 const BORO_DIGIT: Record<string, string> = {
   manhattan: "1", bronx: "2", brooklyn: "3", queens: "4", "staten island": "5",
 };
+const BORO_PLUTO: Record<string, string> = {
+  manhattan: "MN", bronx: "BX", brooklyn: "BK", queens: "QN", "staten island": "SI",
+};
 
 async function socrataGet(dataset: string, params: Record<string, string>) {
   const u = new URL(`${BASE}/${dataset}.json`);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
   const headers: Record<string, string> = { Accept: "application/json" };
   if (APP_TOKEN) headers["X-App-Token"] = APP_TOKEN;
-  const r = await fetch(u.toString(), { headers, signal: AbortSignal.timeout(12000) });
+  const r = await fetch(u.toString(), { headers, signal: AbortSignal.timeout(15000) });
   if (!r.ok) throw new Error(`Socrata ${dataset} ${r.status}: ${await r.text().catch(() => "")}`);
   return r.json() as Promise<any[]>;
 }
@@ -42,81 +46,111 @@ export default async (req: Request, _ctx: Context) => {
   const boroughKey = boroughRaw.toLowerCase();
   const boroCode = BORO_CODE[boroughKey];
   const boroDigit = BORO_DIGIT[boroughKey];
+  const boroPluto = BORO_PLUTO[boroughKey];
   if (!boroCode) return json({ error: `Unknown borough: ${boroughRaw}` }, 400);
 
-  // 1. Query LPC Individual Landmark Sites (buis-pvji) — designated only
-  // lpc_sitest values: Designated, Amended, Proposed, Moved, Heard
-  let lpcRows: any[];
+  const results: any[] = [];
+
+  // ── 1. PLUTO: historic district buildings (histdist IS NOT NULL) ──────────
+  // PLUTO stores BBL as float (e.g. 3001741201.00000000), borough as "BK" etc.
   try {
-    lpcRows = await socrataGet("buis-pvji", {
+    const plutoWhere = zip.length === 5
+      ? `borough='${boroPluto}' AND histdist IS NOT NULL AND zipcode='${zip}'`
+      : `borough='${boroPluto}' AND histdist IS NOT NULL`;
+
+    const rows = await socrataGet("64uk-42ks", {
+      "$where": plutoWhere,
+      "$select": "bbl,address,ownername,bldgclass,lotarea,builtfar,residfar,yearbuilt,zipcode,unitsres,numfloors,histdist",
+      "$limit": "2000",
+    });
+
+    for (const r of rows) {
+      const bbl = String(Math.round(Number(r.bbl)));
+      results.push({
+        bbl,
+        lm_name: r.histdist || "Historic District Building",
+        lm_type: "Historic District",
+        lpc_number: null,
+        desig_date: null,
+        address: r.address || null,
+        owner: r.ownername || null,
+        bldg_class: r.bldgclass || null,
+        lot_area: r.lotarea ? Math.round(Number(r.lotarea)) : null,
+        built_far: r.builtfar != null ? Math.round(Number(r.builtfar) * 100) / 100 : null,
+        max_res_far: r.residfar != null ? Math.round(Number(r.residfar) * 100) / 100 : null,
+        year_built: r.yearbuilt || null,
+        zip: r.zipcode || null,
+        units_res: r.unitsres ? Number(r.unitsres) : null,
+        floors: r.numfloors ? Math.round(Number(r.numfloors) * 10) / 10 : null,
+      });
+    }
+  } catch (e) {
+    console.error("PLUTO histdist query failed:", (e as Error).message);
+  }
+
+  // ── 2. Individual LPC landmarks (buis-pvji) ───────────────────────────────
+  try {
+    const lpcRows = await socrataGet("buis-pvji", {
       "$where": `borough='${boroCode}' AND (lpc_sitest='Designated' OR lpc_sitest='Amended')`,
       "$select": "bbl,lpc_name,lpc_lpnumb,borough,block,lot,address,landmarkty,desdate,lpc_sitest",
       "$limit": "2000",
     });
-  } catch (e) {
-    return json({ error: `LPC query failed: ${(e as Error).message}` }, 502);
-  }
 
-  if (!lpcRows.length) return json({ results: [], count: 0, borough: boroughRaw, zip: zip || null });
+    // Build BBL set already in results to avoid duplicates
+    const existingBBLs = new Set(results.map(r => r.bbl));
 
-  // Build BBL map — dataset stores BBL as text, sometimes "0" for non-lot landmarks
-  const bblMap = new Map<string, any>();
-  for (const row of lpcRows) {
-    const rawBbl = String(row.bbl || "").replace(/\D/g, "");
-    // Skip dummy BBLs (x000000000) and zero
-    if (!rawBbl || rawBbl === "0" || /^[1-5]0{9}$/.test(rawBbl)) continue;
-    const bbl = rawBbl.length === 10 ? rawBbl
-      : (boroDigit + rawBbl.padStart(9, "0")).slice(0, 10);
-    if (!bblMap.has(bbl)) bblMap.set(bbl, row);
-  }
+    // Collect BBLs to enrich from PLUTO
+    const indivMap = new Map<string, any>();
+    for (const row of lpcRows) {
+      const rawBbl = String(row.bbl || "").replace(/\D/g, "");
+      if (!rawBbl || rawBbl === "0" || /^[1-5]0{9}$/.test(rawBbl)) continue;
+      const bbl = rawBbl.length === 10 ? rawBbl
+        : (boroDigit + rawBbl.padStart(9, "0")).slice(0, 10);
+      if (!indivMap.has(bbl)) indivMap.set(bbl, row);
+    }
 
-  let bbls = [...bblMap.keys()];
+    // PLUTO enrich the individual landmarks
+    const plutoMap = new Map<string, any>();
+    for (const ch of chunk([...indivMap.keys()], 100)) {
+      const inClause = ch.map(b => Number(b)).join(",");
+      try {
+        const rows = await socrataGet("64uk-42ks", {
+          "$where": `bbl in(${inClause})`,
+          "$select": "bbl,address,ownername,bldgclass,lotarea,builtfar,residfar,yearbuilt,zipcode,unitsres,numfloors",
+          "$limit": "500",
+        });
+        for (const r of rows) plutoMap.set(String(Math.round(Number(r.bbl))), r);
+      } catch { /* degrade */ }
+    }
 
-  // 2. Batch-query PLUTO for lot data
-  const plutoMap = new Map<string, any>();
-  for (const ch of chunk(bbls, 100)) {
-    // PLUTO stores bbl as decimal: 3001741201.00000000 — must query as number not string
-    const inClause = ch.map(b => Number(b)).join(",");
-    try {
-      const rows = await socrataGet("64uk-42ks", {
-        "$where": `bbl in(${inClause})`,
-        "$select": "bbl,address,ownername,bldgclass,lotarea,builtfar,residfar,yearbuilt,zipcode,unitsres,numfloors",
-        "$limit": "500",
+    for (const [bbl, lpc] of indivMap) {
+      if (existingBBLs.has(bbl)) continue; // skip if already in historic district results
+      const pluto = plutoMap.get(bbl);
+      // Apply ZIP filter for individual landmarks
+      if (zip.length === 5 && pluto?.zipcode && pluto.zipcode !== zip) continue;
+      results.push({
+        bbl,
+        lm_name: lpc.lpc_name || null,
+        lm_type: "Individual Landmark",
+        lpc_number: lpc.lpc_lpnumb || null,
+        desig_date: lpc.desdate || null,
+        address: pluto?.address || lpc.address || null,
+        owner: pluto?.ownername || null,
+        bldg_class: pluto?.bldgclass || null,
+        lot_area: pluto?.lotarea ? Math.round(Number(pluto.lotarea)) : null,
+        built_far: pluto?.builtfar != null ? Math.round(Number(pluto.builtfar) * 100) / 100 : null,
+        max_res_far: pluto?.residfar != null ? Math.round(Number(pluto.residfar) * 100) / 100 : null,
+        year_built: pluto?.yearbuilt || null,
+        zip: pluto?.zipcode || null,
+        units_res: pluto?.unitsres ? Number(pluto.unitsres) : null,
+        floors: pluto?.numfloors ? Math.round(Number(pluto.numfloors) * 10) / 10 : null,
       });
-      // Normalize PLUTO bbl back to 10-digit integer string for map lookup
-      for (const r of rows) plutoMap.set(String(Math.round(Number(r.bbl))), r);
-    } catch { /* degrade gracefully */ }
+    }
+  } catch (e) {
+    console.error("LPC individual query failed:", (e as Error).message);
   }
 
-  // 3. Merge
-  let results = bbls.map(bbl => {
-    const lpc = bblMap.get(bbl)!;
-    const pluto = plutoMap.get(bbl);
-    return {
-      bbl,
-      lm_name: lpc.lpc_name || null,
-      lm_type: lpc.landmarkty || null,
-      lpc_number: lpc.lpc_lpnumb || null,
-      desig_date: lpc.desdate || null,
-      address: pluto?.address || lpc.address || null,
-      owner: pluto?.ownername || null,
-      bldg_class: pluto?.bldgclass || null,
-      lot_area: pluto?.lotarea ? Math.round(Number(pluto.lotarea)) : null,
-      built_far: pluto?.builtfar != null ? Math.round(Number(pluto.builtfar) * 100) / 100 : null,
-      max_res_far: pluto?.residfar != null ? Math.round(Number(pluto.residfar) * 100) / 100 : null,
-      year_built: pluto?.yearbuilt || null,
-      zip: pluto?.zipcode || null,
-      units_res: pluto?.unitsres ? Number(pluto.unitsres) : null,
-      floors: pluto?.numfloors ? Math.round(Number(pluto.numfloors) * 10) / 10 : null,
-    };
-  });
-
-  // ZIP filter: apply only to rows that have PLUTO zip data.
-  // Non-building landmarks (lampposts, bridges) have null zip and are excluded
-  // when filtering by ZIP since they don't have a meaningful address ZIP.
-  if (zip.length === 5) results = results.filter(r => r.zip === zip);
-
-  // Sort: lowest built_far first (most underbuilt), nulls last
+  // Sort: underbuilt first (lowest built_far), then nulls
   results.sort((a, b) => {
     if (a.built_far === null && b.built_far === null) return 0;
     if (a.built_far === null) return 1;
