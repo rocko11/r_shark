@@ -1,10 +1,9 @@
 import type { Config, Context } from "@netlify/functions";
 
-// GET /api/landmark-search?borough=Brooklyn&zip=11238&status=designated
-// Returns all LPC-designated individual landmarks in the area enriched with
-// PLUTO lot data. Dataset: buis-pvji (Individual Landmark Sites, has bbl field).
-// Fields: bbl, lpc_name, lpc_lpnumb, borough, block, lot, address,
-//         landmarkty, desdate, lpc_sitede, lpc_sitest
+// GET /api/landmark-search?borough=Brooklyn&zip=11238
+// Dataset buis-pvji: borough uses 2-char codes (BK/MN/BX/QN/SI)
+// lpc_sitest values: "Designated", "Amended", "Proposed", "Moved", "Heard"
+// desdate is a text field like "4/19/1966"
 
 const BASE = "https://data.cityofnewyork.us/resource";
 const APP_TOKEN = process.env.SOCRATA_APP_TOKEN;
@@ -12,13 +11,11 @@ const APP_TOKEN = process.env.SOCRATA_APP_TOKEN;
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json" } });
 
+const BORO_CODE: Record<string, string> = {
+  manhattan: "MN", bronx: "BX", brooklyn: "BK", queens: "QN", "staten island": "SI",
+};
 const BORO_DIGIT: Record<string, string> = {
   manhattan: "1", bronx: "2", brooklyn: "3", queens: "4", "staten island": "5",
-};
-// LPC uses full borough names in this dataset
-const BORO_LPC: Record<string, string> = {
-  manhattan: "Manhattan", bronx: "Bronx", brooklyn: "Brooklyn",
-  queens: "Queens", "staten island": "Staten Island",
 };
 
 async function socrataGet(dataset: string, params: Record<string, string>) {
@@ -27,7 +24,7 @@ async function socrataGet(dataset: string, params: Record<string, string>) {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (APP_TOKEN) headers["X-App-Token"] = APP_TOKEN;
   const r = await fetch(u.toString(), { headers, signal: AbortSignal.timeout(12000) });
-  if (!r.ok) throw new Error(`Socrata ${dataset} ${r.status}: ${await r.text().catch(()=>"")}`);
+  if (!r.ok) throw new Error(`Socrata ${dataset} ${r.status}: ${await r.text().catch(() => "")}`);
   return r.json() as Promise<any[]>;
 }
 
@@ -43,16 +40,17 @@ export default async (req: Request, _ctx: Context) => {
   const zip = (u.searchParams.get("zip") || "").replace(/\D/g, "");
 
   const boroughKey = boroughRaw.toLowerCase();
+  const boroCode = BORO_CODE[boroughKey];
   const boroDigit = BORO_DIGIT[boroughKey];
-  if (!boroDigit) return json({ error: `Unknown borough: ${boroughRaw}` }, 400);
-  const boroughLPC = BORO_LPC[boroughKey];
+  if (!boroCode) return json({ error: `Unknown borough: ${boroughRaw}` }, 400);
 
-  // 1. Query LPC Individual Landmark Sites (buis-pvji) by borough
+  // 1. Query LPC Individual Landmark Sites (buis-pvji) — designated only
+  // lpc_sitest values: Designated, Amended, Proposed, Moved, Heard
   let lpcRows: any[];
   try {
     lpcRows = await socrataGet("buis-pvji", {
-      "$where": `borough='${boroughLPC}'`,
-      "$select": "bbl,lpc_name,lpc_lpnumb,borough,block,lot,address,landmarkty,desdate",
+      "$where": `borough='${boroCode}' AND (lpc_sitest='Designated' OR lpc_sitest='Amended')`,
+      "$select": "bbl,lpc_name,lpc_lpnumb,borough,block,lot,address,landmarkty,desdate,lpc_sitest",
       "$limit": "2000",
     });
   } catch (e) {
@@ -61,17 +59,14 @@ export default async (req: Request, _ctx: Context) => {
 
   if (!lpcRows.length) return json({ results: [], count: 0, borough: boroughRaw, zip: zip || null });
 
-  // Build BBL map — normalize to 10-digit string
+  // Build BBL map — dataset stores BBL as text, sometimes "0" for non-lot landmarks
   const bblMap = new Map<string, any>();
   for (const row of lpcRows) {
-    let bbl = String(row.bbl || "").replace(/\D/g, "");
-    if (!bbl) {
-      // Fallback: construct from boro+block+lot
-      const b = String(row.block || "").padStart(5, "0");
-      const l = String(row.lot || "").padStart(4, "0");
-      bbl = boroDigit + b + l;
-    }
-    if (bbl.length !== 10) continue;
+    const rawBbl = String(row.bbl || "").replace(/\D/g, "");
+    // Skip dummy BBLs (x000000000) and zero
+    if (!rawBbl || rawBbl === "0" || /^[1-5]0{9}$/.test(rawBbl)) continue;
+    const bbl = rawBbl.length === 10 ? rawBbl
+      : (boroDigit + rawBbl.padStart(9, "0")).slice(0, 10);
     if (!bblMap.has(bbl)) bblMap.set(bbl, row);
   }
 
@@ -84,23 +79,23 @@ export default async (req: Request, _ctx: Context) => {
     try {
       const rows = await socrataGet("64uk-42ks", {
         "$where": `bbl in(${inClause})`,
-        "$select": "bbl,address,ownername,bldgclass,lotarea,builtfar,residfar,commfar,yearbuilt,zipcode,unitsres,numfloors",
+        "$select": "bbl,address,ownername,bldgclass,lotarea,builtfar,residfar,yearbuilt,zipcode,unitsres,numfloors",
         "$limit": "500",
       });
       for (const r of rows) plutoMap.set(String(r.bbl), r);
     } catch { /* degrade gracefully */ }
   }
 
-  // 3. Merge and filter by ZIP if provided
+  // 3. Merge
   let results = bbls.map(bbl => {
     const lpc = bblMap.get(bbl)!;
     const pluto = plutoMap.get(bbl);
     return {
       bbl,
-      lm_name: lpc.lpc_name || lpc.lm_name || null,
+      lm_name: lpc.lpc_name || null,
       lm_type: lpc.landmarkty || null,
       lpc_number: lpc.lpc_lpnumb || null,
-      desig_date: lpc.desdate ? String(lpc.desdate).slice(0, 10) : null,
+      desig_date: lpc.desdate || null,
       address: pluto?.address || lpc.address || null,
       owner: pluto?.ownername || null,
       bldg_class: pluto?.bldgclass || null,
@@ -116,7 +111,7 @@ export default async (req: Request, _ctx: Context) => {
 
   if (zip.length === 5) results = results.filter(r => r.zip === zip);
 
-  // Sort: underbuilt first (lowest built_far), nulls last
+  // Sort: lowest built_far first (most underbuilt), nulls last
   results.sort((a, b) => {
     if (a.built_far === null && b.built_far === null) return 0;
     if (a.built_far === null) return 1;
