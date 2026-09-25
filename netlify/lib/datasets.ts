@@ -81,6 +81,13 @@ export const DATASETS: Record<string, Dataset> = {
   hpd_contacts: { slug: "hpd_contacts", socrataId: "feu5-w2e2", key: "registrationid",
     verified: false, canaryField: "registrationid", bblField: null,
     notes: "Registration Contacts. type=HeadOfficer/IndividualOwner/CorporateOwner/Agent, firstname, lastname, corporationname, business address. Join on registrationid." },
+
+  // LPC Individual Landmarks: keyed by bbl. Covers individually designated and
+  // interior landmarks. Historic district membership requires a separate geo lookup.
+  lpc_landmarks: { slug: "lpc_landmarks", socrataId: "jpkn-3nnt", key: "bbl",
+    verified: true, canaryField: "lm_name", bblField: "bbl",
+    notes: "Fields: bbl, lm_name, lm_type (Individual Landmark/Interior Landmark), desig_date, status (DESIGNATED/CALENDARED/etc)." },
+
   tax_lien_sale: { slug: "tax_lien_sale", socrataId: "9rz4-mjek", key: "block",
     verified: false, canaryField: "cycle", bblField: null,
     notes: "Tax Lien Sale List. Keyed borough+block+lot (no bbl). Fields: month, cycle (10/30/60/90 Day Notice, Final Sale), water_debt_only (YES/NO/Y/N). Threshold signal — no dollar amount." },
