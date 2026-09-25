@@ -185,6 +185,8 @@ export async function buildReport(bbl: string, bin: string | null = null) {
   tasks["e_designations"] = sq.query("e_designations", {
     where: sq.buildWhere({ borough, block, lot }), limit: 50,
   });
+  // LPC landmarks: keyed by bbl. Returns rows only if lot is individually designated.
+  tasks["lpc_landmarks"] = sq.query("lpc_landmarks", { where: sq.buildWhere({ bbl }), limit: 5 });
 
   const { data, errors } = await sq.gather(tasks);
 
@@ -204,6 +206,16 @@ export async function buildReport(bbl: string, bin: string | null = null) {
 
   const arrears = await checkArrears(bbl).catch(() => ({ available: false, on_lien_sale_list: false, caveat: "Arrears check unavailable." }));
 
+  // LPC landmark status: summarize any designations on this lot.
+  const lpcRows = (data.lpc_landmarks || []) as any[];
+  const landmark = lpcRows.length > 0 ? {
+    is_landmark: true,
+    name: lpcRows[0].lm_name || null,
+    type: lpcRows[0].lm_type || null,
+    status: lpcRows[0].status || null,
+    desig_date: lpcRows[0].desig_date || null,
+  } : { is_landmark: false };
+
   // Title / ownership / liens / easements / foreclosure analysis from ACRIS docs.
   const title = analyzeTitle(acrisData.documents || [], acrisOk);
   // Attach E-designations (normalize the type field across dataset vintages).
@@ -220,6 +232,17 @@ export async function buildReport(bbl: string, bin: string | null = null) {
     acrisAvailable: acrisOk, derived,
     title, eDesignations: eDesigs,
   });
+
+  // Landmark flag — prepend so it's always the first thing a developer sees.
+  if (landmark.is_landmark) {
+    derived.flags.unshift({
+      code: "LPC_LANDMARK",
+      severity: "critical",
+      title: `LPC Landmark: ${landmark.name || "Individual Landmark"}`,
+      detail: `${landmark.type || "Landmark"}${landmark.status ? " · " + landmark.status : ""}${landmark.desig_date ? " · Designated " + String(landmark.desig_date).slice(0, 10) : ""}. Any exterior alteration, addition, or demolition requires LPC approval. Budget 3-6+ months for Certificate of Appropriateness. Full demo is effectively off the table.`,
+      source: "NYC LPC",
+    });
+  }
 
   // Tax/water arrears on the lien sale list is a critical, deal-shaping flag.
   if (arrears && arrears.on_lien_sale_list) {
@@ -268,6 +291,7 @@ export async function buildReport(bbl: string, bin: string | null = null) {
     acris: acrisOk ? acrisData : { available: false,
       reason: "ACRIS excludes Staten Island. Use the Richmond County Clerk." },
     title,
+    landmark,
     provenance: { sources_queried: Object.keys(tasks).sort(), sources_failed: errors },
     disclaimer: "Informational only. Not a zoning analysis. Confirm all figures with a licensed " +
       "architect or land use counsel before acting.",
