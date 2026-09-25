@@ -833,7 +833,7 @@ function render(d) {
     </div>
     <div class="tb-head">
       <button class="pdf-btn no-print" onclick="downloadPdf()">⭳ Download PDF</button>
-      <h2 class="addr">${esc(id.address || d.bbl)}${id.zip ? ` <span style="font-weight:400;font-size:0.6em;letter-spacing:.05em">${esc(id.zip)}</span>` : ""}${id.is_condo ? ` <span class="condo-badge">CONDOMINIUM</span>` : ""}</h2>
+      <h2 class="addr">${esc(id.address || d.bbl)}${id.zip ? ` <span style="font-weight:400;font-size:0.6em;letter-spacing:.05em">${esc(id.zip)}</span>` : ""}${id.is_condo ? ` <span class="condo-badge">CONDOMINIUM</span>` : ""}${d.landmark && d.landmark.is_landmark ? ` <span class="condo-badge" style="background:var(--blood);color:#fff" title="${esc(d.landmark.name||'')}">🏛 LPC LANDMARK</span>` : ""}</h2>
       <div class="boro">${esc(id.borough || "")} · Block ${id.block} · Lot ${id.lot}</div>
       ${(()=>{ const cb = communityBoard(id.community_district); return cb ? `<div class="boro" style="margin-top:2px">${esc(cb.label)} · <a class="doclink" href="${cb.url}" target="_blank" rel="noopener">board info & website →</a></div>` : ""; })()}
       ${id.is_condo ? `<div class="boro" style="margin-top:4px;color:var(--slate)">This is a condominium${id.condo_number?` (DOF condo #${esc(id.condo_number)})`:""}. Each unit is a separate tax lot with its own BBL — taxes, liens, and deeds attach to individual units, so this building-level report may not show unit-specific encumbrances. Check the specific unit's BBL for a full picture.</div>` : ""}
