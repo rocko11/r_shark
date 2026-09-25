@@ -75,14 +75,16 @@ export default async (req: Request, _ctx: Context) => {
   // 2. Batch-query PLUTO for lot data
   const plutoMap = new Map<string, any>();
   for (const ch of chunk(bbls, 100)) {
-    const inClause = ch.map(b => `'${b}'`).join(",");
+    // PLUTO stores bbl as decimal: 3001741201.00000000 — must query as number not string
+    const inClause = ch.map(b => Number(b)).join(",");
     try {
       const rows = await socrataGet("64uk-42ks", {
         "$where": `bbl in(${inClause})`,
         "$select": "bbl,address,ownername,bldgclass,lotarea,builtfar,residfar,yearbuilt,zipcode,unitsres,numfloors",
         "$limit": "500",
       });
-      for (const r of rows) plutoMap.set(String(r.bbl), r);
+      // Normalize PLUTO bbl back to 10-digit integer string for map lookup
+      for (const r of rows) plutoMap.set(String(Math.round(Number(r.bbl))), r);
     } catch { /* degrade gracefully */ }
   }
 
@@ -109,6 +111,9 @@ export default async (req: Request, _ctx: Context) => {
     };
   });
 
+  // ZIP filter: apply only to rows that have PLUTO zip data.
+  // Non-building landmarks (lampposts, bridges) have null zip and are excluded
+  // when filtering by ZIP since they don't have a meaningful address ZIP.
   if (zip.length === 5) results = results.filter(r => r.zip === zip);
 
   // Sort: lowest built_far first (most underbuilt), nulls last
