@@ -2124,6 +2124,10 @@ async function runAuctions() {
         </td>
       </tr>`).join('');
 
+    window._auctionData = d.results;
+    const csvBtn = document.getElementById('auction-csv-btn');
+    if (csvBtn) csvBtn.style.display = '';
+
     out.innerHTML = `
       <div style="background:var(--steel);border:1px solid var(--line);border-radius:12px;overflow:hidden">
         <div style="padding:12px 16px;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
@@ -2153,6 +2157,23 @@ async function runAuctions() {
   } catch(e) {
     out.innerHTML = `<div class="err">Auction scrape failed: ${esc(e.message)}</div>`;
   }
+}
+
+// ── Auction CSV export ─────────────────────────────────────────────────────
+function downloadAuctionCsv() {
+  if (!window._auctionData || !window._auctionData.length) return;
+  const cols = ['date','time','status','address','case_title','index_no','location','attorney','attorney_phone','attorney_email'];
+  const headers = ['Date','Time','Status','Property Address','Case Title','Index No','Auction Location','Attorney','Attorney Phone','Attorney Email'];
+  const csv = (s) => '"' + String(s ?? '').replace(/"/g, '""') + '"';
+  const lines = [headers.map(csv).join(',')];
+  for (const r of window._auctionData) {
+    lines.push(cols.map(c => csv(r[c])).join(','));
+  }
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'foreclosure_auctions.csv';
+  a.click();
 }
 
 // ── Theme toggle (light / dark) ────────────────────────────────────────────
@@ -2346,6 +2367,7 @@ if (signOutBtn) signOutBtn.onclick = () => {
         </select>
       </div>
       <button class="sgo" onclick="runAuctions()" style="margin:0;padding:10px 20px">Get Auctions →</button>
+      <button id="auction-csv-btn" onclick="downloadAuctionCsv()" style="display:none;margin:0;padding:10px 16px;background:var(--steel);color:var(--chrome);border:1px solid var(--line);border-radius:6px;cursor:pointer;font-size:12px">⬇ Download CSV</button>
     </div>
     <p class="hint" style="margin:8px 0 0">Live auction schedule: exact date, time, property address, courthouse location, and attorney contact.</p>
   </div>
