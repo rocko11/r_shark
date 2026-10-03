@@ -1108,7 +1108,14 @@ function render(d) {
     <section id="svsection" style="display:none">
       <div class="sec-head"><h2>Street view</h2>
         <span class="count" id="svmeta">Google</span></div>
-      <div class="svwrap"><img id="svimg" alt="Street View of the property" style="width:100%;display:block"></div>
+      <div class="svwrap">
+        <div id="svpano" style="display:none;height:400px;width:100%"></div>
+        <img id="svimg" alt="Street View of the property" style="width:100%;display:block">
+      </div>
+      <div class="maplegend" id="svbar" style="justify-content:space-between">
+        <span class="lg-note" id="svhint">static photo</span>
+        <a id="svopen" href="#" target="_blank" rel="noopener" style="color:var(--ink)">Open in Google Maps ↗</a>
+      </div>
     </section>` : ""}
 
     ${hasGeo ? `
@@ -1306,24 +1313,90 @@ addEventListener("resize", () => {
 });
 
 /* ---------- street view ---------- */
+// Interactive panorama (drag to look, click the road/arrows to move) when a browser
+// Maps JS key is configured; otherwise the static photo, always with a link out to
+// full Street View in Google Maps.
+let _gmapsP = null, _svPano = null;
+function loadGoogleMaps(key) {
+  if (window.google && google.maps && google.maps.importLibrary) return Promise.resolve();
+  if (_gmapsP) return _gmapsP;
+  _gmapsP = new Promise((resolve, reject) => {
+    window.__gmReady = resolve;
+    window.gm_authFailure = () => reject(new Error("Google Maps key rejected (check referrer restriction / API enabled)"));
+    const sc = document.createElement("script");
+    sc.src = "https://maps.googleapis.com/maps/api/js?key=" + encodeURIComponent(key) + "&v=weekly&loading=async&callback=__gmReady";
+    sc.async = true;
+    sc.onerror = () => { _gmapsP = null; reject(new Error("Google Maps failed to load")); };
+    document.head.appendChild(sc);
+  });
+  return _gmapsP;
+}
+function bearingTo(a, b) {
+  const r = Math.PI / 180, dl = (b[1] - a[1]) * r;
+  const y = Math.sin(dl) * Math.cos(b[0] * r);
+  const x = Math.cos(a[0] * r) * Math.sin(b[0] * r) - Math.sin(a[0] * r) * Math.cos(b[0] * r) * Math.cos(dl);
+  return (Math.atan2(y, x) / r + 360) % 360;
+}
+
 async function loadStreetView(lat, lng) {
   const section = document.getElementById("svsection");
   const img = document.getElementById("svimg");
   const meta = document.getElementById("svmeta");
+  const pano = document.getElementById("svpano");
+  const hint = document.getElementById("svhint");
+  const open = document.getElementById("svopen");
   if (!section || !img || lat == null || lng == null) return;
+  if (open) open.href = "https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=" + lat + "," + lng;
+
+  // 1. Is there imagery here? (also gives the capture date and the static fallback photo)
+  let d = null;
   try {
     const r = await fetch("/api/streetview?lat=" + encodeURIComponent(lat) + "&lng=" + encodeURIComponent(lng));
-    const d = await r.json();
+    d = await r.json();
+  } catch (e) { /* handled below */ }
+  const showStatic = () => {
+    if (pano) pano.style.display = "none";
     if (d && d.available && d.image_url) {
+      img.style.display = "block";
       img.onload = function(){ section.style.display = ""; };
       img.onerror = function(){ section.style.display = "none"; };
       img.src = d.image_url;
       meta.textContent = d.captured ? ("Google · " + d.captured) : "Google";
+      if (hint) hint.textContent = "static photo · open in Google Maps to drive around";
     } else {
       section.style.display = "none";
     }
+  };
+  if (!(d && d.available)) { section.style.display = "none"; return; }
+
+  // 2. Interactive panorama if we have a browser key.
+  try {
+    const cfg = await (await fetch("/api/streetview?config=1")).json();
+    if (!cfg.browser_key || !pano) return showStatic();
+    await loadGoogleMaps(cfg.browser_key);
+    const { StreetViewPanorama, StreetViewService } = await google.maps.importLibrary("streetView");
+    const res = await new StreetViewService().getPanorama({
+      location: { lat: Number(lat), lng: Number(lng) }, radius: 60,
+      preference: google.maps.StreetViewPreference ? google.maps.StreetViewPreference.NEAREST : undefined,
+      source: google.maps.StreetViewSource ? google.maps.StreetViewSource.OUTDOOR : undefined,
+    });
+    const loc = res.data.location;
+    const heading = bearingTo([loc.latLng.lat(), loc.latLng.lng()], [Number(lat), Number(lng)]);
+    img.style.display = "none";
+    pano.style.display = "block";
+    section.style.display = "";
+    if (_svPano) { try { _svPano.setVisible(false); } catch (e) {} _svPano = null; }
+    _svPano = new StreetViewPanorama(pano, {
+      pano: loc.pano, pov: { heading, pitch: 5 }, zoom: 1,
+      addressControl: false, fullscreenControl: true, zoomControl: true, panControl: true,
+      linksControl: true, clickToGo: true, scrollwheel: false, enableCloseButton: false,
+    });
+    const when = res.data.imageDate ? res.data.imageDate : (d.captured || "");
+    meta.textContent = "Google" + (when ? " · " + when : "");
+    if (hint) hint.textContent = "drag to look · click the road or arrows to move · Ctrl/⌘ + scroll to zoom";
   } catch (e) {
-    section.style.display = "none";
+    console.warn("Interactive Street View unavailable:", e && e.message);
+    showStatic();
   }
 }
 

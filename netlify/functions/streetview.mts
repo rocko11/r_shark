@@ -9,17 +9,29 @@ import type { Config, Context } from "@netlify/functions";
 // also sidesteps HTTP-referrer key restrictions (the browser's referrer is our site, and the
 // Google request is made by Netlify with the key held only on the server).
 //
-// Env var: GOOGLE_MAPS_KEY (Street View Static API enabled + billing).
+// Env vars: GOOGLE_MAPS_KEY (server; Street View Static API) and, for the interactive
+// panorama, GOOGLE_MAPS_BROWSER_KEY (Maps JavaScript API, HTTP-referrer restricted).
 const BASE = "https://maps.googleapis.com/maps/api/streetview";
 
 export default async (req: Request, _ctx: Context) => {
   const json = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json" } });
 
+  const u = new URL(req.url).searchParams;
+
+  // --- Config mode: hand the BROWSER key to the page for the interactive panorama. ---
+  // This is a different key from GOOGLE_MAPS_KEY: it must be a Maps JavaScript API key
+  // restricted to our own domains by HTTP referrer, because it is visible in the page.
+  // The server key above is never sent to the browser.
+  if (u.get("config")) {
+    return new Response(JSON.stringify({ browser_key: process.env.GOOGLE_MAPS_BROWSER_KEY || null }), {
+      status: 200, headers: { "content-type": "application/json", "cache-control": "public, max-age=3600" },
+    });
+  }
+
   const key = process.env.GOOGLE_MAPS_KEY;
   if (!key) return json({ available: false, reason: "Street View not configured." });
 
-  const u = new URL(req.url).searchParams;
   const lat = u.get("lat");
   const lng = u.get("lng");
   const address = u.get("address");
