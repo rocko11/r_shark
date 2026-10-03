@@ -31,7 +31,7 @@ export default async (req: Request, _ctx: Context) => {
   const useRadius = blocks > 0 && Number.isFinite(lat) && Number.isFinite(lng);
 
   const base: Record<string, string> = {
-    outFields: "BBL,Address,BldgClass,LotArea,NumFloors,YearBuilt,BldgArea,UnitsRes,OwnerName",
+    outFields: "BBL,Address,BldgClass,LotArea,NumFloors,YearBuilt,BldgArea,UnitsRes,OwnerName,ZoneDist1,ResidFAR,BuiltFAR",
     returnGeometry: "true",
     outSR: "4326",
     f: "geojson",
@@ -91,6 +91,10 @@ export default async (req: Request, _ctx: Context) => {
       year_built: p.YearBuilt ?? null,
       units_res: p.UnitsRes ?? null,
       owner: p.OwnerName || null,
+      zoning: p.ZoneDist1 || null,
+      far_built: p.BuiltFAR ?? far,
+      far_max: p.ResidFAR ?? null,
+      vacant,
       category,
       geometry: f.geometry || null,
     };

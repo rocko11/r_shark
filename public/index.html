@@ -269,7 +269,20 @@ footer{border-top:1px solid var(--rule);margin-top:40px;padding-top:14px;
 .svwrap img{filter:grayscale(0.15) sepia(0.06) contrast(0.98)}
 /* Mute OSM tiles toward the drafting-linen palette so the map reads as a plan,
    not a consumer web map. */
-#blockmap .leaflet-tile{filter:grayscale(0.7) sepia(0.18) brightness(1.02) contrast(0.92)}
+#blockmap:not(.aerial) .leaflet-tile, #huntmap:not(.aerial) .leaflet-tile{filter:grayscale(0.7) sepia(0.18) brightness(1.02) contrast(0.92)}
+.mapbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px 12px;border-bottom:1px solid var(--rule-2);
+  font-family:var(--mono);font-size:11px;color:var(--fog)}
+.mapbar .mlabel{text-transform:uppercase;letter-spacing:.08em;font-size:10px;margin:0 2px 0 8px}
+.mapbar .mlabel:first-child{margin-left:0}
+.mbtn{font-family:var(--mono);font-size:11px;padding:4px 9px;border:1px solid var(--ink-2);background:transparent;
+  color:var(--ink);cursor:pointer;border-radius:0}
+.mbtn:hover{border-color:var(--ink)}
+.mbtn-on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.mapbar label{display:flex;gap:5px;align-items:center;margin-left:8px;cursor:pointer;color:var(--ink)}
+.maplegend .lg-note{color:var(--fog)}
+#huntmap{height:460px;width:100%;background:var(--paper-2)}
+.vtoggle{display:inline-flex}
+.vtoggle .mbtn+.mbtn{border-left:0}
 .leaflet-container{font-family:var(--mono);background:var(--paper-2)}
 .lotpin{border-radius:50%;border:1.5px solid var(--ink);box-sizing:border-box}
 .lotpin.self{background:var(--iron);border-color:var(--ink);width:16px;height:16px;
@@ -1101,15 +1114,20 @@ function render(d) {
     ${hasGeo ? `
     <section>
       <div class="sec-head"><h2>The block</h2>
-        <span class="count">hover a lot, click to open its report · zoom out for more</span></div>
+        <span class="count">click a lot for details, then open its report · zoom out for more</span></div>
       <div class="mapwrap">
-        <div id="blockmap"></div>
-        <div class="maplegend">
-          <span><i style="background:var(--iron)"></i>this lot</span>
-          <span><i style="background:var(--slate)"></i>room to build</span>
-          <span><i style="background:var(--ochre)"></i>institutional / parking</span>
-          <span><i style="background:var(--ink-2)"></i>existing building</span>
+        <div class="mapbar">
+          <span class="mlabel">Base</span>
+          <button class="mbtn mbtn-on" data-base="street" onclick="mapSetBase('street')">Street</button>
+          <button class="mbtn" data-base="aerial" onclick="mapSetBase('aerial')">Bird view</button>
+          <span class="mlabel">Color by</span>
+          <button class="mbtn mbtn-on" data-mode="category" onclick="mapSetMode('category')">Opportunity</button>
+          <button class="mbtn" data-mode="distress" onclick="mapSetMode('distress')">Distress</button>
+          <button class="mbtn" data-mode="zoning" onclick="mapSetMode('zoning')">Zoning</button>
+          <label><input type="checkbox" id="mapvacant" onchange="mapSetVacant(this.checked)"> Vacant / underbuilt only</label>
         </div>
+        <div id="blockmap"></div>
+        <div class="maplegend" id="maplegend"></div>
       </div>
     </section>` : ""}
 
@@ -1311,6 +1329,179 @@ async function loadStreetView(lat, lng) {
 
 /* ---------- block map ---------- */
 let _map = null;
+let _ms = null; // block-map state: {base, baseLayer, mode, vacantOnly, lots, signals, sigState}
+
+const BASEMAPS = {
+  street: { url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+            opts: { maxZoom: 19, attribution: "© OpenStreetMap" } },
+  // "Bird view": aerial imagery from above (Esri World Imagery, no key needed).
+  aerial: { url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            opts: { maxZoom: 19, attribution: "Imagery © Esri, Maxar, Earthstar Geographics" } },
+};
+const TIER_COLORS = ["#8A97A8", "#E6C34A", "#F08A24", "#FF4B3E"];
+const TIER_LABELS = ["no signals found", "minor", "serious", "lien-sale listed / stacked"];
+function zoneColor(z) {
+  z = String(z || "").toUpperCase();
+  if (/^R/.test(z)) return "#4F8FBF";
+  if (/^C/.test(z)) return "#E0A030";
+  if (/^M/.test(z)) return "#9B6BC4";
+  if (/^P/.test(z)) return "#4CAF6A";
+  return "#8A97A8";
+}
+
+// Swap the basemap on any Leaflet map; `holder` is {map, baseLayer}.
+function applyBasemap(holder, el, kind) {
+  const b = BASEMAPS[kind] || BASEMAPS.street;
+  if (holder.baseLayer) holder.map.removeLayer(holder.baseLayer);
+  holder.baseLayer = L.tileLayer(b.url, b.opts).addTo(holder.map);
+  holder.baseLayer.bringToBack();
+  el.classList.toggle("aerial", kind === "aerial");
+}
+function setBarOn(root, attr, val) {
+  if (!root) return;
+  root.querySelectorAll(".mbtn[" + attr + "]").forEach(btn =>
+    btn.classList.toggle("mbtn-on", btn.getAttribute(attr) === val));
+}
+
+function mapSetBase(kind) {
+  if (!_ms || !_map) return;
+  _ms.base = kind;
+  applyBasemap(_ms, document.getElementById("blockmap"), kind);
+  setBarOn(document.querySelector(".mapwrap"), "data-base", kind);
+  restyleLots(); // outlines need more weight over imagery
+}
+async function mapSetMode(mode) {
+  if (!_ms) return;
+  _ms.mode = mode;
+  setBarOn(document.querySelector(".mapwrap"), "data-mode", mode);
+  if (mode === "distress" && !_ms.signals && _ms.sigState !== "loading") await loadLotSignals();
+  restyleLots();
+  renderMapLegend();
+}
+function mapSetVacant(on) {
+  if (!_ms) return;
+  _ms.vacantOnly = !!on;
+  restyleLots();
+}
+
+async function loadLotSignals() {
+  if (!_ms || !_ms.lots.length) return;
+  _ms.sigState = "loading";
+  renderMapLegend();
+  // Nearest 400 lots to the subject (endpoint cap), so the closest blocks always colour.
+  const c = _ms.center;
+  const near = _ms.lots.map(e => e.lot)
+    .map(l => ({ l, d: (l._lat - c[0]) ** 2 + (l._lng - c[1]) ** 2 }))
+    .sort((a, b) => a.d - b.d).slice(0, 400).map(x => x.l.bbl);
+  try {
+    const r = await fetch("/api/lot-signals?bbls=" + near.join(","));
+    const j = await r.json();
+    _ms.signals = j.signals || {};
+    _ms.sigState = j.errors && j.errors.length ? "partial" : "ok";
+    _ms.sigCovered = new Set(near);
+  } catch (e) {
+    _ms.signals = {};
+    _ms.sigState = "error";
+  }
+}
+
+// Centre of a GeoJSON geometry's bounding box (cheap; good enough for sorting).
+function geomCenter(g) {
+  let minA = 90, maxA = -90, minO = 180, maxO = -180;
+  const walk = (c) => {
+    if (typeof c[0] === "number") {
+      if (c[1] < minA) minA = c[1]; if (c[1] > maxA) maxA = c[1];
+      if (c[0] < minO) minO = c[0]; if (c[0] > maxO) maxO = c[0];
+    } else c.forEach(walk);
+  };
+  walk(g.coordinates);
+  return [(minA + maxA) / 2, (minO + maxO) / 2];
+}
+
+function lotColor(lot) {
+  const css = getComputedStyle(document.documentElement);
+  const CAT = {
+    self:        css.getPropertyValue("--iron").trim()  || "#9E3323",
+    opportunity: css.getPropertyValue("--slate").trim() || "#38596B",
+    constrained: css.getPropertyValue("--ochre").trim() || "#B57F1E",
+    existing:    css.getPropertyValue("--ink-2").trim() || "#4A4E52",
+  };
+  if (lot.is_self) return { color: CAT.self, rest: 0.42, hover: 0.55 };
+  if (_ms.mode === "distress") {
+    const s = _ms.signals && _ms.signals[lot.bbl];
+    const t = s ? s.score : 0;
+    return { color: TIER_COLORS[t], rest: t ? 0.28 + 0.1 * t : 0.07, hover: t ? 0.6 : 0.3 };
+  }
+  if (_ms.mode === "zoning") return { color: zoneColor(lot.zoning), rest: 0.28, hover: 0.5 };
+  return { color: CAT[lot.category] || CAT.existing, rest: 0.16, hover: 0.40 };
+}
+function isUnderbuilt(lot) {
+  return lot.vacant || lot.category === "opportunity";
+}
+function lotStyleFor(lot, hover) {
+  const c = lotColor(lot);
+  const dim = _ms.vacantOnly && !lot.is_self && !isUnderbuilt(lot);
+  const aerial = _ms.base === "aerial";
+  return {
+    color: c.color,
+    weight: dim ? 0.5 : (hover ? 2.5 : (aerial ? 1.8 : 1)),
+    opacity: dim ? 0.25 : (aerial ? 0.95 : 0.7),
+    fillColor: c.color,
+    fillOpacity: dim ? 0.02 : (hover ? c.hover : c.rest),
+  };
+}
+function restyleLots() {
+  if (!_ms) return;
+  for (const e of _ms.lots) e.layer.setStyle(lotStyleFor(e.lot, false));
+  const me = _ms.lots.find(e => e.lot.is_self);
+  if (me) me.layer.bringToFront();
+}
+
+function renderMapLegend() {
+  const el = document.getElementById("maplegend");
+  if (!el || !_ms) return;
+  const sw = (bg, t) => `<span><i style="background:${bg}"></i>${t}</span>`;
+  let h = "";
+  if (_ms.mode === "distress") {
+    h = sw("var(--iron)", "this lot")
+      + [3, 2, 1, 0].map(t => sw(TIER_COLORS[t], TIER_LABELS[t])).join("");
+    if (_ms.sigState === "loading") h += `<span class="lg-note">checking liens, HPD Class C, ECB…</span>`;
+    else if (_ms.sigState === "error") h += `<span class="lg-note">distress lookup failed — try again</span>`;
+    else if (_ms.sigState === "partial") h += `<span class="lg-note">some datasets timed out — tiers may be understated</span>`;
+    else h += `<span class="lg-note">liens · HPD Class C · ECB fines</span>`;
+  } else if (_ms.mode === "zoning") {
+    h = sw("var(--iron)", "this lot") + sw("#4F8FBF", "residential (R)") + sw("#E0A030", "commercial (C)")
+      + sw("#9B6BC4", "manufacturing (M)") + sw("#4CAF6A", "park (P)") + sw("#8A97A8", "other");
+  } else {
+    h = sw("var(--iron)", "this lot") + sw("var(--slate)", "room to build")
+      + sw("var(--ochre)", "institutional / parking") + sw("var(--ink-2)", "existing building");
+  }
+  el.innerHTML = h;
+}
+
+function lotPopupHtml(lot) {
+  const far = (lot.year_built ? "built " + lot.year_built : "");
+  const areaTxt = lot.lot_area ? Math.round(Number(lot.lot_area)).toLocaleString() + " sf lot" : "";
+  const farTxt = (lot.far_built != null && lot.far_max != null)
+    ? "FAR " + Number(lot.far_built).toFixed(2) + " built / " + Number(lot.far_max).toFixed(2) + " max" : "";
+  const s = _ms && _ms.signals && _ms.signals[lot.bbl];
+  const sig = [];
+  if (s && s.lien) sig.push(`<span class="neg">${esc(s.lien)}</span>`);
+  if (s && s.hpd_c) sig.push(`<span class="neg">${s.hpd_c} open HPD Class C</span>`);
+  if (s && s.ecb_bal) sig.push(`<span class="neg">$${Number(s.ecb_bal).toLocaleString()} ECB fines</span>`);
+  const sigHtml = sig.length ? `<div class="pop-k" style="margin-top:4px">${sig.join("<br>")}</div>`
+    : (_ms && _ms.signals && _ms.sigCovered && _ms.sigCovered.has(lot.bbl) ? `<div class="pop-k">no lien / HPD C / ECB signals</div>` : "");
+  return `
+    <div class="pop-addr">${esc(lot.address || lot.bbl)}</div>
+    ${lot.owner ? `<div class="pop-k">${esc(lot.owner)}</div>` : ""}
+    <div class="pop-k">${esc(lot.bldg_class || "")}${far ? " · " + esc(far) : ""}${lot.zoning ? " · zoned " + esc(lot.zoning) : ""}</div>
+    ${areaTxt ? `<div class="pop-k">${areaTxt}${farTxt ? " · " + farTxt : ""}</div>` : (farTxt ? `<div class="pop-k">${farTxt}</div>` : "")}
+    ${lot.units_res ? `<div class="pop-k">${lot.units_res} residential units</div>` : ""}
+    ${sigHtml}
+    ${lot.is_self ? '<div class="pop-k" style="margin-top:6px">You are viewing this lot.</div>'
+      : `<button class="pop-btn" onclick="loadBBL('${esc(lot.bbl)}')">See this lot's report →</button>`}`;
+}
+
 async function initBlockMap(lat, lng, selfBbl) {
   loadStreetView(lat, lng);
   const el = document.getElementById("blockmap");
@@ -1319,9 +1510,10 @@ async function initBlockMap(lat, lng, selfBbl) {
 
   _map = L.map(el, { zoomControl: true, scrollWheelZoom: true, attributionControl: true })
     .setView([lat, lng], 17);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19, attribution: "© OpenStreetMap",
-  }).addTo(_map);
+  _ms = { map: _map, base: "street", baseLayer: null, mode: "category", vacantOnly: false,
+          lots: [], signals: null, sigState: "idle", center: [lat, lng] };
+  applyBasemap(_ms, el, "street");
+  renderMapLegend();
   // Leaflet needs a size recalc when its container was just inserted.
   setTimeout(() => _map && _map.invalidateSize(), 100);
 
@@ -1343,63 +1535,31 @@ async function initBlockMap(lat, lng, selfBbl) {
     const r = await fetch(`/api/lots?bbl=${encodeURIComponent(selfBbl || "")}&lat=${lat}&lng=${lng}&blocks=5`);
     const j = await r.json();
     const lots = j.lots || [];
-    // Category -> base color, mirroring the report palette.
-    const css = getComputedStyle(document.documentElement);
-    const COLORS = {
-      self:        css.getPropertyValue("--iron").trim()  || "#9E3323",
-      opportunity: css.getPropertyValue("--slate").trim() || "#38596B",
-      constrained: css.getPropertyValue("--ochre").trim() || "#B57F1E",
-      existing:    css.getPropertyValue("--ink-2").trim() || "#4A4E52",
-    };
-    // Fill styles: high transparency at rest; darker (more opaque) on hover.
-    const restOpacity = (cat) => cat === "self" ? 0.42 : 0.16;
-    const hoverOpacity = (cat) => cat === "self" ? 0.55 : 0.40;
 
-    const layers = [];
-    let selfLayer = null;
     for (const lot of lots) {
       if (!lot.geometry) continue;
-      const color = COLORS[lot.category] || COLORS.existing;
-      const layer = L.geoJSON(lot.geometry, {
-        style: {
-          color: color, weight: 1, opacity: 0.7,
-          fillColor: color, fillOpacity: restOpacity(lot.category),
-        },
-      }).addTo(_map);
-
-      const far = (lot.year_built ? "built " + lot.year_built : "");
-      const areaTxt = lot.lot_area ? Math.round(Number(lot.lot_area)).toLocaleString() + " sf lot" : "";
-      layer.bindPopup(`
-        <div class="pop-addr">${esc(lot.address || lot.bbl)}</div>
-        <div class="pop-k">${esc(lot.bldg_class || "")}${far ? " · " + esc(far) : ""}</div>
-        ${areaTxt ? `<div class="pop-k">${areaTxt}</div>` : ""}
-        ${lot.units_res ? `<div class="pop-k">${lot.units_res} residential units</div>` : ""}
-        ${lot.is_self ? '<div class="pop-k" style="margin-top:6px">You are viewing this lot.</div>'
-          : `<button class="pop-btn" onclick="loadBBL('${esc(lot.bbl)}')">See this lot's report →</button>`}
-      `);
+      const ctr = geomCenter(lot.geometry);
+      lot._lat = ctr[0]; lot._lng = ctr[1];
+      const layer = L.geoJSON(lot.geometry, { style: lotStyleFor(lot, false) }).addTo(_map);
+      layer.bindPopup(() => lotPopupHtml(lot));
+      _ms.lots.push({ lot, layer });
 
       // Hover: darken the fill so the mouse-over lot is obviously "live".
       if (!lot.is_self) {
         layer.on("mouseover", function(){
-          this.setStyle({ fillOpacity: hoverOpacity(lot.category), weight: 2 });
+          this.setStyle(lotStyleFor(lot, true));
           el.style.cursor = "pointer";
         });
         layer.on("mouseout", function(){
-          this.setStyle({ fillOpacity: restOpacity(lot.category), weight: 1 });
+          this.setStyle(lotStyleFor(lot, false));
           el.style.cursor = "";
         });
-        // Click anywhere on the shaded footprint opens that lot's report.
-        layer.on("click", function(){ loadBBL(lot.bbl); });
       }
-
-      layers.push(layer);
-      if (lot.is_self) selfLayer = layer;
     }
-
+    restyleLots();
     // Keep the property centred at a readable zoom so nearby lots stay clickable;
     // the full 5-block radius is all shaded and reachable by panning/zooming out.
     _map.setView([lat, lng], 17);
-    if (selfLayer) selfLayer.bringToFront();
   } catch (e) {
     // Map still shows the basemap and the property centre if the footprints fail.
     L.marker([lat, lng], { icon: dot("self") }).addTo(_map);
@@ -1589,13 +1749,113 @@ async function runSearch() {
     window.__searchMeta = { mode: sMode, count: d.count };
     res.innerHTML = `<div style="display:flex;align-items:center;gap:12px;margin:10px 0;flex-wrap:wrap">
         <span class="hint" style="margin:0">${d.count} result${d.count===1?'':'s'} — click any to open its report.</span>
+        <span class="vtoggle"><button class="mbtn mbtn-on" data-hv="list" onclick="huntView('list')">List</button><button class="mbtn" data-hv="map" onclick="huntView('map')">Map</button></span>
         <button class="sgo" style="margin:0;padding:6px 12px;font-size:11px" onclick="downloadSearchCsv()">⭳ Download to Excel</button>
         <button class="sgo" id="bulk-skip-btn" style="margin:0;padding:6px 12px;font-size:11px;background:var(--teal);color:#0A0E14" onclick="bulkSkipTrace()">📞 Bulk skip-trace all (${Math.min(d.results.length,50)})</button>
-      </div>`
-      + d.results.map(x => renderSearchRow(x)).join('');
+      </div>
+      <div id="hunt-mapwrap" class="mapwrap" hidden style="margin-bottom:12px">
+        <div class="mapbar">
+          <span class="mlabel">Base</span>
+          <button class="mbtn mbtn-on" data-hbase="street" onclick="huntBase('street')">Street</button>
+          <button class="mbtn" data-hbase="aerial" onclick="huntBase('aerial')">Bird view</button>
+          <label><input type="checkbox" id="hunt-vacant" onchange="renderHuntMap()"> Vacant lots only</label>
+        </div>
+        <div id="huntmap"></div>
+        <div class="maplegend" id="huntlegend"></div>
+      </div>
+      <div id="hunt-list">` + d.results.map(x => renderSearchRow(x)).join('') + `</div>`;
+    if (_huntMap) { _huntMap.remove(); _huntMap = null; }
+    _huntData = null;
   } catch (e) {
     res.innerHTML = '<div class="err">Search failed: ' + esc(String(e)) + '</div>';
   }
+}
+
+/* ---------- Hunt results map ---------- */
+let _huntMap = null, _huntBase = { map: null, baseLayer: null }, _huntBaseKind = "street";
+let _huntPins = null, _huntData = null;
+
+function huntView(v) {
+  document.querySelectorAll('[data-hv]').forEach(b => b.classList.toggle('mbtn-on', b.dataset.hv === v));
+  const list = document.getElementById('hunt-list'), wrap = document.getElementById('hunt-mapwrap');
+  if (!list || !wrap) return;
+  list.hidden = v === 'map';
+  wrap.hidden = v !== 'map';
+  if (v === 'map') renderHuntMap();
+}
+function huntBase(kind) {
+  _huntBaseKind = kind;
+  document.querySelectorAll('[data-hbase]').forEach(b => b.classList.toggle('mbtn-on', b.dataset.hbase === kind));
+  if (_huntMap) applyBasemap(_huntBase, document.getElementById('huntmap'), kind);
+}
+
+function huntColor(x, sig) {
+  const st = String(x.fc_stage || "");
+  if (/90/.test(st)) return "#FF4B3E";
+  if (/60/.test(st)) return "#F08A24";
+  if (/final/i.test(st)) return "#8A97A8";
+  const t = Math.max(sig ? sig.score : 0, x.lien_type ? 2 : 0);
+  return t ? TIER_COLORS[t] : "#38A8B8";
+}
+
+async function renderHuntMap() {
+  const el = document.getElementById('huntmap');
+  const legend = document.getElementById('huntlegend');
+  const rows = (window.__searchResults || []).slice(0, 400);
+  if (!el || !rows.length) return;
+  const vacantOnly = !!document.getElementById('hunt-vacant')?.checked;
+
+  if (!_huntMap) {
+    _huntMap = L.map(el, { zoomControl: true, scrollWheelZoom: true }).setView([40.69, -73.96], 12);
+    _huntBase = { map: _huntMap, baseLayer: null };
+    applyBasemap(_huntBase, el, _huntBaseKind);
+    _huntPins = L.layerGroup().addTo(_huntMap);
+  }
+  setTimeout(() => _huntMap && _huntMap.invalidateSize(), 80);
+
+  // One call gives us coordinates (for rows lacking them) and distress tiers.
+  if (!_huntData) {
+    legend.innerHTML = '<span class="lg-note">locating results and checking liens / HPD / ECB…</span>';
+    try {
+      const r = await fetch('/api/lot-signals?points=1&bbls=' + rows.map(x => x.bbl).join(','));
+      const j = await r.json();
+      _huntData = { signals: j.signals || {}, points: j.points || {} };
+    } catch (e) {
+      _huntData = { signals: {}, points: {} };
+    }
+  }
+
+  _huntPins.clearLayers();
+  const pts = [];
+  let skipped = 0;
+  for (const x of rows) {
+    const pt = (x.lat && x.lon) ? [Number(x.lat), Number(x.lon)] : _huntData.points[x.bbl];
+    if (!pt) { skipped++; continue; }
+    if (vacantOnly && !String(x.bldg_class || '').toUpperCase().startsWith('V')) continue;
+    const sig = _huntData.signals[x.bbl];
+    const m = L.circleMarker(pt, { radius: 7, color: '#0D1117', weight: 1.2, fillColor: huntColor(x, sig), fillOpacity: 0.9 });
+    const sigTxt = [];
+    if (sig && sig.lien) sigTxt.push(esc(sig.lien));
+    if (sig && sig.hpd_c) sigTxt.push(sig.hpd_c + ' open HPD Class C');
+    if (sig && sig.ecb_bal) sigTxt.push('$' + Number(sig.ecb_bal).toLocaleString() + ' ECB fines');
+    m.bindPopup(`<div class="pop-addr">${esc(x.address || x.bbl)}</div>
+      ${x.fc_stage ? `<div class="pop-k"><span class="neg">${esc(x.fc_stage)}</span>${x.fc_date ? ' · ' + esc(x.fc_date) : ''}</div>` : ''}
+      ${x.lien_type ? `<div class="pop-k">${esc(x.lien_type)}</div>` : ''}
+      ${x.owner ? `<div class="pop-k">${esc(x.owner)}</div>` : ''}
+      <div class="pop-k">${esc(x.bldg_class || '')}${x.lot_area ? ' · ' + Number(x.lot_area).toLocaleString() + ' sf' : ''}${x.units_res ? ' · ' + x.units_res + ' units' : ''}</div>
+      ${sigTxt.length ? `<div class="pop-k neg">${sigTxt.join('<br>')}</div>` : ''}
+      <button class="pop-btn" onclick="loadBBL('${esc(x.bbl)}')">See this lot's report →</button>`);
+    m.on('mouseover', function(){ this.setStyle({ weight: 2.5 }); this.setRadius(10); });
+    m.on('mouseout',  function(){ this.setStyle({ weight: 1.2 }); this.setRadius(7); });
+    m.addTo(_huntPins);
+    pts.push(pt);
+  }
+  if (pts.length) _huntMap.fitBounds(L.latLngBounds(pts).pad(0.12), { maxZoom: 17 });
+
+  const sw = (bg, t) => `<span><i style="background:${bg}"></i>${t}</span>`;
+  legend.innerHTML = sw('#FF4B3E', '90-day notice / lien-listed') + sw('#F08A24', '60-day notice / serious')
+    + sw('#E6C34A', 'minor signals') + sw('#8A97A8', 'final sale') + sw('#38A8B8', 'match, no signals')
+    + `<span class="lg-note">${pts.length} pinned${skipped ? ' · ' + skipped + ' without coordinates' : ''}${(window.__searchResults || []).length > 400 ? ' · first 400 shown' : ''}</span>`;
 }
 
 // Manually trigger the daily motivated-seller report on demand.
