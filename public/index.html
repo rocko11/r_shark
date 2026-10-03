@@ -280,6 +280,12 @@ footer{border-top:1px solid var(--rule);margin-top:40px;padding-top:14px;
 .mbtn-on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .mapbar label{display:flex;gap:5px;align-items:center;margin-left:8px;cursor:pointer;color:var(--ink)}
 .maplegend .lg-note{color:var(--fog)}
+.zlabel{pointer-events:none}
+.zlabel span{position:absolute;transform:translate(-50%,-50%);font:700 11px var(--mono);color:#fff;
+  letter-spacing:.02em;white-space:nowrap;pointer-events:none;
+  text-shadow:0 0 2px #000,0 0 3px #000,0 0 4px #000,0 0 6px rgba(0,0,0,.6)}
+.zlabel.zfine span{font-size:10px}
+.zlabel.zself span{font-size:13px;color:#FFE27A}
 #huntmap{height:460px;width:100%;background:var(--paper-2)}
 .vtoggle{display:inline-flex}
 .vtoggle .mbtn+.mbtn{border-left:0}
@@ -1132,6 +1138,7 @@ function render(d) {
           <button class="mbtn" data-mode="distress" onclick="mapSetMode('distress')">Distress</button>
           <button class="mbtn" data-mode="zoning" onclick="mapSetMode('zoning')">Zoning</button>
           <label><input type="checkbox" id="mapvacant" onchange="mapSetVacant(this.checked)"> Vacant / underbuilt only</label>
+          <label><input type="checkbox" id="mapzlabels" onchange="mapSetZLabels(this.checked)"> Zoning labels</label>
         </div>
         <div id="blockmap"></div>
         <div class="maplegend" id="maplegend"></div>
@@ -1447,6 +1454,9 @@ async function mapSetMode(mode) {
   if (!_ms) return;
   _ms.mode = mode;
   setBarOn(document.querySelector(".mapwrap"), "data-mode", mode);
+  _ms.zlabels = mode === "zoning";
+  const zc = document.getElementById("mapzlabels"); if (zc) zc.checked = _ms.zlabels;
+  updateZoneLabels();
   if (mode === "distress" && !_ms.signals && _ms.sigState !== "loading") await loadLotSignals();
   restyleLots();
   renderMapLegend();
@@ -1544,12 +1554,61 @@ function renderMapLegend() {
     else h += `<span class="lg-note">liens · HPD Class C · ECB fines</span>`;
   } else if (_ms.mode === "zoning") {
     h = sw("var(--iron)", "this lot") + sw("#4F8FBF", "residential (R)") + sw("#E0A030", "commercial (C)")
-      + sw("#9B6BC4", "manufacturing (M)") + sw("#4CAF6A", "park (P)") + sw("#8A97A8", "other");
+      + sw("#9B6BC4", "manufacturing (M)") + sw("#4CAF6A", "park (P)") + sw("#8A97A8", "other")
+      + `<span class="lg-note">labels show the zoning district · zoom in for per-lot labels</span>`;
   } else {
     h = sw("var(--iron)", "this lot") + sw("var(--slate)", "room to build")
       + sw("var(--ochre)", "institutional / parking") + sw("var(--ink-2)", "existing building");
   }
   el.innerHTML = h;
+}
+
+function zoneText(lot) {
+  return lot.zoning ? lot.zoning + (lot.zoning2 ? " / " + lot.zoning2 : "") : "";
+}
+function mapSetZLabels(on) {
+  if (!_ms) return;
+  _ms.zlabels = !!on;
+  updateZoneLabels();
+}
+// Zoning class text on the map. Zoom 16-17: one label per zone per block (readable at a
+// glance). Zoom 18+: one label per lot. Hidden below 16 so the 5-block view stays clean.
+function updateZoneLabels() {
+  if (!_ms || !_map) return;
+  for (const k of ["zCoarse", "zFine"]) {
+    if (_ms[k]) { _map.removeLayer(_ms[k]); _ms[k] = null; }
+  }
+  if (!_ms.zlabels) return;
+  const mk = (lat, lng, text, cls) => L.marker([lat, lng], {
+    interactive: false, keyboard: false,
+    icon: L.divIcon({ className: "zlabel " + cls, html: "<span>" + esc(text) + "</span>", iconSize: [0, 0] }),
+  });
+  const coarse = L.layerGroup(), fine = L.layerGroup();
+  const groups = new Map();
+  for (const e of _ms.lots) {
+    const l = e.lot;
+    if (!l.zoning) continue;
+    mk(l._lat, l._lng, l.zoning, l.is_self ? "zfine zself" : "zfine").addTo(fine);
+    const key = String(l.bbl).slice(0, 6) + "|" + l.zoning;
+    let g = groups.get(key);
+    if (!g) { g = { z: l.zoning, la: 0, lo: 0, n: 0, self: false }; groups.set(key, g); }
+    g.la += l._lat; g.lo += l._lng; g.n++;
+    if (l.is_self) g.self = true;
+  }
+  for (const g of groups.values()) mk(g.la / g.n, g.lo / g.n, g.z, g.self ? "zself" : "").addTo(coarse);
+  _ms.zCoarse = coarse; _ms.zFine = fine;
+  syncZoneLabels();
+}
+function syncZoneLabels() {
+  if (!_ms || !_map) return;
+  const z = _map.getZoom();
+  const want = { zCoarse: _ms.zlabels && z >= 16 && z < 18, zFine: _ms.zlabels && z >= 18 };
+  for (const k of ["zCoarse", "zFine"]) {
+    const layer = _ms[k];
+    if (!layer) continue;
+    if (want[k] && !_map.hasLayer(layer)) layer.addTo(_map);
+    if (!want[k] && _map.hasLayer(layer)) _map.removeLayer(layer);
+  }
 }
 
 function lotPopupHtml(lot) {
@@ -1567,7 +1626,8 @@ function lotPopupHtml(lot) {
   return `
     <div class="pop-addr">${esc(lot.address || lot.bbl)}</div>
     ${lot.owner ? `<div class="pop-k">${esc(lot.owner)}</div>` : ""}
-    <div class="pop-k">${esc(lot.bldg_class || "")}${far ? " · " + esc(far) : ""}${lot.zoning ? " · zoned " + esc(lot.zoning) : ""}</div>
+    <div class="pop-k">${esc(lot.bldg_class || "")}${far ? " · " + esc(far) : ""}${lot.zoning ? " · zoned " + esc(zoneText(lot)) : ""}</div>
+    ${(lot.overlay || lot.special) ? `<div class="pop-k">${lot.overlay ? "overlay " + esc(lot.overlay) : ""}${lot.overlay && lot.special ? " · " : ""}${lot.special ? "special district " + esc(lot.special) : ""}</div>` : ""}
     ${areaTxt ? `<div class="pop-k">${areaTxt}${farTxt ? " · " + farTxt : ""}</div>` : (farTxt ? `<div class="pop-k">${farTxt}</div>` : "")}
     ${lot.units_res ? `<div class="pop-k">${lot.units_res} residential units</div>` : ""}
     ${sigHtml}
@@ -1584,7 +1644,8 @@ async function initBlockMap(lat, lng, selfBbl) {
   _map = L.map(el, { zoomControl: true, scrollWheelZoom: true, attributionControl: true })
     .setView([lat, lng], 17);
   _ms = { map: _map, base: "street", baseLayer: null, mode: "category", vacantOnly: false,
-          lots: [], signals: null, sigState: "idle", center: [lat, lng] };
+          lots: [], signals: null, sigState: "idle", center: [lat, lng], zlabels: false, zCoarse: null, zFine: null };
+  _map.on("zoomend", syncZoneLabels);
   applyBasemap(_ms, el, "street");
   renderMapLegend();
   // Leaflet needs a size recalc when its container was just inserted.
@@ -1630,6 +1691,7 @@ async function initBlockMap(lat, lng, selfBbl) {
       }
     }
     restyleLots();
+    updateZoneLabels();
     // Keep the property centred at a readable zoom so nearby lots stay clickable;
     // the full 5-block radius is all shaded and reachable by panning/zooming out.
     _map.setView([lat, lng], 17);
