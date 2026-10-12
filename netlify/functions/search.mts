@@ -501,10 +501,17 @@ export default async (req: Request, _ctx: Context) => {
           caseNumber:   c.caseNumberFull || c.caseNumber || "",
           dateFiled:    c.dateFiled || "",
           court:        courtNames[cid] || cid,
-          natureOfSuit: "Foreclosure (220)",
+          natureOfSuit: c.natureOfSuit === "290" ? "Other Real Property (290)" : "Foreclosure (220)",
           caseLink:     c.caseLink || "",
           defendant,
           address:      addressFromTitle,  // populated below if empty
+          lender:       "",
+          status:       "",
+          amountInControversy: "",
+          plaintiffAttorney:   "",
+          judgmentDate: "",
+          saleDate:     "",
+          lastDocketEntry: "",
         });
       }
     }
@@ -525,6 +532,27 @@ export default async (req: Request, _ctx: Context) => {
       const batch = stillNeeds.slice(i, i+3);
       const addrs = await Promise.all(batch.map(r => lookupPlutoByOwner(r.defendant)));
       batch.forEach((r, bi) => { if (addrs[bi]) r.address = addrs[bi]; });
+    }
+
+    // Enrich with docket status, plaintiff/lender, amount in controversy
+    // Batch in groups of 3 to stay within timeout (max 20 cases enriched)
+    for (let i = 0; i < Math.min(rawResults.length, 20); i += 3) {
+      const batch = rawResults.slice(i, i+3);
+      const [dockets, plaintiffs] = await Promise.all([
+        Promise.all(batch.map(r => pacerDocket(token, r.caseNumber).catch(() => null))),
+        Promise.all(batch.map(r => pacerPlaintiff(token, r.caseNumber).catch(() => "")))
+      ]);
+      batch.forEach((r, bi) => {
+        if (plaintiffs[bi]) r.lender = plaintiffs[bi];
+        if (dockets[bi]) {
+          r.status             = dockets[bi]!.status;
+          r.judgmentDate       = dockets[bi]!.judgmentDate;
+          r.saleDate           = dockets[bi]!.saleDate;
+          r.amountInControversy = dockets[bi]!.amountInControversy;
+          r.plaintiffAttorney  = dockets[bi]!.plaintiffAttorney;
+          r.lastDocketEntry    = dockets[bi]!.lastDocketEntry;
+        }
+      });
     }
 
     rawResults.sort((a,b) => b.dateFiled.localeCompare(a.dateFiled));
@@ -801,12 +829,94 @@ async function pacerSearch(token: string, courtId: string[], dateFrom: string): 
   const r = await fetch(PACER_PCL, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Accept": "application/json", "X-NEXT-GEN-CSO": token },
-    body: JSON.stringify({ natureOfSuit: ["220"], courtId, dateFiledFrom: dateFrom, jurisdictionType: "cv" }),
+    // NOS 220 = Foreclosure, 290 = Other Real Property (catches fed tax lien enforcement)
+    body: JSON.stringify({ natureOfSuit: ["220", "290"], courtId, dateFiledFrom: dateFrom, jurisdictionType: "cv" }),
     signal: AbortSignal.timeout(12000),
   });
   if (!r.ok) return [];
   const d = await r.json().catch(()=>null);
   return d?.content || [];
+}
+
+// Fetch docket entries to determine case status, judgment date, plaintiff attorney, and amount
+async function pacerDocket(token: string, caseId: string): Promise<{
+  status: string; judgmentDate: string; saleDate: string; amountInControversy: string;
+  plaintiffAttorney: string; lastDocketEntry: string;
+}> {
+  const empty = { status: "PENDING", judgmentDate: "", saleDate: "", amountInControversy: "", plaintiffAttorney: "", lastDocketEntry: "" };
+  try {
+    const r = await fetch(`https://pcl.uscourts.gov/pcl-public-api/rest/docketEntries/find`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json", "X-NEXT-GEN-CSO": token },
+      body: JSON.stringify({ caseNumberFull: caseId, pageSize: 20, sort: "dateFiled,desc" }),
+      signal: AbortSignal.timeout(7000),
+    });
+    if (!r.ok) return empty;
+    const d = await r.json().catch(() => null);
+    const entries: any[] = d?.content || [];
+
+    let status = "PENDING";
+    let judgmentDate = "";
+    let saleDate = "";
+    let amountInControversy = "";
+    let plaintiffAttorney = "";
+    let lastDocketEntry = "";
+
+    for (const e of entries) {
+      const txt = (e.docketText || "").toLowerCase();
+      const date = (e.dateFiled || "").slice(0, 10);
+
+      if (!lastDocketEntry && e.docketText) lastDocketEntry = e.docketText.slice(0, 120);
+
+      // Status detection
+      if (/judgment|default judgment|summary judgment/i.test(txt)) {
+        status = "JUDGMENT ENTERED";
+        if (!judgmentDate) judgmentDate = date;
+      }
+      if (/dismiss/i.test(txt)) { status = "DISMISSED"; }
+      if (/sale.{0,30}(scheduled|confirmed|ordered)/i.test(txt) || /order.{0,20}sale/i.test(txt)) {
+        if (status !== "DISMISSED") status = "SALE ORDERED";
+        if (!saleDate) saleDate = date;
+      }
+      if (/satisfied|paid in full|vacated/i.test(txt)) { status = "RESOLVED"; }
+
+      // Amount in controversy — often in the complaint or judgment
+      if (!amountInControversy) {
+        const amt = txt.match(/\$[\d,]+(?:\.\d{2})?/);
+        if (amt) amountInControversy = amt[0];
+      }
+
+      // Plaintiff attorney — typically in early entries
+      if (!plaintiffAttorney && /appear|attorney|counsel/i.test(txt)) {
+        const m = e.docketText?.match(/(?:by|for|attorney for plaintiff[s]?:?\s*)([A-Z][a-zA-Z\s,\.]{4,40})/);
+        if (m) plaintiffAttorney = m[1].trim().replace(/,\s*$/, "");
+      }
+    }
+
+    return { status, judgmentDate, saleDate, amountInControversy, plaintiffAttorney, lastDocketEntry };
+  } catch { return empty; }
+}
+
+// Fetch plaintiff (lender) name from party records
+async function pacerPlaintiff(token: string, caseId: string): Promise<string> {
+  try {
+    const r = await fetch("https://pcl.uscourts.gov/pcl-public-api/rest/parties/find", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json", "X-NEXT-GEN-CSO": token },
+      body: JSON.stringify({ caseNumberFull: caseId }),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!r.ok) return "";
+    const d = await r.json();
+    const parties: any[] = d?.content || [];
+    for (const p of parties) {
+      const role = (p.partyRole || "").toLowerCase();
+      if (role.includes("pla") || role.includes("plaintiff") || role === "pet") {
+        return (p.partyName || p.name || "").trim();
+      }
+    }
+    return "";
+  } catch { return ""; }
 }
 
 export const config: Config = { path: "/api/search" };

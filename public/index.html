@@ -2361,6 +2361,16 @@ async function runPacer() {
     if (!d.results?.length) { out.innerHTML = '<div class="empty"><p>No federal foreclosure cases found for this period.</p></div>'; return; }
 
     const courtLabel = { all:'SDNY + EDNY', nysdc:'SDNY (Manhattan)', nyedc:'EDNY (Brooklyn/Queens)' }[court] || court;
+    const statusBadge = s => {
+      const cfg = {
+        'PENDING':          { bg:'#0d9488', txt:'#fff' },
+        'JUDGMENT ENTERED': { bg:'#f97316', txt:'#fff' },
+        'SALE ORDERED':     { bg:'#dc2626', txt:'#fff' },
+        'DISMISSED':        { bg:'#6b7280', txt:'#fff' },
+        'RESOLVED':         { bg:'#16a34a', txt:'#fff' },
+      }[s] || { bg:'#334155', txt:'#94a3b8' };
+      return s ? `<span style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.05em;background:${cfg.bg};color:${cfg.txt};margin-bottom:4px">${esc(s)}</span>` : '';
+    };
     out.innerHTML = `
       <div style="background:var(--steel);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px">
         <div style="padding:12px 16px;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;align-items:center">
@@ -2370,20 +2380,28 @@ async function runPacer() {
         <table style="width:100%;border-collapse:collapse">
           <thead><tr style="border-bottom:1px solid var(--rule)">
             <th style="padding:9px 12px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);text-align:left">Case</th>
-            <th style="padding:9px 12px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);text-align:left">Court</th>
+            <th style="padding:9px 12px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);text-align:left">Details</th>
             <th style="padding:9px 12px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);text-align:right">Filed</th>
           </tr></thead>
           <tbody>
             ${d.results.map(c => `
               <tr style="border-bottom:1px solid var(--line);cursor:default">
-                <td style="padding:11px 12px">
+                <td style="padding:11px 12px;max-width:340px">
                   ${c.address ? `<div style="color:var(--shark);font-size:15px;font-weight:700;margin-bottom:3px">📍 ${esc(c.address)}</div>` : ''}
+                  ${statusBadge(c.status)}
                   <div style="color:var(--chrome);font-size:13px;font-weight:600">${esc(c.caseTitle||'—')}</div>
+                  ${c.lender ? `<div style="color:var(--ink-2);font-size:12px;margin-top:2px">🏦 <strong>Lender:</strong> ${esc(c.lender)}</div>` : ''}
                   <div style="color:var(--ink-2);font-size:11px;margin-top:2px;font-family:var(--mono)">${esc(c.caseNumber||'')} · ${esc(c.natureOfSuit||'')}</div>
                   ${c.caseLink ? `<a href="${esc(c.caseLink)}" target="_blank" rel="noopener" style="color:var(--shark);font-size:11px;margin-top:3px;display:inline-block">View on PACER →</a>` : ''}
                 </td>
-                <td style="padding:11px 12px;color:var(--shark);font-size:12px;white-space:nowrap">${esc(c.court||'')}</td>
-                <td style="padding:11px 12px;color:var(--ink-2);font-size:12px;text-align:right;white-space:nowrap;font-family:var(--mono)">${esc((c.dateFiled||'').slice(0,10))}</td>
+                <td style="padding:11px 12px;font-size:12px;color:var(--ink-2);min-width:180px">
+                  ${c.amountInControversy ? `<div><span style="color:var(--ink-3)">Amount:</span> <strong style="color:var(--chrome)">${esc(c.amountInControversy)}</strong></div>` : ''}
+                  ${c.plaintiffAttorney ? `<div style="margin-top:3px"><span style="color:var(--ink-3)">Pl. Atty:</span> ${esc(c.plaintiffAttorney)}</div>` : ''}
+                  ${c.judgmentDate ? `<div style="margin-top:3px"><span style="color:var(--ink-3)">Judgment:</span> ${esc(c.judgmentDate)}</div>` : ''}
+                  ${c.saleDate ? `<div style="margin-top:3px"><span style="color:var(--ink-3)">Sale:</span> ${esc(c.saleDate)}</div>` : ''}
+                  ${c.lastDocketEntry ? `<div style="margin-top:4px;font-size:11px;color:var(--ink-3);font-style:italic;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.lastDocketEntry)}">${esc(c.lastDocketEntry)}</div>` : ''}
+                </td>
+                <td style="padding:11px 12px;color:var(--ink-2);font-size:12px;text-align:right;white-space:nowrap;font-family:var(--mono);vertical-align:top">${esc((c.dateFiled||'').slice(0,10))}<br><span style="color:var(--ink-3);font-size:10px">${esc(c.court||'')}</span></td>
               </tr>`).join('')}
           </tbody>
         </table>
