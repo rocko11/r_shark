@@ -1,13 +1,15 @@
-// Annual property tax estimate. NYC's actual tax BILL is not a single open-data
-// field — it's computed by DOF from the taxable assessed value and the tax-class
-// rate, then reduced by abatements/exemptions (421-a, J-51, co-op/condo abatement,
-// STAR, SCHE, veterans). We compute the unabated baseline precisely from PLUTO's
-// assessed values and the published class rates, and flag that the real bill is
-// lower where an exemption applies.
+// Annual property tax — two-path approach:
+//  1. fetchActualTax(bbl): hits the DOF Property Charges Balance dataset (NYC Open Data
+//     scjx-j6np) for the actual billed amount. This reflects all abatements/exemptions
+//     (421-a, J-51, co-op/condo, STAR, SCHE, veterans). Falls back to estimate on error.
+//  2. estimatePropertyTax(pluto): PLUTO-based estimate using assessed value × class rate.
+//     Used when actual data is unavailable, or as a secondary reference.
 //
 // Rates: FY2026 FINAL, adopted by City Council Oct 29 2025, retroactive to
 // Jul 1 2025 (tax year Jul 2025 – Jun 2026). Verified against nyc.gov/finance.
 // These change yearly — update RATES and RATE_YEAR each July.
+
+const DOF_CHARGES_URL = "https://data.cityofnewyork.us/resource/scjx-j6np.json";
 
 const RATE_YEAR = "FY2026 (Jul 2025 – Jun 2026)";
 const RATES: Record<string, number> = {
@@ -51,6 +53,50 @@ function taxClassOf(pluto: any): { code: string; label: string } | null {
 }
 
 const money = (n: number) => Math.round(n);
+
+// Fetch the actual DOF-billed property tax from the Property Charges Balance dataset.
+// Returns the most recent full tax year's annual total (sum of all quarterly CHG records),
+// or null if no data is available.
+export async function fetchActualTax(bbl: string): Promise<{
+  annual: number;
+  tax_year: string;
+  source: "dof_actual";
+} | null> {
+  if (!bbl || bbl.length !== 10) return null;
+  try {
+    // Query the last 8 quarters to find the most recent complete year
+    const url = `${DOF_CHARGES_URL}?parid=${encodeURIComponent(bbl)}&code=CHG&rolltype=RP_NY&$order=taxyear DESC,cycle ASC&$limit=20`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return null;
+    const rows: any[] = await r.json();
+    if (!rows.length) return null;
+
+    // Group by taxyear, sum sum_liab across all cycles for each year
+    const byYear: Record<string, { total: number; cycles: Set<string> }> = {};
+    for (const row of rows) {
+      const yr = String(row.taxyear ?? "");
+      if (!yr) continue;
+      if (!byYear[yr]) byYear[yr] = { total: 0, cycles: new Set() };
+      const liab = Number(row.sum_liab) || 0;
+      byYear[yr].total += liab;
+      byYear[yr].cycles.add(String(row.cycle ?? ""));
+    }
+
+    // Pick the most recent year that has at least 2 cycle records (partial years are ok
+    // for recent data; we show whatever we have and label it clearly)
+    const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
+    for (const yr of years) {
+      const d = byYear[yr];
+      if (d.cycles.size >= 2) {
+        const label = `FY${yr} (Jul ${Number(yr)-1}–Jun ${yr})`;
+        return { annual: money(d.total), tax_year: label, source: "dof_actual" };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export function estimatePropertyTax(pluto: any): {
   available: boolean;

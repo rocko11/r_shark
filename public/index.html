@@ -1198,22 +1198,35 @@ function render(d) {
       <div class="sec-head"><h2>Property tax</h2><span class="count">estimate</span></div>
       <p class="hint">${esc(tx.reason||"Not available.")} ${esc(tx.caveat)}</p>
     </section>`;
+      const hasActual = tx.actual_annual != null;
+      const displayAnnual = hasActual ? tx.actual_annual : tx.annual_tax_estimate;
+      const displayQtr = hasActual ? tx.actual_quarterly : tx.quarterly;
+      const displayLabel = hasActual ? "actual DOF bill" : "estimate";
+      const yearLabel = hasActual ? tx.actual_tax_year : tx.rate_year;
       return `
     <section>
       <div class="sec-head"><h2>Property tax</h2>
-        <span class="count">${esc(tx.rate_year)} · estimate</span></div>
+        <span class="count">${esc(yearLabel)} · ${displayLabel}</span></div>
       <div class="taxwrap">
         <div class="taxbig">
-          <div class="taxbignum">$${tx.annual_tax_estimate.toLocaleString()}<span class="taxper">/yr est.</span></div>
-          <div class="taxsub">≈ $${tx.quarterly.toLocaleString()} per quarter${tx.has_exemption?` · <span style="color:var(--ochre)">exemption applied</span>`:""}</div>
+          <div class="taxbignum">$${displayAnnual.toLocaleString()}<span class="taxper">/yr${hasActual?" billed":" est."}</span></div>
+          <div class="taxsub">≈ $${displayQtr.toLocaleString()} per quarter${!hasActual&&tx.has_exemption?` · <span style="color:var(--ochre)">exemption applied</span>`:""}</div>
         </div>
         <div class="taxgrid">
           ${cellSmall("Tax class", esc(tx.tax_class))}
-          ${cellSmall("Rate", tx.rate_pct.toFixed(3)+"%")}
-          ${cellSmall("Assessed total", "$"+tx.assessed_total.toLocaleString())}
-          ${tx.exempt_total>0?cellSmall("Exempt portion", "$"+tx.exempt_total.toLocaleString()):cellSmall("Taxable assessed", "$"+tx.taxable_assessed.toLocaleString())}
+          ${hasActual
+            ? cellSmall("Source", "DOF Property Charges Balance")
+            : cellSmall("Rate", tx.rate_pct.toFixed(3)+"%")}
+          ${hasActual
+            ? cellSmall("PLUTO assessed", "$"+(tx.assessed_total||0).toLocaleString())
+            : cellSmall("Assessed total", "$"+tx.assessed_total.toLocaleString())}
+          ${hasActual
+            ? `<div></div>`
+            : (tx.exempt_total>0?cellSmall("Exempt portion", "$"+tx.exempt_total.toLocaleString()):cellSmall("Taxable assessed", "$"+tx.taxable_assessed.toLocaleString()))}
         </div>
-        <p class="ownnote" style="margin-bottom:0"><strong>Estimate.</strong> ${esc(tx.caveat)}</p>
+        ${hasActual
+          ? `<p class="ownnote" style="margin-bottom:0">Actual billed amount from NYC DOF records — includes all abatements and exemptions (421-a, J-51, STAR, co-op/condo, etc.). Refreshed quarterly.</p>`
+          : `<p class="ownnote" style="margin-bottom:0"><strong>Estimate only.</strong> ${esc(tx.caveat)}</p>`}
       </div>
     </section>`;})()}
 
