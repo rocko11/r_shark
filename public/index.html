@@ -315,8 +315,10 @@ footer{border-top:1px solid var(--rule);margin-top:40px;padding-top:14px;
 .err{border-left:4px solid var(--iron);background:var(--paper-2);padding:13px 15px}
 /* title / ownership / liens */
 .pdf-btn{float:right;font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;
-  background:var(--ink);color:var(--paper);border:none;padding:7px 13px;cursor:pointer;margin:2px 0 0 12px}
+  background:var(--ink);color:var(--paper);border:none;padding:7px 13px;cursor:pointer;margin:2px 0 0 12px;
+  pointer-events:auto;position:relative;z-index:1}
 .pdf-btn:hover{background:var(--slate)}
+.pdf-btn:disabled{opacity:.6;cursor:default}
 
 /* --- Print / Save-as-PDF: strip the app chrome, keep just the report on white paper. --- */
 @media print {
@@ -2208,9 +2210,14 @@ function downloadSearchCsv() {
 // Export the current property report to PDF via the browser's print-to-PDF. Print CSS
 // (below) hides the search UI, tabs, buttons and map controls and formats for paper.
 function downloadPdf() {
-  // Give the map a beat in case tiles are mid-load, then open the print dialog where the
-  // user picks "Save as PDF". Native to every browser, no dependencies.
-  window.print();
+  // Brief delay to let tiles finish loading, then open print dialog.
+  // Uses setTimeout to ensure the call is trusted (avoids popup blockers).
+  const btn = document.querySelector('.pdf-btn');
+  if (btn) { btn.textContent = '⏳ Preparing…'; btn.disabled = true; }
+  setTimeout(() => {
+    if (btn) { btn.textContent = '⭳ Download PDF'; btn.disabled = false; }
+    window.print();
+  }, 200);
 }
 
 // On-demand paid owner skip-trace. Calls /api/skiptrace and renders phone/email.
