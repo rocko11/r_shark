@@ -417,7 +417,7 @@ export default async (req: Request, _ctx: Context) => {
   } else if (mode === "pacer") {
     // Live PACER search — federal foreclosure cases
     const token = await pacerToken();
-    if (!token) return json({ error: "PACER credentials not configured or auth failed." }, 503);
+    if (!token) return json({ error: pacerAuthError || "PACER auth failed." }, 503);
 
     const court = u.get("court") || "all";
     const days  = Math.min(Number(u.get("days") || "90"), 365);
@@ -561,7 +561,7 @@ export default async (req: Request, _ctx: Context) => {
   } else if (mode === "pacer_trend") {
     // 10-year ZIP-level trend — annual foreclosure counts from PACER
     const token = await pacerToken();
-    if (!token) return json({ error: "PACER credentials not configured." }, 503);
+    if (!token) return json({ error: pacerAuthError || "PACER auth failed." }, 503);
 
     const zips  = (u.get("zips") || "").split(",").map(z=>z.trim()).filter(z=>/^\d{5}$/.test(z)).slice(0,5);
     const yearsRaw = (u.get("years") || "").split(",").map(Number).filter(Boolean);
@@ -781,21 +781,33 @@ export default async (req: Request, _ctx: Context) => {
 const PACER_AUTH = "https://pacer.login.uscourts.gov/services/cso-auth";
 const PACER_PCL  = "https://pcl.uscourts.gov/pcl-public-api/rest/cases/find";
 
+// Last PACER auth failure reason, surfaced to the client so errors are diagnosable.
+let pacerAuthError = "";
+
 async function pacerToken(): Promise<string|null> {
-  const user = process.env.PACER_USERNAME;
-  const pass = process.env.PACER_PASSWORD;
-  if (!user || !pass) return null;
+  const user = (process.env.PACER_USERNAME || "").trim();
+  const pass = process.env.PACER_PASSWORD || "";
+  if (!user || !pass) { pacerAuthError = "PACER_USERNAME / PACER_PASSWORD not set in this deploy (redeploy after adding env vars)."; return null; }
   try {
+    const body: Record<string, string> = { loginId: user, password: pass, redactFlag: "1" };
+    if (process.env.PACER_CLIENT_CODE) body.clientCode = process.env.PACER_CLIENT_CODE;
     const r = await fetch(PACER_AUTH, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ loginId: user, password: pass, clientCode: "rshark" }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(10000),
     });
-    if (!r.ok) return null;
-    const d = await r.json().catch(()=>null);
-    return d?.loginResult?.nextGenCSO || d?.nextGenCSO || null;
-  } catch { return null; }
+    const d: any = await r.json().catch(() => null);
+    const token = d?.nextGenCSO || d?.loginResult?.nextGenCSO || null;
+    if (token) { pacerAuthError = ""; return token; }
+    pacerAuthError = `PACER login rejected (HTTP ${r.status}, code ${d?.loginResult ?? "?"}): ${d?.errorDescription || "no description"}`;
+    console.error(pacerAuthError);
+    return null;
+  } catch (e: any) {
+    pacerAuthError = `PACER auth request failed: ${e?.message || e}`;
+    console.error(pacerAuthError);
+    return null;
+  }
 }
 
 // Fetch party details (including address) for a specific case
