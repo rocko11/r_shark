@@ -414,51 +414,10 @@ export default async (req: Request, _ctx: Context) => {
     } catch(e) {
       return json({ error: `Foreclosure search failed: ${(e as Error).message}`.slice(0,160) }, 502);
     }
-  } else if (mode === "pacer_debug") {
-    // TEMP diagnostic: raw PCL party-search responses for one case, to fix party/address parsing.
-    const token = await pacerToken();
-    if (!token) return json({ error: pacerAuthError || "PACER auth failed." }, 503);
-    const cn = u.get("case") || "1:2026cv06446";
-    const court = u.get("court") || "nyedc";
-    const hdr = { "Content-Type":"application/json","Accept":"application/json","X-NEXT-GEN-CSO":token };
-    const tryBody = async (body: any) => {
-      try {
-        const r = await fetch("https://pcl.uscourts.gov/pcl-public-api/rest/parties/find", { method:"POST", headers: hdr, body: JSON.stringify(body), signal: AbortSignal.timeout(9000) });
-        const txt = await r.text();
-        return { status: r.status, body: txt.slice(0, 3000) };
-      } catch (e: any) { return { error: String(e?.message || e) }; }
-    };
-    const since = new Date(Date.now() - 14 * 86400000).toISOString().slice(0,10);
-    const [bulk, dock, cases] = await Promise.all([
-      tryBody({ courtCase: { courtId: [court], dateFiledFrom: since, natureOfSuit: ["220","290"], caseType: ["cv"] } }),
-      (async () => {
-        try {
-          const r = await fetch("https://pcl.uscourts.gov/pcl-public-api/rest/docketEntries/find", { method:"POST", headers: hdr, body: JSON.stringify({ caseNumberFull: cn }), signal: AbortSignal.timeout(9000) });
-          return { status: r.status, body: (await r.text()).slice(0, 500) };
-        } catch (e: any) { return { error: String(e?.message || e) }; }
-      })(),
-      (async () => {
-        try {
-          const r = await fetch(PACER_PCL, { method:"POST", headers: hdr, body: JSON.stringify({ caseNumberFull: cn, courtId:[court] }), signal: AbortSignal.timeout(9000) });
-          return { status: r.status, body: (await r.text()).slice(0, 2500) };
-        } catch (e: any) { return { error: String(e?.message || e) }; }
-      })(),
-    ]);
-    let bulkSummary: any = bulk;
-    try {
-      const d = JSON.parse((bulk as any).body.length >= 3000 ? "{}" : (bulk as any).body);
-      bulkSummary = { status: (bulk as any).status, pageInfo: d.pageInfo, receipt: d.receipt };
-    } catch {}
-    // Re-run bulk without truncation to read pageInfo reliably
-    try {
-      const r = await fetch("https://pcl.uscourts.gov/pcl-public-api/rest/parties/find", { method:"POST", headers: hdr, body: JSON.stringify({ courtCase: { courtId: [court], dateFiledFrom: since, natureOfSuit: ["220","290"], caseType: ["cv"] } }), signal: AbortSignal.timeout(9000) });
-      const d: any = await r.json();
-      bulkSummary = { status: r.status, pageInfo: d.pageInfo, fee: d.receipt?.searchFee, search: d.receipt?.search, errors: d.errors,
-        sample: (d.content || []).slice(0, 12).map((p: any) => [p.caseNumberFull, p.partyRole, p.lastName, p.firstName, p.courtCase?.natureOfSuit]) };
-    } catch (e: any) { bulkSummary = { error: String(e?.message || e) }; }
-    return json({ case: cn, bulk: bulkSummary, docket: dock, caseRecord: cases });
   } else if (mode === "pacer") {
-    // Live PACER search — federal foreclosure cases
+    // Live PACER search — federal foreclosure (220) + other real property (290) cases.
+    // Returns every case (all result pages) with its parties; addresses are resolved
+    // separately via mode=pacer_addr so the list renders fast and fills in progressively.
     const token = await pacerToken();
     if (!token) return json({ error: pacerAuthError || "PACER auth failed." }, 503);
 
@@ -466,141 +425,86 @@ export default async (req: Request, _ctx: Context) => {
     const days  = Math.min(Number(u.get("days") || "90"), 365);
     const since = new Date(Date.now() - days * 86400000).toISOString().slice(0,10);
 
-    const courtIds: Record<string,string[]> = {
-      all:   ["nysdc","nyedc"],
-      nysdc: ["nysdc"],
-      nyedc: ["nyedc"],
-    };
-    const courtNames: Record<string,string> = { nysdc:"SDNY (Manhattan)", nyedc:"EDNY (Brooklyn/Queens)" };
+    const courtIds: Record<string,string[]> = { all: ["nysdc","nyedc"], nysdc: ["nysdc"], nyedc: ["nyedc"] };
+    const courtNames: Record<string,string> = { nysdc:"SDNY", nyedc:"EDNY" };
     const ids = courtIds[court] || ["nysdc","nyedc"];
 
-    // Try to extract property address from case title
-    // Many NYC foreclosure LLCs encode the address: "CAP 159 W 228 PROPERTY OWNER" → 159 W 228
-    // Pattern 1: number + direction + number (e.g. "159 W 228", "45 E 72")
-    // Pattern 2: number + street name before "LLC/CORP/INC"
-    function extractAddressFromTitle(title: string): string {
-      const t = title.toUpperCase();
-      // Extract the defendant side (after " v. " or " VS ")
-      const def = t.split(/ V\. | VS\.? /)[1] || t;
-      // Street address patterns in LLC names
-      const patterns = [
-        /(\d+[-\w]* (?:EAST|WEST|NORTH|SOUTH|E|W|N|S) \d+(?:ST|ND|RD|TH)?(?:\s+STREET|\s+AVE\w*|\s+BLVD|\s+LANE|\s+DRIVE|\s+PLACE|\s+ROAD)?)/i,
-        /(\d+[-\w]* (?:STREET|AVENUE|AVE|BOULEVARD|BLVD|LANE|DRIVE|PLACE|ROAD|WAY|COURT|TERRACE|PARKWAY)[^,\s]*)/i,
-        /(\d{1,5}\s+[A-Z][A-Z\s]{2,30}(?:STREET|AVENUE|AVE|BLVD|LANE|DRIVE|PLACE|ROAD))/i,
-      ];
-      for (const pat of patterns) {
-        const m = def.match(pat);
-        if (m) return m[1].trim();
-      }
-      // Try numeric address from LLC name: "159 W 228" or "45 EAST 72"
-      const llcAddr = def.match(/(\d+\s+(?:[NSEW](?:ORTH|OUTH|AST|EST)?\s+)?\d+(?:ST|ND|RD|TH)?)/i);
-      if (llcAddr) return llcAddr[1].trim();
-      return "";
-    }
+    const caseCriteria = { natureOfSuit: ["220","290"], courtId: ids, dateFiledFrom: since, jurisdictionType: "cv" };
+    const [cases, parties] = await Promise.all([
+      pclFindAll(token, PACER_PCL, caseCriteria),
+      pclFindAll(token, PACER_PARTIES, { courtCase: { natureOfSuit: ["220","290"], courtId: ids, dateFiledFrom: since, caseType: ["cv"] } }),
+    ]);
 
-    // Enrich with PLUTO address lookup for defendant party name
-    async function lookupPlutoByOwner(defendant: string): Promise<string> {
-      if (!defendant || defendant.length < 4) return "";
-      // Clean: remove "ET AL", entity suffixes
-      const clean = defendant
-        .replace(/\s+ET AL\.?$/i, "")
-        .replace(/,\s*(LLC|CORP|INC|LTD|LP|L\.P\.|TRUST).*$/i, "")
-        .replace(/\s+(LLC|CORP|INC|LTD|LP|TRUST)$/i, "")
-        .trim();
-      if (clean.length < 4) return "";
-      const upper = clean.toUpperCase().replace(/'/g, "''");
-      try {
-        // Try exact match first (more reliable)
-        const r1 = await fetch(
-          `${PLUTO}?$select=address,zipcode,ownername&$where=upper(ownername)='${upper.slice(0,60)}'&$limit=1`,
-          { signal: AbortSignal.timeout(4000) }
-        );
-        if (r1.ok) {
-          const rows1 = await r1.json();
-          if (rows1?.[0]?.address) return `${rows1[0].address}${rows1[0].zipcode ? " ("+rows1[0].zipcode+")" : ""}`;
-        }
-        // Fallback: starts-with match
-        const r2 = await fetch(
-          `${PLUTO}?$select=address,zipcode&$where=upper(ownername) like '${upper.slice(0,30)}%25'&$limit=1`,
-          { signal: AbortSignal.timeout(4000) }
-        );
-        if (!r2.ok) return "";
-        const rows2 = await r2.json();
-        if (rows2?.[0]?.address) return `${rows2[0].address}${rows2[0].zipcode ? " ("+rows2[0].zipcode+")" : ""}`;
-      } catch {}
-      return "";
-    }
-
-    const rawResults: any[] = [];
-    for (const cid of ids) {
-      const cases = await pacerSearch(token, [cid], since);
-      for (const c of cases) {
-        // Extract defendant name from title (after "v.")
-        const titleParts = (c.caseTitle || "").split(/ v\. | vs\.? /i);
-        const defendant = (titleParts[1] || "").replace(/ et al\.?$/i, "").trim();
-        const addressFromTitle = extractAddressFromTitle(c.caseTitle || "");
-        rawResults.push({
-          caseTitle:    c.caseTitle || "",
-          caseNumber:   c.caseNumberFull || c.caseNumber || "",
-          dateFiled:    c.dateFiled || "",
-          court:        courtNames[cid] || cid,
-          natureOfSuit: c.natureOfSuit === "290" ? "Other Real Property (290)" : "Foreclosure (220)",
-          caseLink:     c.caseLink || "",
-          defendant,
-          address:      addressFromTitle,  // populated below if empty
-          lender:       "",
-          status:       "",
-          amountInControversy: "",
-          plaintiffAttorney:   "",
-          judgmentDate: "",
-          saleDate:     "",
-          lastDocketEntry: "",
-        });
+    // Group parties by case
+    const byCase: Record<string, { defendants: Party[]; plaintiffs: string[] }> = {};
+    for (const p of parties.rows) {
+      const cn = p.caseNumberFull || p.courtCase?.caseNumberFull;
+      const cid = p.courtId || p.courtCase?.courtId;
+      if (!cn) continue;
+      const key = `${cid}|${cn}`;
+      const g = byCase[key] ||= { defendants: [], plaintiffs: [] };
+      const role = String(p.partyRole || "").toLowerCase();
+      const name = [p.firstName, p.middleName].map((s: any) => String(s || "").trim()).filter(Boolean).join(" ");
+      if (role === "pla" || role === "pet") {
+        const full = String(p.lastName || "").trim();
+        if (full && !g.plaintiffs.includes(full)) g.plaintiffs.push(full);
+      } else if (role === "dft" || role === "res") {
+        const last = String(p.lastName || "").trim();
+        if (!last || isNonOwnerParty(last)) continue;
+        g.defendants.push({ last, first: name });
       }
     }
 
-    // For cases with no address from title, try:
-    // 1. PACER party search (gets defendant address from court records) — most accurate
-    // 2. PLUTO owner name lookup — fallback for NYC properties
-    const needsLookup = rawResults.filter(r => !r.address);
-    // Batch PACER party lookups (max 15 to keep under timeout)
-    for (let i = 0; i < Math.min(needsLookup.length, 15); i += 3) {
-      const batch = needsLookup.slice(i, i+3);
-      const addrs = await Promise.all(batch.map(r => pacerPartyAddress(token, r.caseNumber)));
-      batch.forEach((r, bi) => { if (addrs[bi]) r.address = addrs[bi]; });
-    }
-    // For any still without address, try PLUTO by owner name
-    const stillNeeds = rawResults.filter(r => !r.address && r.defendant);
-    for (let i = 0; i < Math.min(stillNeeds.length, 20); i += 3) {
-      const batch = stillNeeds.slice(i, i+3);
-      const addrs = await Promise.all(batch.map(r => lookupPlutoByOwner(r.defendant)));
-      batch.forEach((r, bi) => { if (addrs[bi]) r.address = addrs[bi]; });
-    }
-
-    // Enrich with docket status, plaintiff/lender, amount in controversy
-    // Batch in groups of 3 to stay within timeout (max 20 cases enriched)
-    for (let i = 0; i < Math.min(rawResults.length, 20); i += 3) {
-      const batch = rawResults.slice(i, i+3);
-      const [dockets, plaintiffs] = await Promise.all([
-        Promise.all(batch.map(r => pacerDocket(token, r.caseNumber).catch(() => null))),
-        Promise.all(batch.map(r => pacerPlaintiff(token, r.caseNumber).catch(() => "")))
-      ]);
-      batch.forEach((r, bi) => {
-        if (plaintiffs[bi]) r.lender = plaintiffs[bi];
-        if (dockets[bi]) {
-          r.status             = dockets[bi]!.status;
-          r.judgmentDate       = dockets[bi]!.judgmentDate;
-          r.saleDate           = dockets[bi]!.saleDate;
-          r.amountInControversy = dockets[bi]!.amountInControversy;
-          r.plaintiffAttorney  = dockets[bi]!.plaintiffAttorney;
-          r.lastDocketEntry    = dockets[bi]!.lastDocketEntry;
-        }
+    const seen = new Set<string>();
+    const results: any[] = [];
+    for (const c of cases.rows) {
+      const cn = c.caseNumberFull || "";
+      const cid = c.courtId || "";
+      const key = `${cid}|${cn}`;
+      if (!cn || seen.has(key)) continue;
+      seen.add(key);
+      const office = String(c.caseOffice || cn.split(":")[0] || "");
+      const g = byCase[key] || { defendants: [], plaintiffs: [] };
+      const titleDefendant = ((c.caseTitle || "").split(/ v\. | vs\.? /i)[1] || "").replace(/ et al\.?$/i, "").trim();
+      results.push({
+        id: key,
+        caseTitle:    c.caseTitle || "",
+        caseNumber:   cn,
+        dateFiled:    c.dateFiled || "",
+        dateTermed:   c.dateTermed || "",
+        status:       c.dateTermed ? "CLOSED" : "OPEN",
+        court:        `${courtNames[cid] || cid}${OFFICE_LABEL[`${cid}|${office}`] ? " · " + OFFICE_LABEL[`${cid}|${office}`] : ""}`,
+        courtId:      cid,
+        office,
+        inNYC:        isNYCOffice(cid, office),
+        natureOfSuit: c.natureOfSuit === "290" ? "Other Real Property (290)" : "Foreclosure (220)",
+        caseLink:     c.caseLink || "",
+        defendant:    titleDefendant,
+        defendants:   g.defendants,
+        lender:       g.plaintiffs.join("; "),
+        address:      "",
+        addressHint:  extractAddressFromTitle(c.caseTitle || ""),
       });
     }
+    results.sort((a,b) => b.dateFiled.localeCompare(a.dateFiled));
+    return json({
+      mode, total: results.length, results,
+      billing: { pages: cases.pages + parties.pages, estFee: `$${((cases.pages + parties.pages) * 0.10).toFixed(2)}` },
+      truncated: cases.truncated || parties.truncated,
+    });
 
-    rawResults.sort((a,b) => b.dateFiled.localeCompare(a.dateFiled));
-    return json({ mode, total: rawResults.length, results: rawResults });
-
+  } else if (mode === "pacer_addr") {
+    // Resolve property addresses for up to 6 PACER cases via ACRIS (free, NYC only).
+    // Body: { cases: [{ id, courtId, office, defendants: [{last, first}] }] }
+    if (req.method !== "POST") return json({ error: "POST required" }, 405);
+    let body: any = null;
+    try { body = await req.json(); } catch {}
+    const list: any[] = Array.isArray(body?.cases) ? body.cases.slice(0, 6) : [];
+    const out = await Promise.all(list.map(async (c) => {
+      try { return { id: c.id, ...(await resolveCaseAddress(c)) }; }
+      catch (e: any) { return { id: c.id, confidence: "none", error: String(e?.message || e).slice(0, 120) }; }
+    }));
+    return json({ results: out });
   } else if (mode === "pacer_trend") {
     // 10-year ZIP-level trend — annual foreclosure counts from PACER
     const token = await pacerToken();
@@ -853,125 +757,199 @@ async function pacerToken(): Promise<string|null> {
   }
 }
 
-// Fetch party details (including address) for a specific case
-async function pacerPartyAddress(token: string, caseId: string): Promise<string> {
-  try {
-    const r = await fetch("https://pcl.uscourts.gov/pcl-public-api/rest/parties/find", {
-      method: "POST",
-      headers: { "Content-Type":"application/json","Accept":"application/json","X-NEXT-GEN-CSO":token },
-      body: JSON.stringify({ caseNumberFull: caseId }),
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!r.ok) return "";
-    const d = await r.json();
-    // Find defendant party and their address
-    const parties: any[] = d?.content || [];
-    // Look for defendant roles (dft = defendant) and their address
-    for (const p of parties) {
-      const role = (p.partyRole||"").toLowerCase();
-      if (role.includes("dft") || role.includes("defendant") || role === "res") {
-        // Address fields: address1, address2, city, state, zip
-        const addr = [p.address1, p.address2, p.city, p.state, p.zip]
-          .filter(Boolean).join(", ");
-        if (addr && addr.length > 5) return addr;
-      }
-    }
-    return "";
-  } catch { return ""; }
+// ── PACER helpers ────────────────────────────────────────────────────────────
+
+const PACER_PARTIES = "https://pcl.uscourts.gov/pcl-public-api/rest/parties/find";
+const ACRIS_PARTIES = "https://data.cityofnewyork.us/resource/636b-3b5g.json";
+const ACRIS_MASTER  = "https://data.cityofnewyork.us/resource/bnx9-e6tj.json";
+const ACRIS_LEGALS  = "https://data.cityofnewyork.us/resource/8h5j-fqxa.json";
+
+interface Party { last: string; first: string }
+
+// Divisional offices: EDNY 1 = Brooklyn (Kings/Queens/Richmond), 2 = Central Islip (Long Island);
+// SDNY 1 = Manhattan (New York/Bronx), 7 = White Plains (Westchester and upstate counties).
+const OFFICE_LABEL: Record<string, string> = {
+  "nyedc|1": "Brooklyn", "nyedc|2": "Long Island",
+  "nysdc|1": "Manhattan", "nysdc|7": "White Plains",
+};
+const OFFICE_BOROUGHS: Record<string, string[]> = {
+  "nyedc|1": ["3", "4", "5"],  // Brooklyn, Queens, Staten Island
+  "nysdc|1": ["1", "2"],       // Manhattan, Bronx
+};
+const BOROUGH_NAME: Record<string, string> = { "1": "Manhattan", "2": "Bronx", "3": "Brooklyn", "4": "Queens", "5": "Staten Island" };
+function isNYCOffice(courtId: string, office: string) { return !!OFFICE_BOROUGHS[`${courtId}|${office}`]; }
+
+// Defendants named only because they hold a lien/judgment or are placeholders — never the owner.
+function isNonOwnerParty(name: string): boolean {
+  return /JOHN DOE|JANE DOE|\bDOES?\b|ENVIRONMENTAL CONTROL|PARKING VIOLATIONS|TRANSIT ADJUDICATION|CRIMINAL COURT|CIVIL COURT|UNITED STATES|INTERNAL REVENUE|STATE OF NEW YORK|PEOPLE OF|CITY OF NEW YORK|COUNTY OF|COMMISSIONER|DEPARTMENT OF|DEPT\.? OF|BOARD OF|BUREAU|SECRETARY OF|PUBLIC ADMINISTRATOR|TAX COMMISSION|CLERK OF|\bESQ\b|ATTORNEY GENERAL|MIDLAND FUNDING|CAPITAL ONE|DISCOVER BANK|CAVALRY|PORTFOLIO RECOVERY|LVNV|TENANTS?\b|OCCUPANTS?\b/i.test(name);
 }
 
-async function pacerSearch(token: string, courtId: string[], dateFrom: string): Promise<any[]> {
-  const r = await fetch(PACER_PCL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Accept": "application/json", "X-NEXT-GEN-CSO": token },
-    // NOS 220 = Foreclosure, 290 = Other Real Property (catches fed tax lien enforcement)
-    body: JSON.stringify({ natureOfSuit: ["220", "290"], courtId, dateFiledFrom: dateFrom, jurisdictionType: "cv" }),
-    signal: AbortSignal.timeout(12000),
+const isEntity = (s: string) => /\b(LLC|L\.L\.C\.?|INC\.?|CORP\.?|CORPORATION|COMPANY|CO\.|TRUST|L\.?P\.?|LTD|ASSOCIATES|HOLDINGS|REALTY|PROPERTIES|PROPERTY|DEVELOPMENT|PARTNERS|GROUP|ENTERPRISES?|MANAGEMENT|BANK|ASSOCIATION|ESTATE OF|FUND)\b/i.test(s);
+
+// Fetch every page of a PCL search (54 rows/page, billed $0.10/page). Pages after the first run in parallel.
+async function pclFindAll(token: string, url: string, criteria: any, maxPages = 25): Promise<{ rows: any[]; pages: number; truncated: boolean }> {
+  const hdr = { "Content-Type": "application/json", "Accept": "application/json", "X-NEXT-GEN-CSO": token };
+  const page = async (n: number) => {
+    const r = await fetch(`${url}?page=${n}`, { method: "POST", headers: hdr, body: JSON.stringify(criteria), signal: AbortSignal.timeout(15000) });
+    if (!r.ok) return null;
+    return r.json().catch(() => null);
+  };
+  const first: any = await page(0);
+  if (!first) return { rows: [], pages: 0, truncated: false };
+  const total = Number(first.pageInfo?.totalPages || 1);
+  const n = Math.min(total, maxPages);
+  const rest = await Promise.all(Array.from({ length: n - 1 }, (_, i) => page(i + 1)));
+  const rows = [first, ...rest].flatMap((d: any) => d?.content || []);
+  return { rows, pages: n, truncated: total > maxPages };
+}
+
+// "Philomene Jerome a/k/a Marie P. Jerome" → ["JEROME, PHILOMENE", "JEROME, MARIE P"]
+function acrisNameKeys(p: Party): string[] {
+  const keys = new Set<string>();
+  const clean = (s: string) => s.toUpperCase().replace(/[^A-Z0-9&\-' ]/g, " ").replace(/\s+/g, " ").trim();
+  if (isEntity(p.last)) {
+    let e = p.last.toUpperCase()
+      .replace(/,?\s*A (NEW YORK |DELAWARE )?(LIMITED LIABILITY COMPANY|CORPORATION|LIMITED PARTNERSHIP)\b.*$/i, "")
+      .replace(/\s+A\/K\/A\s+.*$/i, "")
+      .replace(/L\.L\.C\.?/g, "LLC").replace(/,/g, "").replace(/\.(?=\s|$)/g, "").replace(/\s+/g, " ").trim();
+    if (e.length >= 4) {
+      keys.add(e);
+      const withComma = e.replace(/\s+(LLC|INC|CORP|LP|LTD)$/, ", $1");
+      if (withComma !== e) keys.add(withComma);
+    }
+    return [...keys];
+  }
+  const aliases = p.last.split(/\s+(?:a\/?k\/?a|f\/?k\/?a|aka)\s+|;/i).map(s => s.trim()).filter(Boolean);
+  const first0 = clean(p.first).split(" ")[0];
+  if (aliases.length === 1 && first0) {
+    // PCL split the name itself: lastName may be a compound surname ("Morera Gonzalez")
+    const last = clean(aliases[0]).replace(/\s+(JR|SR|II|III|IV)$/, "");
+    if (last) keys.add(`${last}, ${first0}`);
+    const lastTok = last.split(" ").pop();
+    if (lastTok && lastTok !== last) keys.add(`${lastTok}, ${first0}`);
+    return [...keys].filter(k => k.length >= 6);
+  }
+  for (const a of aliases) {
+    const toks = clean(a).split(" ").filter(t => !/^(JR|SR|II|III|IV)$/.test(t));
+    if (toks.length >= 2) {
+      keys.add(`${toks[toks.length - 1]}, ${toks[0]}`);
+    } else if (toks.length === 1) {
+      const first = clean(p.first).split(" ")[0];
+      if (first) keys.add(`${toks[0]}, ${first}`);
+    }
+  }
+  return [...keys].filter(k => k.length >= 6);
+}
+
+async function soqlGet(url: string, params: Record<string, string>): Promise<any[]> {
+  const qs = new URLSearchParams(params);
+  const r = await fetch(`${url}?${qs}`, {
+    headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : {},
+    signal: AbortSignal.timeout(9000),
   });
-  if (!r.ok) return [];
-  const d = await r.json().catch(()=>null);
-  return d?.content || [];
+  if (!r.ok) throw new Error(`ACRIS HTTP ${r.status}`);
+  return r.json();
 }
 
-// Fetch docket entries to determine case status, judgment date, plaintiff attorney, and amount
-async function pacerDocket(token: string, caseId: string): Promise<{
-  status: string; judgmentDate: string; saleDate: string; amountInControversy: string;
-  plaintiffAttorney: string; lastDocketEntry: string;
-}> {
-  const empty = { status: "PENDING", judgmentDate: "", saleDate: "", amountInControversy: "", plaintiffAttorney: "", lastDocketEntry: "" };
-  try {
-    const r = await fetch(`https://pcl.uscourts.gov/pcl-public-api/rest/docketEntries/find`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json", "X-NEXT-GEN-CSO": token },
-      body: JSON.stringify({ caseNumberFull: caseId, pageSize: 20, sort: "dateFiled,desc" }),
-      signal: AbortSignal.timeout(7000),
+// Match a case's defendants to ACRIS deeds/mortgages and pick the property they're most
+// likely being foreclosed on. Range queries on the indexed name column keep this ~1s/case.
+async function resolveCaseAddress(c: { courtId: string; office: string; defendants: Party[] }) {
+  const boroughs = OFFICE_BOROUGHS[`${c.courtId}|${c.office}`];
+  if (!boroughs) return { confidence: "outside", note: "Outside NYC — not in ACRIS" };
+
+  const defs = (c.defendants || []).slice(0, 6);
+  const keysByDef = defs.map(acrisNameKeys);
+  const allKeys = [...new Set(keysByDef.flat())].slice(0, 12);
+  if (!allKeys.length) return { confidence: "none", note: "No owner-type defendant named" };
+
+  const where = allKeys.map(k => {
+    const e = k.replace(/'/g, "''");
+    return isEntity(k) ? `name='${e}' OR (name >= '${e} ' AND name < '${e}~')` : `name='${e}' OR (name >= '${e} ' AND name < '${e} ~')`;
+  }).join(" OR ");
+  const parties = await soqlGet(ACRIS_PARTIES, { $select: "document_id,party_type,name", $where: where, $limit: "1000" });
+  if (!parties.length) return { confidence: "none", note: "No ACRIS records for defendant names" };
+
+  // Which defendant(s) each document mentions, and in which role
+  const docHits: Record<string, { defs: Set<number>; types: Set<string> }> = {};
+  for (const p of parties) {
+    const nm = String(p.name || "").toUpperCase();
+    keysByDef.forEach((keys, di) => {
+      if (keys.some(k => nm === k || nm.startsWith(k + " "))) {
+        const h = docHits[p.document_id] ||= { defs: new Set(), types: new Set() };
+        h.defs.add(di); h.types.add(String(p.party_type));
+      }
     });
-    if (!r.ok) return empty;
-    const d = await r.json().catch(() => null);
-    const entries: any[] = d?.content || [];
+  }
+  const docIds = Object.keys(docHits).slice(0, 300);
+  const inList = (ids: string[]) => ids.map(i => `'${i.replace(/'/g, "''")}'`).join(",");
+  const chunks: string[][] = [];
+  for (let i = 0; i < docIds.length; i += 100) chunks.push(docIds.slice(i, i + 100));
+  const [masters, legals] = await Promise.all([
+    Promise.all(chunks.map(ch => soqlGet(ACRIS_MASTER, { $select: "document_id,doc_type,document_date,recorded_datetime", $where: `document_id in(${inList(ch)})`, $limit: "1000" }))).then(a => a.flat()),
+    Promise.all(chunks.map(ch => soqlGet(ACRIS_LEGALS, { $select: "document_id,borough,block,lot,street_number,street_name,unit", $where: `document_id in(${inList(ch)})`, $limit: "2000" }))).then(a => a.flat()),
+  ]);
+  const meta: Record<string, { type: string; date: string }> = {};
+  for (const m of masters) meta[m.document_id] = { type: String(m.doc_type || ""), date: String(m.document_date || m.recorded_datetime || "").slice(0, 10) };
 
-    let status = "PENDING";
-    let judgmentDate = "";
-    let saleDate = "";
-    let amountInControversy = "";
-    let plaintiffAttorney = "";
-    let lastDocketEntry = "";
+  // Score each property (BBL). Ownership evidence: borrower (party 1) on a mortgage, grantee (party 2) on a deed.
+  // A later deed where the defendant is grantor (party 1) means they sold — drop that property.
+  type Cand = { bbl: string; borough: string; address: string; defs: Set<number>; lastOwn: string; soldAfter: string };
+  const cands: Record<string, Cand> = {};
+  for (const l of legals) {
+    const h = docHits[l.document_id]; const m = meta[l.document_id];
+    if (!h || !m || !boroughs.includes(String(l.borough))) continue;
+    const bbl = `${l.borough}${String(l.block).padStart(5, "0")}${String(l.lot).padStart(4, "0")}`;
+    const t = m.type;
+    const isMtg = /^(MTGE|AGMT|M&CON|SPRD|CMTG|MCON)$/.test(t);
+    const isDeed = /^DEED/.test(t);
+    const owned = (isMtg && h.types.has("1")) || (isDeed && h.types.has("2"));
+    const sold = isDeed && h.types.has("1") && !h.types.has("2");
+    if (!owned && !sold) continue;
+    const street = [l.street_number, String(l.street_name || "").replace(/\s+/g, " ").trim()].filter(Boolean).join(" ");
+    const cand = cands[bbl] ||= { bbl, borough: String(l.borough), address: "", defs: new Set(), lastOwn: "", soldAfter: "" };
+    if (street && (!cand.address || (owned && m.date >= cand.lastOwn))) cand.address = street + (l.unit ? `, Unit ${String(l.unit).trim()}` : "");
+    if (owned) { h.defs.forEach(d => cand.defs.add(d)); if (m.date > cand.lastOwn) cand.lastOwn = m.date; }
+    if (sold && m.date > cand.soldAfter) cand.soldAfter = m.date;
+  }
+  const ranked = Object.values(cands)
+    .filter(x => x.defs.size && x.address && !(x.soldAfter && x.soldAfter > x.lastOwn))
+    .sort((a, b) => (b.defs.size - a.defs.size) || b.lastOwn.localeCompare(a.lastOwn));
+  if (!ranked.length) return { confidence: "none", note: "Defendants found in ACRIS but no current property in this court's boroughs" };
 
-    for (const e of entries) {
-      const txt = (e.docketText || "").toLowerCase();
-      const date = (e.dateFiled || "").slice(0, 10);
-
-      if (!lastDocketEntry && e.docketText) lastDocketEntry = e.docketText.slice(0, 120);
-
-      // Status detection
-      if (/judgment|default judgment|summary judgment/i.test(txt)) {
-        status = "JUDGMENT ENTERED";
-        if (!judgmentDate) judgmentDate = date;
-      }
-      if (/dismiss/i.test(txt)) { status = "DISMISSED"; }
-      if (/sale.{0,30}(scheduled|confirmed|ordered)/i.test(txt) || /order.{0,20}sale/i.test(txt)) {
-        if (status !== "DISMISSED") status = "SALE ORDERED";
-        if (!saleDate) saleDate = date;
-      }
-      if (/satisfied|paid in full|vacated/i.test(txt)) { status = "RESOLVED"; }
-
-      // Amount in controversy — often in the complaint or judgment
-      if (!amountInControversy) {
-        const amt = txt.match(/\$[\d,]+(?:\.\d{2})?/);
-        if (amt) amountInControversy = amt[0];
-      }
-
-      // Plaintiff attorney — typically in early entries
-      if (!plaintiffAttorney && /appear|attorney|counsel/i.test(txt)) {
-        const m = e.docketText?.match(/(?:by|for|attorney for plaintiff[s]?:?\s*)([A-Z][a-zA-Z\s,\.]{4,40})/);
-        if (m) plaintiffAttorney = m[1].trim().replace(/,\s*$/, "");
-      }
-    }
-
-    return { status, judgmentDate, saleDate, amountInControversy, plaintiffAttorney, lastDocketEntry };
-  } catch { return empty; }
+  const top = ranked[0];
+  const fmt = (x: Cand) => ({ address: `${x.address}, ${BOROUGH_NAME[x.borough] || ""}`.replace(/,\s*$/, ""), bbl: x.bbl, lastRecorded: x.lastOwn });
+  const multiDef = defs.length > 1 && top.defs.size >= 2;
+  const unique = ranked.length === 1 || (ranked[1] && ranked[1].defs.size < top.defs.size);
+  const entity = defs.some(d => isEntity(d.last));
+  const confidence = (multiDef && unique) || (entity && ranked.length === 1) ? "high" : ranked.length === 1 ? "medium" : "low";
+  return {
+    ...fmt(top),
+    confidence,
+    candidates: confidence === "low" ? ranked.slice(0, 4).map(fmt) : undefined,
+    note: confidence === "low" ? `${ranked.length} properties match these names — most recent shown` : undefined,
+  };
 }
 
-// Fetch plaintiff (lender) name from party records
-async function pacerPlaintiff(token: string, caseId: string): Promise<string> {
-  try {
-    const r = await fetch("https://pcl.uscourts.gov/pcl-public-api/rest/parties/find", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json", "X-NEXT-GEN-CSO": token },
-      body: JSON.stringify({ caseNumberFull: caseId }),
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!r.ok) return "";
-    const d = await r.json();
-    const parties: any[] = d?.content || [];
-    for (const p of parties) {
-      const role = (p.partyRole || "").toLowerCase();
-      if (role.includes("pla") || role.includes("plaintiff") || role === "pet") {
-        return (p.partyName || p.name || "").trim();
-      }
-    }
-    return "";
-  } catch { return ""; }
+
+// Pull a street address out of an LLC-style defendant name, e.g. "CAP 159 W 228 PROPERTY OWNER LLC".
+function extractAddressFromTitle(title: string): string {
+  const t = title.toUpperCase();
+  // Extract the defendant side (after " v. " or " VS ")
+  const def = t.split(/ V\. | VS\.? /)[1] || t;
+  // Street address patterns in LLC names
+  const patterns = [
+    /(\d+[-\w]* (?:EAST|WEST|NORTH|SOUTH|E|W|N|S) \d+(?:ST|ND|RD|TH)?(?:\s+STREET|\s+AVE\w*|\s+BLVD|\s+LANE|\s+DRIVE|\s+PLACE|\s+ROAD)?)/i,
+    /(\d+[-\w]* (?:STREET|AVENUE|AVE|BOULEVARD|BLVD|LANE|DRIVE|PLACE|ROAD|WAY|COURT|TERRACE|PARKWAY)[^,\s]*)/i,
+    /(\d{1,5}\s+[A-Z][A-Z\s]{2,30}(?:STREET|AVENUE|AVE|BLVD|LANE|DRIVE|PLACE|ROAD))/i,
+  ];
+  for (const pat of patterns) {
+    const m = def.match(pat);
+    if (m) return m[1].trim();
+  }
+  // Try numeric address from LLC name: "159 W 228" or "45 EAST 72"
+  const llcAddr = def.match(/(\d+\s+(?:[NSEW](?:ORTH|OUTH|AST|EST)?\s+)?\d+(?:ST|ND|RD|TH)?)/i);
+  if (llcAddr) return llcAddr[1].trim();
+  return "";
 }
 
 export const config: Config = { path: "/api/search" };

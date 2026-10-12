@@ -2515,63 +2515,91 @@ async function runPacer() {
   const days = document.getElementById('pacer-days').value;
   out.innerHTML = '<p class="loading">Querying PACER federal courts…</p>';
 
+  let d;
   try {
     const p = new URLSearchParams({ mode: 'pacer', court, days });
     const r = await fetch('/api/search?' + p.toString());
-    const d = await r.json();
-
-    if (d.error) { out.innerHTML = `<div class="err">${esc(d.error)}</div>`; return; }
-    if (!d.results?.length) { out.innerHTML = '<div class="empty"><p>No federal foreclosure cases found for this period.</p></div>'; return; }
-
-    const courtLabel = { all:'SDNY + EDNY', nysdc:'SDNY (Manhattan)', nyedc:'EDNY (Brooklyn/Queens)' }[court] || court;
-    const statusBadge = s => {
-      const cfg = {
-        'PENDING':          { bg:'#0d9488', txt:'#fff' },
-        'JUDGMENT ENTERED': { bg:'#f97316', txt:'#fff' },
-        'SALE ORDERED':     { bg:'#dc2626', txt:'#fff' },
-        'DISMISSED':        { bg:'#6b7280', txt:'#fff' },
-        'RESOLVED':         { bg:'#16a34a', txt:'#fff' },
-      }[s] || { bg:'#334155', txt:'#94a3b8' };
-      return s ? `<span style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.05em;background:${cfg.bg};color:${cfg.txt};margin-bottom:4px">${esc(s)}</span>` : '';
-    };
-    out.innerHTML = `
-      <div style="background:var(--steel);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px">
-        <div style="padding:12px 16px;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;align-items:center">
-          <span style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)">🏛️ Federal Foreclosures — ${esc(courtLabel)}</span>
-          <span style="color:var(--shark);font-size:12px;font-weight:700">${d.total || d.results.length} cases</span>
-        </div>
-        <table style="width:100%;border-collapse:collapse">
-          <thead><tr style="border-bottom:1px solid var(--rule)">
-            <th style="padding:9px 12px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);text-align:left">Case</th>
-            <th style="padding:9px 12px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);text-align:left">Details</th>
-            <th style="padding:9px 12px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);text-align:right">Filed</th>
-          </tr></thead>
-          <tbody>
-            ${d.results.map(c => `
-              <tr style="border-bottom:1px solid var(--line);cursor:default">
-                <td style="padding:11px 12px;max-width:340px">
-                  ${c.address ? `<div style="color:var(--shark);font-size:15px;font-weight:700;margin-bottom:3px">📍 ${esc(c.address)}</div>` : ''}
-                  ${statusBadge(c.status)}
-                  <div style="color:var(--chrome);font-size:13px;font-weight:600">${esc(c.caseTitle||'—')}</div>
-                  ${c.lender ? `<div style="color:var(--ink-2);font-size:12px;margin-top:2px">🏦 <strong>Lender:</strong> ${esc(c.lender)}</div>` : ''}
-                  <div style="color:var(--ink-2);font-size:11px;margin-top:2px;font-family:var(--mono)">${esc(c.caseNumber||'')} · ${esc(c.natureOfSuit||'')}</div>
-                  ${c.caseLink ? `<a href="${esc(c.caseLink)}" target="_blank" rel="noopener" style="color:var(--shark);font-size:11px;margin-top:3px;display:inline-block">View on PACER →</a>` : ''}
-                </td>
-                <td style="padding:11px 12px;font-size:12px;color:var(--ink-2);min-width:180px">
-                  ${c.amountInControversy ? `<div><span style="color:var(--ink-3)">Amount:</span> <strong style="color:var(--chrome)">${esc(c.amountInControversy)}</strong></div>` : ''}
-                  ${c.plaintiffAttorney ? `<div style="margin-top:3px"><span style="color:var(--ink-3)">Pl. Atty:</span> ${esc(c.plaintiffAttorney)}</div>` : ''}
-                  ${c.judgmentDate ? `<div style="margin-top:3px"><span style="color:var(--ink-3)">Judgment:</span> ${esc(c.judgmentDate)}</div>` : ''}
-                  ${c.saleDate ? `<div style="margin-top:3px"><span style="color:var(--ink-3)">Sale:</span> ${esc(c.saleDate)}</div>` : ''}
-                  ${c.lastDocketEntry ? `<div style="margin-top:4px;font-size:11px;color:var(--ink-3);font-style:italic;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.lastDocketEntry)}">${esc(c.lastDocketEntry)}</div>` : ''}
-                </td>
-                <td style="padding:11px 12px;color:var(--ink-2);font-size:12px;text-align:right;white-space:nowrap;font-family:var(--mono);vertical-align:top">${esc((c.dateFiled||'').slice(0,10))}<br><span style="color:var(--ink-3);font-size:10px">${esc(c.court||'')}</span></td>
-              </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>`;
+    d = await r.json();
   } catch(e) {
-    out.innerHTML = `<div class="err">PACER search failed: ${esc(e.message)}</div>`;
+    out.innerHTML = `<div class="err">PACER search failed: ${esc(e.message)}</div>`; return;
   }
+  if (d.error) { out.innerHTML = `<div class="err">${esc(d.error)}</div>`; return; }
+  if (!d.results?.length) { out.innerHTML = '<div class="empty"><p>No federal foreclosure cases found for this period.</p></div>'; return; }
+
+  const courtLabel = { all:'SDNY + EDNY', nysdc:'SDNY', nyedc:'EDNY' }[court] || court;
+  const nyc = d.results.filter(c => c.inNYC);
+  const th = 'padding:9px 12px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);text-align:left';
+  const badge = (txt, bg) => `<span style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.05em;background:${bg};color:#fff;margin-right:6px">${esc(txt)}</span>`;
+  const rowId = c => 'pc-' + c.id.replace(/[^a-z0-9]/gi, '_');
+  const addrCell = c => c.inNYC
+    ? `<div class="pc-addr" style="color:var(--ink-3);font-size:12px">Locating property…</div>`
+    : `<div class="pc-addr" style="color:var(--ink-3);font-size:12px">Outside NYC (${esc((c.court||'').split(' · ')[1]||'')}) — address is in the complaint on PACER${c.addressHint ? `<br><span style="color:var(--ink-2)">Title mentions: ${esc(c.addressHint)}</span>` : ''}</div>`;
+
+  out.innerHTML = `
+    <div style="background:var(--steel);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <span style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)">🏛️ Federal Foreclosures — ${esc(courtLabel)}</span>
+        <span style="font-size:12px;color:var(--ink-2)"><span id="pacer-progress">${nyc.length ? `Locating addresses 0/${nyc.length}` : ''}</span> · <strong style="color:var(--shark)">${d.total} cases</strong> (${nyc.length} in NYC)${d.billing ? ` · PACER fee ≈ ${esc(d.billing.estFee)}` : ''}</span>
+      </div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
+        <thead><tr style="border-bottom:1px solid var(--rule)">
+          <th style="${th}">Property</th><th style="${th}">Case</th><th style="${th};text-align:right">Filed</th>
+        </tr></thead>
+        <tbody>
+          ${d.results.map(c => `
+            <tr id="${rowId(c)}" style="border-bottom:1px solid var(--line)">
+              <td style="padding:11px 12px;min-width:220px;max-width:320px;vertical-align:top">${addrCell(c)}</td>
+              <td style="padding:11px 12px;max-width:380px;vertical-align:top">
+                <div>${badge(c.status, c.status === 'OPEN' ? '#0d9488' : '#6b7280')}<span style="color:var(--ink-3);font-size:11px">${esc(c.natureOfSuit||'')}</span></div>
+                <div style="color:var(--chrome);font-size:13px;font-weight:600;margin-top:4px">${esc(c.caseTitle||'—')}</div>
+                ${c.lender ? `<div style="color:var(--ink-2);font-size:12px;margin-top:2px">🏦 <strong>Plaintiff:</strong> ${esc(c.lender)}</div>` : ''}
+                ${c.defendants?.length ? `<div style="color:var(--ink-2);font-size:12px;margin-top:2px">👤 <strong>Defendants:</strong> ${esc(c.defendants.map(x => [x.first, x.last].filter(Boolean).join(' ')).join('; '))}</div>` : ''}
+                <div style="color:var(--ink-2);font-size:11px;margin-top:2px;font-family:var(--mono)">${esc(c.caseNumber||'')}${c.caseLink ? ` · <a href="${esc(c.caseLink)}" target="_blank" rel="noopener" style="color:var(--shark)">PACER →</a>` : ''}</div>
+              </td>
+              <td style="padding:11px 12px;color:var(--ink-2);font-size:12px;text-align:right;white-space:nowrap;font-family:var(--mono);vertical-align:top">${esc((c.dateFiled||'').slice(0,10))}<br><span style="color:var(--ink-3);font-size:10px">${esc(c.court||'')}</span></td>
+            </tr>`).join('')}
+        </tbody>
+      </table></div>
+      ${d.truncated ? '<p class="ownnote" style="padding:8px 16px">Result list hit the page cap — narrow the date range to see everything.</p>' : ''}
+    </div>`;
+
+  // Resolve addresses via ACRIS, 5 cases per request, 3 requests in flight.
+  const confStyle = { high:['#16a34a','MATCHED'], medium:['#0d9488','LIKELY'], low:['#d97706','POSSIBLE'] };
+  let done = 0, found = 0;
+  const prog = document.getElementById('pacer-progress');
+  const fill = res => {
+    const row = document.getElementById(rowId({ id: res.id })); if (!row) return;
+    const cell = row.querySelector('.pc-addr'); if (!cell) return;
+    const cs = confStyle[res.confidence];
+    if (cs && res.address) {
+      found++;
+      const others = (res.candidates || []).slice(1).map(x => `<div style="font-size:11px;color:var(--ink-3)">or ${esc(x.address)}</div>`).join('');
+      cell.innerHTML = `<div style="color:var(--shark);font-size:15px;font-weight:700;margin-bottom:3px">📍 ${esc(res.address)}</div>
+        <div>${badge(cs[1], cs[0])}<span style="font-size:10px;color:var(--ink-3);font-family:var(--mono)">BBL ${esc(res.bbl||'')}${res.lastRecorded ? ' · last rec. ' + esc(res.lastRecorded) : ''}</span></div>
+        ${res.note ? `<div style="font-size:11px;color:var(--ink-3);margin-top:3px">${esc(res.note)}</div>` : ''}${others}`;
+      cell.style.cursor = 'pointer';
+      cell.title = 'Open property report';
+      cell.onclick = () => { if (typeof q !== 'undefined' && q) { q.value = res.bbl || res.address; showTab('report'); run(); window.scrollTo(0, 0); } };
+    } else {
+      cell.innerHTML = `<span style="color:var(--ink-3);font-size:12px">No address found${res.note ? ' — ' + esc(res.note) : ''}</span>`;
+    }
+  };
+  const queue = [];
+  for (let i = 0; i < nyc.length; i += 5) queue.push(nyc.slice(i, i + 5));
+  const worker = async () => {
+    while (queue.length) {
+      const batch = queue.shift();
+      try {
+        const r = await fetch('/api/search?mode=pacer_addr', { method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ cases: batch.map(c => ({ id: c.id, courtId: c.courtId, office: c.office, defendants: c.defendants })) }) });
+        const j = await r.json();
+        (j.results || []).forEach(fill);
+      } catch { batch.forEach(c => fill({ id: c.id, confidence: 'none', note: 'lookup failed' })); }
+      done += batch.length;
+      if (prog) prog.textContent = done >= nyc.length ? `Addresses found: ${found}/${nyc.length}` : `Locating addresses ${done}/${nyc.length}`;
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
 }
 
 async function runPacerTrend() {
