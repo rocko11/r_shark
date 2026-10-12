@@ -2591,7 +2591,7 @@ async function runPacer() {
       const batch = queue.shift();
       try {
         const r = await fetch('/api/search?mode=pacer_addr', { method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ cases: batch.map(c => ({ id: c.id, courtId: c.courtId, office: c.office, defendants: c.defendants })) }) });
+          body: JSON.stringify({ cases: batch.map(c => ({ id: c.id, courtId: c.courtId, office: c.office, defendants: c.defendants, addressHint: c.addressHint })) }) });
         const j = await r.json();
         (j.results || []).forEach(fill);
       } catch { batch.forEach(c => fill({ id: c.id, confidence: 'none', note: 'lookup failed' })); }

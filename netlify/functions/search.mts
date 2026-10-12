@@ -781,7 +781,7 @@ function isNYCOffice(courtId: string, office: string) { return !!OFFICE_BOROUGHS
 
 // Defendants named only because they hold a lien/judgment or are placeholders — never the owner.
 function isNonOwnerParty(name: string): boolean {
-  return /JOHN DOE|JANE DOE|\bDOES?\b|ENVIRONMENTAL CONTROL|PARKING VIOLATIONS|TRANSIT ADJUDICATION|CRIMINAL COURT|CIVIL COURT|UNITED STATES|INTERNAL REVENUE|STATE OF NEW YORK|PEOPLE OF|CITY OF NEW YORK|COUNTY OF|COMMISSIONER|DEPARTMENT OF|DEPT\.? OF|BOARD OF|BUREAU|SECRETARY OF|PUBLIC ADMINISTRATOR|TAX COMMISSION|CLERK OF|\bESQ\b|ATTORNEY GENERAL|MIDLAND FUNDING|CAPITAL ONE|DISCOVER BANK|CAVALRY|PORTFOLIO RECOVERY|LVNV|TENANTS?\b|OCCUPANTS?\b/i.test(name);
+  return /JOHN DOE|JANE DOE|\bDOES?\b|ENVIRONMENTAL CONTROL|PARKING VIOLATIONS|TRANSIT ADJUDICATION|CRIMINAL COURT|CIVIL COURT|UNITED STATES|INTERNAL REVENUE|STATE OF NEW YORK|PEOPLE OF|CITY OF NEW YORK|COUNTY OF|COMMISSIONER|DEPARTMENT OF|DEPT\.? OF|BOARD OF|BUREAU|SECRETARY OF|PUBLIC ADMINISTRATOR|TAX COMMISSION|CLERK OF|\bESQ\b|ATTORNEY GENERAL|MIDLAND FUNDING|CAPITAL ONE|DISCOVER BANK|CAVALRY|PORTFOLIO RECOVERY|LVNV|TENANTS?\b|OCCUPANTS?\b|\bBANK\b|\bN\.A\.|MORTGAGE|LENDING|LOAN|SERVICING|SAVINGS|CREDIT UNION|FINANCIAL|FEDERAL|FUNDING|SANITATION|AGENCY|AUTHORITY|S\/B\/M|SUCCESSOR BY MERGER|AS TRUSTEE|CONDOMINIUM|BOARD OF MANAGERS|HOMEOWNERS/i.test(name);
 }
 
 const isEntity = (s: string) => /\b(LLC|L\.L\.C\.?|INC\.?|CORP\.?|CORPORATION|COMPANY|CO\.|TRUST|L\.?P\.?|LTD|ASSOCIATES|HOLDINGS|REALTY|PROPERTIES|PROPERTY|DEVELOPMENT|PARTNERS|GROUP|ENTERPRISES?|MANAGEMENT|BANK|ASSOCIATION|ESTATE OF|FUND)\b/i.test(s);
@@ -814,6 +814,9 @@ function acrisNameKeys(p: Party): string[] {
       .replace(/L\.L\.C\.?/g, "LLC").replace(/,/g, "").replace(/\.(?=\s|$)/g, "").replace(/\s+/g, " ").trim();
     if (e.length >= 4) {
       keys.add(e);
+      const raw = p.last.toUpperCase().replace(/,?\s*A (NEW YORK |DELAWARE )?(LIMITED LIABILITY COMPANY|CORPORATION|LIMITED PARTNERSHIP)\b.*$/i, "").replace(/\s+A\/K\/A\s+.*$/i, "").replace(/\s+/g, " ").trim();
+      if (raw.length >= 4) keys.add(raw);
+      keys.add(e.replace(/\bL\.?P\.?$/, "LP"));
       const withComma = e.replace(/\s+(LLC|INC|CORP|LP|LTD)$/, ", $1");
       if (withComma !== e) keys.add(withComma);
     }
@@ -853,7 +856,7 @@ async function soqlGet(url: string, params: Record<string, string>): Promise<any
 
 // Match a case's defendants to ACRIS deeds/mortgages and pick the property they're most
 // likely being foreclosed on. Range queries on the indexed name column keep this ~1s/case.
-async function resolveCaseAddress(c: { courtId: string; office: string; defendants: Party[] }) {
+async function resolveCaseAddress(c: { courtId: string; office: string; defendants: Party[]; addressHint?: string }) {
   const boroughs = OFFICE_BOROUGHS[`${c.courtId}|${c.office}`];
   if (!boroughs) return { confidence: "outside", note: "Outside NYC — not in ACRIS" };
 
@@ -911,9 +914,16 @@ async function resolveCaseAddress(c: { courtId: string; office: string; defendan
     if (owned) { h.defs.forEach(d => cand.defs.add(d)); if (m.date > cand.lastOwn) cand.lastOwn = m.date; }
     if (sold && m.date > cand.soldAfter) cand.soldAfter = m.date;
   }
-  const ranked = Object.values(cands)
-    .filter(x => x.defs.size && x.address && !(x.soldAfter && x.soldAfter > x.lastOwn))
-    .sort((a, b) => (b.defs.size - a.defs.size) || b.lastOwn.localeCompare(a.lastOwn));
+  let live = Object.values(cands).filter(x => x.defs.size && x.address && !(x.soldAfter && x.soldAfter > x.lastOwn));
+  // Borrower entity beats individual guarantors: if any LLC/corp defendant owns something, rank only those.
+  const entityIdx = new Set(defs.map((d, i) => isEntity(d.last) ? i : -1).filter(i => i >= 0));
+  const entityOwned = live.filter(x => [...x.defs].some(d => entityIdx.has(d)));
+  if (entityOwned.length) live = entityOwned;
+  // Case title / LLC name often embeds the street address ("CAP 159 W 228 PROPERTY OWNER LLC").
+  const norm = (s: string) => s.toUpperCase().replace(/\b(EAST|WEST|NORTH|SOUTH)\b/g, m => m[0]).replace(/(\d+)(ST|ND|RD|TH)\b/g, "$1").replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const hint = norm(c.addressHint || "");
+  const hintMatch = (x: Cand) => !!hint && (() => { const a = norm(x.address).split(" "), h = hint.split(" "); return a[0] === h[0] && a.slice(1, 3).join(" ").startsWith(h.slice(1, 3).join(" ").slice(0, 4)); })();
+  const ranked = live.sort((a, b) => (Number(hintMatch(b)) - Number(hintMatch(a))) || (b.defs.size - a.defs.size) || b.lastOwn.localeCompare(a.lastOwn));
   if (!ranked.length) return { confidence: "none", note: "Defendants found in ACRIS but no current property in this court's boroughs" };
 
   const top = ranked[0];
@@ -921,7 +931,7 @@ async function resolveCaseAddress(c: { courtId: string; office: string; defendan
   const multiDef = defs.length > 1 && top.defs.size >= 2;
   const unique = ranked.length === 1 || (ranked[1] && ranked[1].defs.size < top.defs.size);
   const entity = defs.some(d => isEntity(d.last));
-  const confidence = (multiDef && unique) || (entity && ranked.length === 1) ? "high" : ranked.length === 1 ? "medium" : "low";
+  const confidence = hintMatch(top) || (multiDef && unique) || (entity && ranked.length === 1) ? "high" : ranked.length === 1 ? "medium" : "low";
   return {
     ...fmt(top),
     confidence,
