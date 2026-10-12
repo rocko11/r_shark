@@ -694,6 +694,24 @@ async function run() {
       return;
     }
     render(d);
+    // If GeoSearch returned multiple candidates, show a disambiguation banner
+    // so the user can confirm or pick a different match.
+    if (d.resolution?.ambiguous && d.resolution?.other_candidates?.length) {
+      const chosen = d.resolution.chosen;
+      const others = d.resolution.other_candidates;
+      const banner = document.createElement('div');
+      banner.style.cssText = 'background:#1e293b;border:1px solid #f97316;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:#f1f5f9';
+      banner.innerHTML = `<strong style="color:#f97316">⚠ Multiple matches found.</strong>
+        Showing: <strong>${esc(chosen.address)}${chosen.borough ? ', '+esc(chosen.borough) : ''}</strong>
+        <span style="color:#94a3b8;margin-left:6px">(BBL ${esc(chosen.query_bbl)})</span>
+        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">
+          ${others.map(c => `<button onclick="loadBBL('${esc(c.query_bbl)}')"
+            style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:5px 10px;color:#7dd3fc;cursor:pointer;font-size:12px">
+            ${esc(c.address)}${c.borough ? ', '+esc(c.borough) : ''} (BBL ${esc(c.query_bbl)}) →
+          </button>`).join('')}
+        </div>`;
+      out.insertBefore(banner, out.firstChild);
+    }
     // Push this BBL to browser history so the back button works between properties.
     if (d.bbl) {
       const url = `${location.pathname}?bbl=${d.bbl}`;

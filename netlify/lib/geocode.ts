@@ -75,9 +75,32 @@ async function timedFetch(url: string, init: RequestInit, ms = 9000): Promise<Re
   finally { clearTimeout(t); }
 }
 
+// Detect borough hint in the raw address string to boost ranking.
+function boroughHint(address: string): string | null {
+  const a = address.toLowerCase();
+  if (/brooklyn|bk\b/.test(a)) return "Brooklyn";
+  if (/queens\b/.test(a)) return "Queens";
+  if (/bronx\b/.test(a)) return "Bronx";
+  if (/manhattan\b/.test(a)) return "Manhattan";
+  if (/staten island\b/.test(a)) return "Staten Island";
+  return null;
+}
+
+// Sort candidates so the borough mentioned in the original query ranks first.
+function rankByBorough(cands: Candidate[], hint: string | null): Candidate[] {
+  if (!hint) return cands;
+  return [...cands].sort((a, b) => {
+    const aMatch = a.borough.toLowerCase() === hint.toLowerCase() ? 0 : 1;
+    const bMatch = b.borough.toLowerCase() === hint.toLowerCase() ? 0 : 1;
+    return aMatch - bMatch;
+  });
+}
+
 export async function resolve(address: string, limit = 5): Promise<Candidate[]> {
   address = address.trim();
   if (!address) return [];
+
+  const hint = boroughHint(address);
 
   if (GEOCLIENT_KEY) {
     try {
@@ -85,7 +108,7 @@ export async function resolve(address: string, limit = 5): Promise<Candidate[]> 
       const r = await timedFetch(u, { headers: { "Ocp-Apim-Subscription-Key": GEOCLIENT_KEY } });
       if (r.ok) {
         const cands = fromGeoclient(await r.json());
-        if (cands.length) return cands.slice(0, limit);
+        if (cands.length) return rankByBorough(cands, hint).slice(0, limit);
       }
     } catch { /* fall through to GeoSearch */ }
   }
@@ -93,7 +116,7 @@ export async function resolve(address: string, limit = 5): Promise<Candidate[]> 
   const u = `${GEOSEARCH_URL}?text=${encodeURIComponent(address)}&size=${limit}`;
   const r = await timedFetch(u, {});
   if (!r.ok) throw new Error(`geosearch HTTP ${r.status}`);
-  return fromGeoSearch(await r.json()).slice(0, limit);
+  return rankByBorough(fromGeoSearch(await r.json()), hint).slice(0, limit);
 }
 
 export async function autocomplete(text: string, size = 8) {
