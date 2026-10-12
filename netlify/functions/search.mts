@@ -428,11 +428,35 @@ export default async (req: Request, _ctx: Context) => {
         return { status: r.status, body: txt.slice(0, 3000) };
       } catch (e: any) { return { error: String(e?.message || e) }; }
     };
-    const [a, b] = await Promise.all([
-      tryBody({ caseNumberFull: cn }),
-      tryBody({ courtCase: { caseNumberFull: cn, courtId: [court] } }),
+    const since = new Date(Date.now() - 14 * 86400000).toISOString().slice(0,10);
+    const [bulk, dock, cases] = await Promise.all([
+      tryBody({ courtCase: { courtId: [court], dateFiledFrom: since, natureOfSuit: ["220","290"], caseType: ["cv"] } }),
+      (async () => {
+        try {
+          const r = await fetch("https://pcl.uscourts.gov/pcl-public-api/rest/docketEntries/find", { method:"POST", headers: hdr, body: JSON.stringify({ caseNumberFull: cn }), signal: AbortSignal.timeout(9000) });
+          return { status: r.status, body: (await r.text()).slice(0, 500) };
+        } catch (e: any) { return { error: String(e?.message || e) }; }
+      })(),
+      (async () => {
+        try {
+          const r = await fetch(PACER_PCL, { method:"POST", headers: hdr, body: JSON.stringify({ caseNumberFull: cn, courtId:[court] }), signal: AbortSignal.timeout(9000) });
+          return { status: r.status, body: (await r.text()).slice(0, 2500) };
+        } catch (e: any) { return { error: String(e?.message || e) }; }
+      })(),
     ]);
-    return json({ case: cn, flat: a, nested: b });
+    let bulkSummary: any = bulk;
+    try {
+      const d = JSON.parse((bulk as any).body.length >= 3000 ? "{}" : (bulk as any).body);
+      bulkSummary = { status: (bulk as any).status, pageInfo: d.pageInfo, receipt: d.receipt };
+    } catch {}
+    // Re-run bulk without truncation to read pageInfo reliably
+    try {
+      const r = await fetch("https://pcl.uscourts.gov/pcl-public-api/rest/parties/find", { method:"POST", headers: hdr, body: JSON.stringify({ courtCase: { courtId: [court], dateFiledFrom: since, natureOfSuit: ["220","290"], caseType: ["cv"] } }), signal: AbortSignal.timeout(9000) });
+      const d: any = await r.json();
+      bulkSummary = { status: r.status, pageInfo: d.pageInfo, fee: d.receipt?.searchFee, search: d.receipt?.search, errors: d.errors,
+        sample: (d.content || []).slice(0, 12).map((p: any) => [p.caseNumberFull, p.partyRole, p.lastName, p.firstName, p.courtCase?.natureOfSuit]) };
+    } catch (e: any) { bulkSummary = { error: String(e?.message || e) }; }
+    return json({ case: cn, bulk: bulkSummary, docket: dock, caseRecord: cases });
   } else if (mode === "pacer") {
     // Live PACER search — federal foreclosure cases
     const token = await pacerToken();
