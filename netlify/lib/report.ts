@@ -186,6 +186,7 @@ export async function buildReport(bbl: string, bin: string | null = null) {
   tasks["hpd_fee_charges"] = sq.query("hpd_fee_charges", { where: sq.buildWhere({ bbl }), limit: 200 });
   tasks["hpd_omo_charges"] = sq.query("hpd_omo_charges", { where: sq.buildWhere({ bbl }), limit: 100 });
   tasks["hpd_hwo_charges"] = sq.query("hpd_hwo_charges", { where: sq.buildWhere({ bbl }), limit: 100 });
+  tasks["nyc_311"] = sq.query("nyc_311", { where: sq.buildWhere({ bbl }), limit: 200 });
   if (acrisOk) tasks["acris"] = acris(borough, block, lot);
   // E-designations key on borough/block/lot (like ACRIS legals), all boroughs.
   tasks["e_designations"] = sq.query("e_designations", {
@@ -374,6 +375,31 @@ export async function buildReport(bbl: string, bin: string | null = null) {
         grand_total_billed: Math.round(feeTotal + omoTotal + hwoTotal),
         aep_flag: omos.some(r => String(r.isaep || "").toUpperCase() === "Y"),
       };
+    })(),
+    nyc_311: (() => {
+      const rows = (data.nyc_311 || []) as any[];
+      const open = rows.filter(r => String(r.status || "").toLowerCase() === "open");
+      // Group by complaint_type for a summary
+      const byType: Record<string, { total: number; open: number }> = {};
+      for (const r of rows) {
+        const t = r.complaint_type || "Unknown";
+        if (!byType[t]) byType[t] = { total: 0, open: 0 };
+        byType[t].total++;
+        if (String(r.status || "").toLowerCase() === "open") byType[t].open++;
+      }
+      const topTypes = Object.entries(byType)
+        .sort((a, b) => b[1].total - a[1].total)
+        .slice(0, 8)
+        .map(([type, counts]) => ({ type, ...counts }));
+      const recent = rows.slice(0, 10).map(r => ({
+        date: r.created_date ? String(r.created_date).slice(0, 10) : null,
+        complaint_type: r.complaint_type || null,
+        descriptor: r.descriptor || null,
+        agency: r.agency || null,
+        status: r.status || null,
+        resolution: r.resolution_description || null,
+      }));
+      return { total: rows.length, open: open.length, top_types: topTypes, recent };
     })(),
     acris: acrisOk ? acrisData : { available: false,
       reason: "ACRIS excludes Staten Island. Use the Richmond County Clerk." },

@@ -145,6 +145,16 @@ export const DATASETS: Record<string, Dataset> = {
     verified: true, canaryField: "hwoid", bblField: "bbl", binField: "bin",
     orderBy: "hwocreatedate DESC",
     notes: "chargeamount = total lienable amount to DoF. hwoapprovedamount = labor+materials. datetransferdof null = not yet liened." },
+
+  // NYC 311 Service Requests (erm2-nwe9) — all 311 complaints across all agencies,
+  // keyed by bbl. NOTE: bbl is not populated on every row (older records, some
+  // complaint types). Fields: unique_key, created_date, closed_date, agency,
+  // agency_name, complaint_type, descriptor, status (Open/Closed),
+  // resolution_description, incident_address.
+  nyc_311: { slug: "nyc_311", socrataId: "erm2-nwe9", key: "bbl",
+    verified: true, canaryField: "unique_key", bblField: "bbl",
+    orderBy: "created_date DESC",
+    notes: "All 311 complaints by BBL across all agencies (DOB, HPD, DEP, Sanitation, etc.). bbl null on some older rows. Fields: complaint_type, descriptor, agency, status, created_date, closed_date, resolution_description." },
 };
 
 export const BOROUGH_NAME: Record<number, string> = {

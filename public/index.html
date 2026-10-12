@@ -1377,6 +1377,29 @@ function render(d) {
     </section>`;
     })()}
 
+    ${(()=>{
+      const s3 = d.nyc_311;
+      if (!s3 || s3.total === 0) return "";
+      const topRows = (s3.top_types || []).map(t => `<tr>
+        <td style="font-size:12px">${esc(t.type||"—")}</td>
+        <td class="num">${fmt(t.total)}</td>
+        <td class="num ${t.open > 0 ? 'bad' : ''}">${fmt(t.open)}</td>
+      </tr>`).join("");
+      return `
+    <section>
+      <div class="sec-head"><h2>311 Complaints</h2>
+        <span class="count">${fmt(s3.total)} total · <span ${s3.open > 0 ? 'style="color:var(--iron);font-weight:600"' : ''}>${fmt(s3.open)} open</span></span></div>
+      <div class="stats">
+        <div class="stat"><span class="k">Total complaints</span><span class="v">${fmt(s3.total)}</span></div>
+        <div class="stat"><span class="k">Open</span><span class="v ${s3.open > 0 ? 'bad' : ''}">${fmt(s3.open)}</span></div>
+      </div>
+      ${topRows ? `<table class="stack" style="margin-top:10px"><thead><tr>
+        <th>Complaint type</th><th class="num">Total</th><th class="num">Open</th>
+      </tr></thead><tbody>${topRows}</tbody></table>` : ""}
+      <p class="ownnote" style="margin-top:6px">Source: NYC 311 (all agencies). BBL matching may undercount older complaints.</p>
+    </section>`;
+    })()}
+
     <section>
       <div class="sec-head"><h2>DOB filings</h2>
         <span class="count">${fmt(dob.filing_count)} total · ${fmt(dob.permits_issued)} permits${d.bin?` · <a class="doclink" href="https://a810-bisweb.nyc.gov/bisweb/COsByLocationServlet?requestid=1&allbin=${esc(d.bin)}" target="_blank" rel="noopener">C of O →</a> · <a class="doclink" href="https://a810-bisweb.nyc.gov/bisweb/PropertyProfileOverviewServlet?boro=${esc(String(d.bbl||"").slice(0,1))}&block=${esc(id.block)}&lot=${esc(id.lot)}" target="_blank" rel="noopener">permits →</a>`:""}</span></div>
