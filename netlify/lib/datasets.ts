@@ -94,6 +94,57 @@ export const DATASETS: Record<string, Dataset> = {
   tax_lien_sale: { slug: "tax_lien_sale", socrataId: "9rz4-mjek", key: "block",
     verified: false, canaryField: "cycle", bblField: null,
     notes: "Tax Lien Sale List. Keyed borough+block+lot (no bbl). Fields: month, cycle (10/30/60/90 Day Notice, Final Sale), water_debt_only (YES/NO/Y/N). Threshold signal — no dollar amount." },
+
+  // HPD Complaints & Problems (ygpa-z7cr) — 311 housing complaints routed to HPD.
+  // Each row is a problem (heat, hot water, pests, leaks, etc.). Keyed bbl + bin.
+  // Fields: received_date, major_category, minor_category, type (EMERGENCY/NON EMERGENCY/etc.),
+  // complaint_status (OPEN/CLOSE), problem_status, status_description, apartment.
+  hpd_complaints: { slug: "hpd_complaints", socrataId: "ygpa-z7cr", key: "bbl",
+    verified: true, canaryField: "complaint_id", bblField: "bbl", binField: "bin",
+    orderBy: "received_date DESC",
+    notes: "One row per problem. complaint_status OPEN/CLOSE. type=EMERGENCY/NON EMERGENCY/IMMEDIATE EMERGENCY/HAZARDOUS. major_category + minor_category describe the condition." },
+
+  // HPD Order to Repair / Vacate Orders (tb8q-a3ar) — orders to vacate due to
+  // unsafe/uninhabitable conditions. Keyed bbl + bin.
+  // Fields: vacate_order_number, primary_vacate_reason, vacate_type (Partial/Entire Building),
+  // vacate_effective_date, actual_rescind_date (null = still active), number_of_vacated_units.
+  hpd_vacate_orders: { slug: "hpd_vacate_orders", socrataId: "tb8q-a3ar", key: "bbl",
+    verified: true, canaryField: "vacate_order_number", bblField: "bbl", binField: "bin",
+    orderBy: "vacate_effective_date DESC",
+    notes: "active = actual_rescind_date is null. primary_vacate_reason: Fire Damage, Illegal Occupancy, Habitability, Structural, etc." },
+
+  // HPD Housing Litigations (59kj-x8nc) — Housing Court actions against owners.
+  // Keyed bbl + bin. Fields: litigationid, casetype, caseopendate, casestatus (CLOSED/PENDING),
+  // casejudgement (OpenJudgement field), findingofharassment, findingdate, penalty, respondent.
+  hpd_litigations: { slug: "hpd_litigations", socrataId: "59kj-x8nc", key: "bbl",
+    verified: true, canaryField: "litigationid", bblField: "bbl", binField: "bin",
+    orderBy: "caseopendate DESC",
+    notes: "casestatus CLOSED/PENDING. casetype includes: Tenant Action, Heat and Hot Water, Elevator, etc. findingofharassment=YES is a strong adverse signal." },
+
+  // HPD Fee Charges (cp6j-7bjj) — fees billed to owner for inspections, false certs, etc.
+  // Keyed bbl + bin. Fields: feeid, feetype, feeamount, feeissueddate, doftransferdate.
+  // Most fees are $200; watch for volume and unpaid (doftransferdate null = not yet liened).
+  hpd_fee_charges: { slug: "hpd_fee_charges", socrataId: "cp6j-7bjj", key: "bbl",
+    verified: true, canaryField: "feeid", bblField: "bbl", binField: "bin",
+    orderBy: "feeissueddate DESC",
+    notes: "feeamount usually $200. doftransferdate null = not yet transferred to DoF. feetype describes reason (e.g. Inspection Fee, False Cert Fee)." },
+
+  // HPD Open Market Order Charges (mdbu-nrqn) — emergency repairs HPD performed and
+  // billed back to the owner. Keyed bbl + bin.
+  // Fields: omoid, omonumber, worktypegeneral, omoawardamount, omoawarddate, omocreatedate,
+  // omostatusreason, isaep (Alternative Enforcement Program flag).
+  hpd_omo_charges: { slug: "hpd_omo_charges", socrataId: "mdbu-nrqn", key: "bbl",
+    verified: true, canaryField: "omoid", bblField: "bbl", binField: "bin",
+    orderBy: "omocreatedate DESC",
+    notes: "omoawardamount = cost HPD will lien against owner. isaep=Y means worst-in-class AEP building. worktypegeneral describes work type." },
+
+  // HPD Handyman Work Order Charges (sbnd-xujn) — smaller-scale HPD-billed repairs.
+  // Keyed bbl + bin. Fields: hwoid, worktypegeneral, hwoapprovedamount, chargeamount,
+  // datetransferdof, hwocreatedate, adminfee, salestax.
+  hpd_hwo_charges: { slug: "hpd_hwo_charges", socrataId: "sbnd-xujn", key: "bbl",
+    verified: true, canaryField: "hwoid", bblField: "bbl", binField: "bin",
+    orderBy: "hwocreatedate DESC",
+    notes: "chargeamount = total lienable amount to DoF. hwoapprovedamount = labor+materials. datetransferdof null = not yet liened." },
 };
 
 export const BOROUGH_NAME: Record<number, string> = {

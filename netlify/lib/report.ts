@@ -180,6 +180,12 @@ export async function buildReport(bbl: string, bin: string | null = null) {
     if (w) tasks[slug] = sq.query(slug, { where: w, limit });
   }
   tasks["hpd_violations"] = sq.query("hpd_violations", { where: sq.buildWhere({ bbl }), limit: 500 });
+  tasks["hpd_complaints"] = sq.query("hpd_complaints", { where: sq.buildWhere({ bbl }), limit: 300 });
+  tasks["hpd_vacate_orders"] = sq.query("hpd_vacate_orders", { where: sq.buildWhere({ bbl }), limit: 50 });
+  tasks["hpd_litigations"] = sq.query("hpd_litigations", { where: sq.buildWhere({ bbl }), limit: 100 });
+  tasks["hpd_fee_charges"] = sq.query("hpd_fee_charges", { where: sq.buildWhere({ bbl }), limit: 200 });
+  tasks["hpd_omo_charges"] = sq.query("hpd_omo_charges", { where: sq.buildWhere({ bbl }), limit: 100 });
+  tasks["hpd_hwo_charges"] = sq.query("hpd_hwo_charges", { where: sq.buildWhere({ bbl }), limit: 100 });
   if (acrisOk) tasks["acris"] = acris(borough, block, lot);
   // E-designations key on borough/block/lot (like ACRIS legals), all boroughs.
   tasks["e_designations"] = sq.query("e_designations", {
@@ -301,6 +307,74 @@ export async function buildReport(bbl: string, bin: string | null = null) {
       hpd_class_c: (data.hpd_violations || []).filter((v: any) => String(v.class || "").toUpperCase() === "C").length,
       complaints_total: (data.dob_complaints || []).length,
     },
+    hpd_complaints: (() => {
+      const rows = (data.hpd_complaints || []) as any[];
+      const open = rows.filter(r => String(r.complaint_status || "").toUpperCase() !== "CLOSE");
+      const emergency = open.filter(r => /emergency|hazardous/i.test(r.type || ""));
+      const recent = rows.slice(0, 10).map(r => ({
+        received: r.received_date ? String(r.received_date).slice(0, 10) : null,
+        category: r.major_category || null,
+        detail: r.minor_category || null,
+        type: r.type || null,
+        status: r.complaint_status || null,
+        apartment: r.apartment || null,
+      }));
+      return { total: rows.length, open: open.length, emergency: emergency.length, recent };
+    })(),
+    hpd_vacate_orders: (() => {
+      const rows = (data.hpd_vacate_orders || []) as any[];
+      const active = rows.filter(r => !r.actual_rescind_date);
+      return {
+        total: rows.length,
+        active: active.length,
+        orders: rows.slice(0, 10).map(r => ({
+          order_number: r.vacate_order_number || null,
+          reason: r.primary_vacate_reason || null,
+          type: r.vacate_type || null,
+          units_vacated: r.number_of_vacated_units ? Number(r.number_of_vacated_units) : null,
+          effective_date: r.vacate_effective_date ? String(r.vacate_effective_date).slice(0, 10) : null,
+          rescind_date: r.actual_rescind_date ? String(r.actual_rescind_date).slice(0, 10) : null,
+          active: !r.actual_rescind_date,
+        })),
+      };
+    })(),
+    hpd_litigations: (() => {
+      const rows = (data.hpd_litigations || []) as any[];
+      const open = rows.filter(r => String(r.casestatus || "").toUpperCase() === "PENDING");
+      const harassment = rows.filter(r => String(r.findingofharassment || "").toUpperCase() === "YES");
+      return {
+        total: rows.length,
+        open: open.length,
+        harassment_findings: harassment.length,
+        cases: rows.slice(0, 10).map(r => ({
+          id: r.litigationid || null,
+          case_type: r.casetype || null,
+          status: r.casestatus || null,
+          open_date: r.caseopendate ? String(r.caseopendate).slice(0, 10) : null,
+          judgment: r.casejudgement || null,
+          harassment_finding: r.findingofharassment || null,
+          finding_date: r.findingdate ? String(r.findingdate).slice(0, 10) : null,
+          penalty: r.penalty || null,
+        })),
+      };
+    })(),
+    hpd_charges: (() => {
+      const fees = (data.hpd_fee_charges || []) as any[];
+      const omos = (data.hpd_omo_charges || []) as any[];
+      const hwos = (data.hpd_hwo_charges || []) as any[];
+      const feeTotal = fees.reduce((s, r) => s + (Number(r.feeamount) || 0), 0);
+      const omoTotal = omos.reduce((s, r) => s + (Number(r.omoawardamount) || 0), 0);
+      const hwoTotal = hwos.reduce((s, r) => s + (Number(r.chargeamount) || 0), 0);
+      const unpaidOmo = omos.filter(r => !r.omoawarddate).reduce((s, r) => s + (Number(r.omoawardamount) || 0), 0);
+      const unpaidHwo = hwos.filter(r => !r.datetransferdof).reduce((s, r) => s + (Number(r.chargeamount) || 0), 0);
+      return {
+        fee_charges: { count: fees.length, total_amount: Math.round(feeTotal) },
+        omo_charges: { count: omos.length, total_awarded: Math.round(omoTotal), total_unpaid: Math.round(unpaidOmo) },
+        hwo_charges: { count: hwos.length, total_charged: Math.round(hwoTotal), total_unpaid: Math.round(unpaidHwo) },
+        grand_total_billed: Math.round(feeTotal + omoTotal + hwoTotal),
+        aep_flag: omos.some(r => String(r.isaep || "").toUpperCase() === "Y"),
+      };
+    })(),
     acris: acrisOk ? acrisData : { available: false,
       reason: "ACRIS excludes Staten Island. Use the Richmond County Clerk." },
     title,

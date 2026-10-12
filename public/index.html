@@ -1275,6 +1275,108 @@ function render(d) {
       ${stats}
     </section>
 
+    ${(()=>{
+      const hc = d.hpd_complaints;
+      if (!hc || hc.total === 0) return "";
+      const emergencyBadge = hc.emergency > 0 ? `<span class="rsbadge rs-listed" style="font-size:10px;padding:2px 6px">${fmt(hc.emergency)} EMERGENCY</span>` : "";
+      const recentRows = (hc.recent || []).slice(0, 8).map(c => `<tr>
+        <td style="white-space:nowrap;font-family:var(--mono);font-size:11px">${esc((c.received||"").slice(0,10))}</td>
+        <td><strong>${esc(c.category||"—")}</strong>${c.detail&&c.detail!==c.category?` · <span style="color:var(--ink-2);font-size:12px">${esc(c.detail)}</span>`:""}${c.apartment?` <span class="pop-k">Apt ${esc(c.apartment)}</span>`:""}</td>
+        <td style="font-size:11px">${c.type&&c.type.includes("EMERGENCY")?`<span style="color:var(--iron);font-weight:600">${esc(c.type)}</span>`:esc(c.type||"—")}</td>
+        <td style="font-size:11px">${c.status==="OPEN"?`<span style="color:var(--iron);font-weight:500">OPEN</span>`:`<span style="color:var(--ink-2)">CLOSED</span>`}</td>
+      </tr>`).join("");
+      return `
+    <section>
+      <div class="sec-head"><h2>HPD Complaints</h2>
+        <span class="count">${fmt(hc.total)} total · ${fmt(hc.open)} open${emergencyBadge?` · `+emergencyBadge:""}</span></div>
+      <div class="stats">
+        <div class="stat"><span class="k">Total complaints</span><span class="v">${fmt(hc.total)}</span></div>
+        <div class="stat"><span class="k">Open</span><span class="v ${hc.open > 0 ? 'bad' : ''}">${fmt(hc.open)}</span></div>
+        <div class="stat"><span class="k">Emergency</span><span class="v ${hc.emergency > 0 ? 'bad' : ''}">${fmt(hc.emergency)}</span></div>
+      </div>
+      ${recentRows ? `<table class="stack" style="margin-top:10px"><thead><tr>
+        <th>Date</th><th>Condition</th><th>Type</th><th>Status</th>
+      </tr></thead><tbody>${recentRows}</tbody></table>
+      ${hc.total > 8 ? `<p class="hint" style="margin-top:6px">Showing 8 of ${fmt(hc.total)} complaints. <a class="doclink" href="https://hpdonline.nyc.gov/hpdonline/" target="_blank" rel="noopener">View all on HPD Online →</a></p>` : ""}` : `<p class="hint">No complaints found.</p>`}
+    </section>`;
+    })()}
+
+    ${(()=>{
+      const vo = d.hpd_vacate_orders;
+      if (!vo || vo.total === 0) return "";
+      const activeOrders = (vo.orders || []).filter(o => o.active);
+      const rows = (vo.orders || []).slice(0, 6).map(o => `<tr>
+        <td style="font-size:11px;font-family:var(--mono);white-space:nowrap">${esc((o.effective_date||"").slice(0,10))}</td>
+        <td><strong>${esc(o.reason||"—")}</strong></td>
+        <td style="font-size:11px">${esc(o.type||"—")}</td>
+        <td class="num">${o.units_vacated ? fmt(o.units_vacated) : "—"}</td>
+        <td style="font-size:11px">${o.active ? `<span style="color:var(--iron);font-weight:600">ACTIVE</span>` : `<span style="color:var(--ink-2)">Rescinded ${esc((o.rescind_date||"").slice(0,10))}</span>`}</td>
+      </tr>`).join("");
+      return `
+    <section>
+      <div class="sec-head"><h2>HPD Vacate Orders</h2>
+        <span class="count">${fmt(vo.total)} total · <span ${vo.active > 0 ? 'style="color:var(--iron);font-weight:600"' : ''}>${fmt(vo.active)} active</span></span></div>
+      <div class="stats">
+        <div class="stat"><span class="k">Total orders</span><span class="v">${fmt(vo.total)}</span></div>
+        <div class="stat"><span class="k">Active</span><span class="v ${vo.active > 0 ? 'bad' : ''}">${fmt(vo.active)}</span></div>
+      </div>
+      ${vo.active > 0 ? `<div class="gap" style="margin-top:8px"><strong>⚠ Active vacate order on record.</strong> The building or portion of it has been ordered vacated and the order has not been rescinded. Verify current status with HPD before proceeding.</div>` : ""}
+      ${rows ? `<table class="stack" style="margin-top:10px"><thead><tr>
+        <th>Effective</th><th>Reason</th><th>Type</th><th class="num">Units</th><th>Status</th>
+      </tr></thead><tbody>${rows}</tbody></table>` : ""}
+    </section>`;
+    })()}
+
+    ${(()=>{
+      const hl = d.hpd_litigations;
+      if (!hl || hl.total === 0) return "";
+      const rows = (hl.cases || []).slice(0, 8).map(c => `<tr>
+        <td style="font-size:11px;font-family:var(--mono);white-space:nowrap">${esc((c.open_date||"").slice(0,10))}</td>
+        <td style="font-size:12px">${esc(c.case_type||"—")}</td>
+        <td style="font-size:11px">${c.status==="PENDING"?`<span style="color:var(--iron);font-weight:500">PENDING</span>`:`<span style="color:var(--ink-2)">CLOSED</span>`}</td>
+        <td style="font-size:11px">${c.harassment_finding==="YES"?`<span style="color:var(--iron);font-weight:700">HARASSMENT</span>`:esc(c.judgment||"—")}</td>
+      </tr>`).join("");
+      return `
+    <section>
+      <div class="sec-head"><h2>HPD Litigations</h2>
+        <span class="count">${fmt(hl.total)} cases · ${fmt(hl.open)} pending${hl.harassment_findings > 0 ? ` · <span style="color:var(--iron);font-weight:600">${fmt(hl.harassment_findings)} harassment finding${hl.harassment_findings>1?"s":""}</span>` : ""}</span></div>
+      <div class="stats">
+        <div class="stat"><span class="k">Total cases</span><span class="v">${fmt(hl.total)}</span></div>
+        <div class="stat"><span class="k">Pending</span><span class="v ${hl.open > 0 ? 'bad' : ''}">${fmt(hl.open)}</span></div>
+        <div class="stat"><span class="k">Harassment findings</span><span class="v ${hl.harassment_findings > 0 ? 'bad' : ''}">${fmt(hl.harassment_findings)}</span></div>
+      </div>
+      ${hl.harassment_findings > 0 ? `<div class="gap" style="margin-top:8px"><strong>⚠ Finding of harassment on record.</strong> A Housing Court judge found the owner engaged in tenant harassment. This is a significant adverse signal for any rent-stabilized or affordable housing property.</div>` : ""}
+      ${rows ? `<table class="stack" style="margin-top:10px"><thead><tr>
+        <th>Opened</th><th>Case type</th><th>Status</th><th>Judgment / Finding</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+      ${hl.total > 8 ? `<p class="hint" style="margin-top:6px">Showing 8 of ${fmt(hl.total)} cases.</p>` : ""}` : ""}
+    </section>`;
+    })()}
+
+    ${(()=>{
+      const ch = d.hpd_charges;
+      if (!ch) return "";
+      const anyCharges = (ch.fee_charges?.count||0) + (ch.omo_charges?.count||0) + (ch.hwo_charges?.count||0);
+      if (!anyCharges) return "";
+      const fc = ch.fee_charges || {};
+      const oc = ch.omo_charges || {};
+      const hwo = ch.hwo_charges || {};
+      const dollar = n => n ? "$" + fmt(n) : "—";
+      return `
+    <section>
+      <div class="sec-head"><h2>HPD Charges &amp; Liens</h2>
+        <span class="count">Total billed: ${ch.grand_total_billed ? "$" + fmt(ch.grand_total_billed) : "—"}${ch.aep_flag ? ` · <span style="color:var(--iron);font-weight:700">AEP BUILDING</span>` : ""}</span></div>
+      ${ch.aep_flag ? `<div class="gap" style="margin-bottom:10px"><strong>⚠ Alternative Enforcement Program (AEP) building.</strong> HPD has classified this as among the worst-maintained buildings in the city. Elevated oversight, frequent inspections, and ongoing emergency repair billings are typical. Carry-over liabilities may be significant.</div>` : ""}
+      <div class="stats">
+        <div class="stat"><span class="k">Inspection fees</span><span class="v">${dollar(fc.total_amount)} <span class="pop-k">${fmt(fc.count||0)} items</span></span></div>
+        <div class="stat"><span class="k">Emergency repairs (OMO)</span><span class="v ${oc.total_unpaid > 0 ? 'bad' : ''}">${dollar(oc.total_awarded)} <span class="pop-k">${fmt(oc.count||0)} orders</span></span></div>
+        <div class="stat"><span class="k">Handyman repairs (HWO)</span><span class="v ${hwo.total_unpaid > 0 ? 'bad' : ''}">${dollar(hwo.total_charged)} <span class="pop-k">${fmt(hwo.count||0)} orders</span></span></div>
+        <div class="stat"><span class="k">Unpaid / not yet liened</span><span class="v ${(oc.total_unpaid||0)+(hwo.total_unpaid||0) > 0 ? 'bad' : ''}">${dollar((oc.total_unpaid||0)+(hwo.total_unpaid||0))}</span></div>
+      </div>
+      <p class="ownnote" style="margin-top:8px">HPD inspection fees are typically $200/item. Emergency repair (OMO) and handyman (HWO) charges are billed against the owner and liened to the property through DoF when unpaid. "Unpaid / not yet liened" = charges issued but not yet transferred to DoF.</p>
+    </section>`;
+    })()}
+
     <section>
       <div class="sec-head"><h2>DOB filings</h2>
         <span class="count">${fmt(dob.filing_count)} total · ${fmt(dob.permits_issued)} permits${d.bin?` · <a class="doclink" href="https://a810-bisweb.nyc.gov/bisweb/COsByLocationServlet?requestid=1&allbin=${esc(d.bin)}" target="_blank" rel="noopener">C of O →</a> · <a class="doclink" href="https://a810-bisweb.nyc.gov/bisweb/PropertyProfileOverviewServlet?boro=${esc(String(d.bbl||"").slice(0,1))}&block=${esc(id.block)}&lot=${esc(id.lot)}" target="_blank" rel="noopener">permits →</a>`:""}</span></div>
