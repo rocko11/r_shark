@@ -414,6 +414,25 @@ export default async (req: Request, _ctx: Context) => {
     } catch(e) {
       return json({ error: `Foreclosure search failed: ${(e as Error).message}`.slice(0,160) }, 502);
     }
+  } else if (mode === "pacer_debug") {
+    // TEMP diagnostic: raw PCL party-search responses for one case, to fix party/address parsing.
+    const token = await pacerToken();
+    if (!token) return json({ error: pacerAuthError || "PACER auth failed." }, 503);
+    const cn = u.get("case") || "1:2026cv06446";
+    const court = u.get("court") || "nyedc";
+    const hdr = { "Content-Type":"application/json","Accept":"application/json","X-NEXT-GEN-CSO":token };
+    const tryBody = async (body: any) => {
+      try {
+        const r = await fetch("https://pcl.uscourts.gov/pcl-public-api/rest/parties/find", { method:"POST", headers: hdr, body: JSON.stringify(body), signal: AbortSignal.timeout(9000) });
+        const txt = await r.text();
+        return { status: r.status, body: txt.slice(0, 3000) };
+      } catch (e: any) { return { error: String(e?.message || e) }; }
+    };
+    const [a, b] = await Promise.all([
+      tryBody({ caseNumberFull: cn }),
+      tryBody({ courtCase: { caseNumberFull: cn, courtId: [court] } }),
+    ]);
+    return json({ case: cn, flat: a, nested: b });
   } else if (mode === "pacer") {
     // Live PACER search — federal foreclosure cases
     const token = await pacerToken();
