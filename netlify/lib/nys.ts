@@ -35,8 +35,8 @@ const clean = (v: any) => String(v ?? "").replace(/\s+/g, " ").trim();
 const title = (s: string) => clean(s).toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
 const num = (v: any) => (Number(v) > 0 ? Number(v) : null);
 
-async function nysGeocode(address: string) {
-  const qs = new URLSearchParams({ SingleLine: address, outSR: "4326", maxLocations: "3", outFields: "City,Addr_type,Score", f: "json" });
+async function nysGeocode(address: string, max = 3) {
+  const qs = new URLSearchParams({ SingleLine: address, outSR: "4326", maxLocations: String(max), outFields: "City,Addr_type,Score", f: "json" });
   const j = await getJSON(`${NYS_GEOCODE}?${qs}`);
   return (j.candidates || []).filter((c: any) => c.location && c.score >= 85)
     .map((c: any) => ({ address: c.address, score: c.score, type: c.attributes?.Addr_type, city: c.attributes?.City, x: c.location.x, y: c.location.y }));
@@ -52,10 +52,30 @@ async function townAt(x: number, y: number) {
 // Decide NYC vs rest-of-state for an ambiguous address. Returns null if it can't be geocoded.
 // A typed upstate town that the geocoder "matched" to an NYC street is rejected, so
 // "135 Woodlawn Ave, Saratoga Springs, Inside" never becomes 135 Woodlawn Ave, Staten Island.
+function lev(a: string, b: string): number {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+// Typed town vs a candidate's city, ignoring spaces: "SOUTH HAMPTON" ~ "Southampton", "SOUTHAPTON" ~ "Southampton".
+const townClose = (typed: string, city: string) => {
+  const a = typed.toUpperCase().replace(/[^A-Z]/g, ""), b = String(city || "").toUpperCase().replace(/[^A-Z]/g, "");
+  return !!a && !!b && (a === b || (Math.min(a.length, b.length) >= 5 && lev(a, b) <= 2));
+};
+
 export async function nysWhere(address: string) {
-  const cands = await nysGeocode(address).catch(() => []);
-  if (!cands.length) return null;
+  let cands = await nysGeocode(address).catch(() => []);
   const tail = townTail(address);
+  if (!cands.length && tail) {
+    // Town misspelled / split ("south hampton"): geocode the street alone, keep candidates in a similarly named town.
+    const streetOnly = address.split(",")[0].replace(new RegExp(tail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ".*$", "i"), "").replace(/\s+(NY|NEW YORK)\s*$/i, "").trim();
+    if (streetOnly && streetOnly !== address) {
+      cands = (await nysGeocode(`${streetOnly}, NY`, 20).catch(() => [])).filter((c: any) => townClose(tail, c.city));
+    }
+  }
+  if (!cands.length) return null;
   const typedNYC = !tail || NYC_PLACE_RE.test(` ${tail} `) || /\bNEW YORK\b/.test(tail);
   for (const cand of cands.slice(0, 3)) {
     const town = await townAt(cand.x, cand.y).catch(() => null);
