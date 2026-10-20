@@ -1933,7 +1933,7 @@ function setSRegion(r) {
     </div>
     <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:6px 0 10px"><input type="checkbox" id="s_vacant"> Vacant land only</label>
     <button class="sgo" onclick="runSearch()">Search →</button>
-    <p class="hint" style="margin-top:8px">All 57 counties outside NYC — 4.7M parcels from the NY State assessment rolls (owner, mailing address, market value, property class). Pick a county (add a town to narrow it), or search an owner name statewide. <strong>Absentee</strong> = owner's mailing address differs from the property, a classic motivated-seller signal. Full reports and the map are NYC-only; state results expand in place.</p>`;
+    <p class="hint" style="margin-top:8px">All 57 counties outside NYC — 4.7M parcels from the NY State assessment rolls (owner, mailing address, market value, property class). Pick a county (add a town to narrow it), or search an owner name statewide — statewide matches names that <em>start with</em> what you type (last name or company); pick a county to match anywhere in the name. <strong>Absentee</strong> = owner's mailing address differs from the property, a classic motivated-seller signal. Full reports and the map are NYC-only; state results expand in place.</p>`;
   document.getElementById('sresults').innerHTML = '';
 }
 function setSMode(m) {
@@ -2074,9 +2074,6 @@ async function runSearch() {
     if (val('s_zip')) p.set('zip', val('s_zip'));
     p.set('stage', document.getElementById('s_fc_stage')?.value || 'all');
     if (val('s_class')) p.set('class', val('s_class'));
-  } else if (sMode === 'nys') {
-    ['county','muni','street','q','class','minval','maxval','absentee'].forEach(k => { const v = val('s_' + k); if (v) p.set(k, k.endsWith('val') ? v.replace(/[$,\s]/g, '') : v); });
-    if (document.getElementById('s_vacant')?.checked) p.set('vacant', '1');
   } else if (sMode === 'lotsize') {
     p.set('mode', 'filter'); // backend handles lot size under the filter mode
     ['zip','cd','boro:borough','minlot','maxlot'].forEach(pair => {
@@ -2085,10 +2082,17 @@ async function runSearch() {
     });
     if (document.getElementById('s_vacant')?.checked) p.set('vacant', '1');
   }
-  res.innerHTML = `<p class="loading">${sMode === 'nys' ? 'Searching NY State assessment rolls…' : 'Searching PLUTO…'}</p>`;
+  res.innerHTML = `<p class="loading">${sMode === 'nys' ? 'Searching NY State assessment rolls… (county-wide searches can take ~15s)' : 'Searching PLUTO…'}</p>`;
   try {
-    const r = await fetch('/api/search?' + p.toString());
-    const d = await r.json();
+    let d;
+    if (sMode === 'nys') {
+      const f = {}; ['county','muni','street','q','class','minval','maxval','absentee'].forEach(k => f[k] = k.endsWith('val') ? val('s_' + k).replace(/[$,\s]/g, '') : val('s_' + k));
+      f.vacant = !!document.getElementById('s_vacant')?.checked;
+      try { d = await nysSearch(f); } catch (e) { d = { error: e.message }; }
+    } else {
+      const r = await fetch('/api/search?' + p.toString());
+      d = await r.json();
+    }
     if (d.error) { res.innerHTML = '<div class="err">' + esc(d.error) + '</div>'; return; }
     if (!d.results || !d.results.length) { res.innerHTML = '<p class="hint">No matching lots found.</p>'; return; }
     window.__searchResults = d.results;
@@ -2115,6 +2119,103 @@ async function runSearch() {
   } catch (e) {
     res.innerHTML = '<div class="err">Search failed: ' + esc(String(e)) + '</div>';
   }
+}
+
+
+/* ---------- Rest of NY State search (runs in the browser: data.ny.gov is too slow for the 10s function limit) ---------- */
+// NYS Dept of Taxation & Finance (ORPTS) final assessment rolls — data.ny.gov 7vem-aaz7.
+// One row per parcel per roll year; ~4.7M parcels in 996 cities/towns outside NYC. No property ZIP, no lat/lon.
+const NYS_ROLLS = 'https://data.ny.gov/resource/7vem-aaz7.json';
+let _nysYear = null;
+async function nysRollYear() {
+  if (_nysYear) return _nysYear;
+  try { const j = await fetch(NYS_ROLLS + '?$select=max(roll_year) as y').then(r => r.json()); _nysYear = Number(j?.[0]?.y) || 2025; }
+  catch { _nysYear = 2025; }
+  return _nysYear;
+}
+async function nysSearch(f) {
+  const sq = s => String(s).replace(/'/g, "''");
+  const clean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
+  const title = s => s.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
+  const owner = clean(f.q).toUpperCase(), muni = clean(f.muni).toUpperCase(), street = clean(f.street).toUpperCase();
+  if (!f.county && owner.length < 3) throw new Error('Pick a county, or enter at least 3 characters of an owner name.');
+  const year = await nysRollYear();
+  const w = [`roll_year=${year}`];
+  if (f.county) w.push(`county_name='${sq(f.county)}'`);
+  if (muni) w.push(`starts_with(upper(municipality_name),'${sq(muni)}')`);
+  if (street) w.push(`upper(parcel_address_street) like '%${sq(street)}%'`);
+  if (owner) {
+    if (f.county) {
+      // Inside a county: every word must appear somewhere in the owner names (~1–2s)
+      for (const t of owner.split(' ').filter(t => t.length >= 2).slice(0, 4))
+        w.push(`(upper(primary_owner_last_name) like '%${sq(t)}%' OR upper(primary_owner_first_name) like '%${sq(t)}%' OR upper(additional_owner_1_last_name) like '%${sq(t)}%')`);
+    } else {
+      // Statewide: prefix match on the last name / company name is the only fast option (<1s)
+      w.push(`(starts_with(upper(primary_owner_last_name),'${sq(owner)}') OR starts_with(upper(additional_owner_1_last_name),'${sq(owner)}'))`);
+    }
+  }
+  const cls = String(f.class || '').replace(/\D/g, '').slice(0, 3);
+  if (f.vacant) w.push('property_class between 300 and 399');
+  else if (cls) { const span = 10 ** (3 - cls.length), lo = Number(cls) * span; w.push(`property_class between ${lo} and ${lo + span - 1}`); }
+  if (Number(f.minval) > 0) w.push(`full_market_value>=${Number(f.minval)}`);
+  if (Number(f.maxval) > 0) w.push(`full_market_value<=${Number(f.maxval)}`);
+
+  const fetchLimit = f.absentee ? 6000 : 2000;
+  const qs = new URLSearchParams({
+    $select: 'county_name,municipality_name,swis_code,print_key_code,school_district_name,property_class,property_class_description,'
+      + 'parcel_address_number,parcel_address_street,parcel_address_suff,front,depth,deed_book,page,'
+      + 'primary_owner_first_name,primary_owner_mi,primary_owner_last_name,primary_owner_suffix,additional_owner_1_first,additional_owner_1_last_name,'
+      + 'mailing_address_prefix,mailing_address_number,mailing_address_street,mailing_address_suff,mailing_address_city,mailing_address_state,mailing_address_zip,mailing_address_po_box,'
+      + 'full_market_value,assessment_land,assessment_total,exemption_code_1',
+    $where: w.join(' AND '), $limit: String(fetchLimit),
+  });
+  const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 45000);
+  let rows;
+  try {
+    const r = await fetch(NYS_ROLLS + '?' + qs, { signal: ctrl.signal });
+    rows = await r.json();
+    if (!r.ok || !Array.isArray(rows)) throw new Error((rows && rows.message) || 'HTTP ' + r.status);
+  } catch (e) {
+    throw new Error(e.name === 'AbortError' ? 'NY State search took too long — add a town, street or property type to narrow it.' : 'NY State search failed: ' + e.message);
+  } finally { clearTimeout(timer); }
+
+  const norm = s => clean(s).toUpperCase().replace(/[^A-Z0-9 ]/g, '')
+    .replace(/\b(STREET|ST)\b/g, 'ST').replace(/\b(AVENUE|AVE|AV)\b/g, 'AVE').replace(/\b(ROAD|RD)\b/g, 'RD')
+    .replace(/\b(DRIVE|DR)\b/g, 'DR').replace(/\b(PLACE|PL)\b/g, 'PL').replace(/\b(LANE|LN)\b/g, 'LN');
+  let results = rows.map(r => {
+    const address = clean([r.parcel_address_number, r.parcel_address_street, r.parcel_address_suff].join(' '));
+    const mailStreet = clean([r.mailing_address_prefix, r.mailing_address_number, r.mailing_address_street, r.mailing_address_suff].join(' '))
+      || (r.mailing_address_po_box ? 'PO Box ' + clean(r.mailing_address_po_box) : '');
+    const mailing = [mailStreet, [r.mailing_address_city, r.mailing_address_state].map(clean).filter(Boolean).join(', '), clean(r.mailing_address_zip)].filter(Boolean).join(', ');
+    const hasMail = !!(r.mailing_address_street || r.mailing_address_po_box);
+    const ownerOcc = !hasMail || norm(`${r.parcel_address_number} ${r.parcel_address_street} ${r.parcel_address_suff || ''}`) === norm(`${r.mailing_address_number} ${r.mailing_address_street} ${r.mailing_address_suff || ''}`);
+    const mailState = clean(r.mailing_address_state).toUpperCase();
+    const own1 = clean([r.primary_owner_first_name, r.primary_owner_mi, r.primary_owner_last_name, r.primary_owner_suffix].join(' '));
+    const own2 = clean([r.additional_owner_1_first, r.additional_owner_1_last_name].join(' '));
+    const front = Number(r.front) || 0, depth = Number(r.depth) || 0;
+    return {
+      bbl: ('NYS-' + clean(r.swis_code) + '-' + clean(r.print_key_code)).replace(/[^A-Za-z0-9.\-]/g, '_'),
+      state_row: true,
+      address: address || 'Parcel ' + clean(r.print_key_code),
+      city: title(clean(r.municipality_name)), county: clean(r.county_name),
+      owner: [own1, own2].filter(Boolean).join(' & ') || null,
+      bldg_class: clean(`${r.property_class || ''} ${r.property_class_description || ''}`) || null,
+      prop_class: Number(r.property_class) || null,
+      lot_area: front > 0 && depth > 0 ? Math.round(front * depth) : null, frontage: front || null, depth: depth || null,
+      market_value: Number(r.full_market_value) || null, assessed_value: Number(r.assessment_total) || null, land_assessed: Number(r.assessment_land) || null,
+      mailing: mailing || null, absentee: hasMail && !ownerOcc, out_of_state: hasMail && !!mailState && mailState !== 'NY',
+      zip: ownerOcc && r.mailing_address_zip ? clean(r.mailing_address_zip).slice(0, 5) : null,
+      print_key: clean(r.print_key_code), swis: clean(r.swis_code), school_district: clean(r.school_district_name) || null,
+      deed: r.deed_book ? `Book ${clean(r.deed_book)}${r.page ? ', page ' + clean(r.page) : ''}` : null,
+      exemption: clean(r.exemption_code_1) || null, roll_year: year,
+    };
+  });
+  if (f.absentee === 'absentee') results = results.filter(x => x.absentee);
+  else if (f.absentee === 'out_of_state') results = results.filter(x => x.out_of_state);
+  results.sort((a, b) => (b.market_value || b.assessed_value || 0) - (a.market_value || a.assessed_value || 0));
+  const capped = rows.length >= fetchLimit || results.length > 2000;
+  results = results.slice(0, 2000);
+  return { mode: 'nys', region: 'nys', roll_year: year, count: results.length, capped, results };
 }
 
 /* ---------- Hunt results map ---------- */
