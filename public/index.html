@@ -657,19 +657,43 @@ q.addEventListener("input", () => {
 ac.addEventListener("click", e => {
   const b = e.target.closest("button");
   if (!b) return;
-  q.value = b.dataset.label; ac.hidden = true; run();
+  ac.hidden = true; openReport(b.dataset.label);
 });
 q.addEventListener("keydown", e => {
-  if (e.key === "Enter") { ac.hidden = true; run(); }
+  if (e.key === "Enter") { ac.hidden = true; openReport(q.value); }
   if (e.key === "Escape") ac.hidden = true;
 });
 document.addEventListener("click", e => {
   if (!e.target.closest(".search")) ac.hidden = true;
 });
 
+// Every property search opens its report in its own browser tab, so the page you
+// searched from (Hunt results, a map, another report) stays where it was.
+// The new tab reads ?bbl= / ?q= / ?at= on load (see the bottom of this script).
+function reportUrl(v) {
+  v = String(v || '').trim();
+  return location.pathname + (/^\d{10}$/.test(v) ? `?bbl=${v}` : `?q=${encodeURIComponent(v)}`);
+}
+function openTab(url, fallback) {
+  const w = window.open(url, '_blank');
+  if (w) { try { w.opener = null; } catch (_) {} return; }
+  fallback(); // popup blocked — load it here instead of doing nothing
+}
+function openReport(v) {
+  v = String(v || '').trim();
+  if (!v) return;
+  openTab(reportUrl(v), () => { q.value = v; showTab('report'); run(); });
+}
+function setReportTitle() {
+  const h = document.querySelector('#out h2.addr, #out .sec-head h2, #out h2');
+  const t = h && h.innerText.trim();
+  if (t && !/^Start with/.test(t)) document.title = `${t} — R Shark`;
+}
+
 async function run() {
   const v = q.value.trim();
   if (!v) return;
+  document.title = `${v} — R Shark`;
   out.innerHTML = /\b(NJ|New Jersey|0[78]\d{3})\b/i.test(v)
     ? `<p class="loading">Looking up the New Jersey tax parcel…</p>`
     : /,\s*[A-Za-z]/.test(v) && !/\b(Brooklyn|Manhattan|Queens|Bronx|Staten Island|New York)\b/i.test(v)
@@ -739,14 +763,20 @@ async function run() {
         </div>`;
       out.insertBefore(banner, out.firstChild);
     }
-    // Push this BBL to browser history so the back button works between properties.
+    // Put the BBL in the URL so refresh / Back / sharing the tab all work.
+    // A tab opened with ?q=<address> swaps that for the BBL instead of adding history.
     if (d.bbl) {
       const url = `${location.pathname}?bbl=${d.bbl}`;
-      if (location.search !== `?bbl=${d.bbl}`) history.pushState({ bbl: d.bbl }, '', url);
+      if (location.search !== `?bbl=${d.bbl}`) {
+        if (new URLSearchParams(location.search).has('q')) history.replaceState({ bbl: d.bbl }, '', url);
+        else history.pushState({ bbl: d.bbl }, '', url);
+      }
     }
   } catch (err) {
     out.innerHTML = `<div class="err"><strong>Request failed.</strong><br>
       ${esc(err.message)}. Check the API is running and the Socrata token is set in Netlify.</div>`;
+  } finally {
+    setReportTitle();
   }
 }
 
@@ -851,7 +881,12 @@ function initParcelNav(map, region, selfKey) {
   load();
 }
 // Load a report for the parcel at a map point (NJ / rest of NY State).
-async function runAt(region, lat, lng) {
+// Map clicks on NJ / upstate lots open that lot's report in a new tab.
+function runAt(region, lat, lng) {
+  openTab(`${location.pathname}?at=${region},${lat},${lng}`, () => runAtHere(region, lat, lng));
+}
+async function runAtHere(region, lat, lng) {
+  document.title = 'Loading lot — R Shark';
   out.innerHTML = `<p class="loading">Loading that lot…</p>`;
   window.scrollTo({ top: 0, behavior: 'smooth' });
   try {
@@ -861,6 +896,7 @@ async function runAt(region, lat, lng) {
     if (d.found === false) { out.innerHTML = `<div class="err"><strong>No parcel found there.</strong><br>${esc(d.error || '')}</div>`; return; }
     q.value = (d.parcel?.address || '') + (d.parcel?.municipality ? ', ' + String(d.parcel.municipality).replace(/\s+(CITY|TOWN|TOWNSHIP|TWP|BOROUGH|BORO|VILLAGE)$/i, '') : '') + (region === 'nj' ? ', NJ' : ', NY');
     if (d.region === 'nj') renderNJ(d); else renderNYS(d);
+    setReportTitle();
   } catch (e) {
     out.innerHTML = `<div class="err">Couldn't load that lot: ${esc(e.message)}</div>`;
   }
@@ -2143,6 +2179,9 @@ async function initBlockMap(lat, lng, selfBbl) {
 
 // Clicking a neighbour pin loads that lot through the normal report path.
 function loadBBL(bbl) {
+  openTab(reportUrl(bbl), () => loadBBLHere(bbl));
+}
+function loadBBLHere(bbl) {
   q.value = bbl;
   const wasHidden = document.getElementById('panel-report').hidden;
   if (wasHidden) showTab('report');
@@ -2856,7 +2895,8 @@ function renderNysRow(x, contact) {
       ${kv('Deed', esc(x.deed))}
       ${kv('Exemption code', esc(x.exemption))}
       ${kv('Roll year', esc(x.roll_year))}
-      <div><a href="${maps}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--shark)">Open in Google Maps →</a></div>
+      <div><a href="${reportUrl(`${x.address}, ${x.city}, NY`)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--shark);font-weight:700">Full property report →</a>
+        &nbsp; <a href="${maps}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--shark)">Open in Google Maps →</a></div>
     </div>
   </div>`;
 }
@@ -3214,8 +3254,8 @@ const EMPTY_STATE = `
     <p>Every lot resolves to a BBL, then pulls PLUTO, both DOB filing systems,
        ECB and HPD violations, and the ACRIS record — and works out what you can
        actually build on it. Addresses anywhere in New York State and New Jersey work too.</p>
-    <p>Try <button class="link" onclick="q.value='350 5th Ave Manhattan';run()">350 5th Ave</button>,
-       <button class="link" onclick="q.value='1 Bedford Ave Brooklyn';run()">1 Bedford Ave</button>,
+    <p>Try <button class="link" onclick="openReport('350 5th Ave Manhattan')">350 5th Ave</button>,
+       <button class="link" onclick="openReport('1 Bedford Ave Brooklyn')">1 Bedford Ave</button>,
        or paste a BBL.</p>
   </div>`;
 out.innerHTML = EMPTY_STATE;
@@ -3229,7 +3269,7 @@ function freshSearch() {
   try { if (_nysMap) { _nysMap.remove(); _nysMap = null; } } catch (e) {}
   try { if (_svPano) { _svPano.setVisible(false); _svPano = null; } } catch (e) {}
   lastReport = null;
-  out.innerHTML = EMPTY_STATE;
+  out.innerHTML = EMPTY_STATE; document.title = 'R Shark — NYC Property Intelligence';
   if (location.search || location.hash) history.pushState({}, '', location.pathname);
   window.scrollTo({ top: 0, behavior: 'smooth' });
   setTimeout(() => q.focus(), 250);
@@ -3389,7 +3429,7 @@ async function runPacer() {
         ${res.note ? `<div style="font-size:11px;color:var(--ink-3);margin-top:3px">${esc(res.note)}</div>` : ''}${others}`;
       cell.style.cursor = 'pointer';
       cell.title = 'Open property report';
-      cell.onclick = () => { if (typeof q !== 'undefined' && q) { q.value = res.bbl || res.address; showTab('report'); run(); window.scrollTo(0, 0); } };
+      cell.onclick = () => openReport(res.bbl || res.address);
     } else {
       cell.innerHTML = `<span style="color:var(--ink-3);font-size:12px">No address found${res.note ? ' — ' + esc(res.note) : ''}</span>`;
     }
@@ -3618,17 +3658,22 @@ function applyTheme(theme) {
 
 // ---------- Browser back/forward navigation between properties ----------
 // When the user presses Back or Forward, restore the property that was showing.
+// Load whatever report the URL names: ?bbl=, ?q=<address>, or ?at=<nj|nys>,lat,lng.
+// Used on page load (a tab opened by a search, a refresh, a shared link) and on Back/Forward.
+function loadFromUrl(state) {
+  const p = new URLSearchParams(location.search);
+  const bbl = state?.bbl || p.get('bbl'), addr = p.get('q'), at = p.get('at');
+  if (bbl || addr) { q.value = bbl || addr; showTab('report'); run(); return true; }
+  if (at) {
+    const [region, lat, lng] = at.split(',');
+    if ((region === 'nj' || region === 'nys') && isFinite(lat) && isFinite(lng)) { showTab('report'); runAtHere(region, Number(lat), Number(lng)); return true; }
+  }
+  return false;
+}
 window.addEventListener('popstate', function(e) {
-  const bbl = e.state?.bbl || new URLSearchParams(location.search).get('bbl');
-  if (bbl) { q.value = bbl; showTab('report'); run(); }
-  else if (!location.search) { q.value = ''; out.innerHTML = EMPTY_STATE; }
+  if (!loadFromUrl(e.state) && !location.search) { q.value = ''; out.innerHTML = EMPTY_STATE; document.title = 'R Shark — NYC Property Intelligence'; }
 });
-
-// On page load, if a ?bbl= param is present (direct link or page refresh), load it.
-(function() {
-  const bbl = new URLSearchParams(location.search).get('bbl');
-  if (bbl) { q.value = bbl; showTab('report'); run(); }
-})();
+loadFromUrl();
 </script>
 
 <script>
