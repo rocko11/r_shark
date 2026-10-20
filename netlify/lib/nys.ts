@@ -59,20 +59,44 @@ function lev(a: string, b: string): number {
     d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
   return d[a.length][b.length];
 }
-// Typed town vs a candidate's city, ignoring spaces: "SOUTH HAMPTON" ~ "Southampton", "SOUTHAPTON" ~ "Southampton".
-const townClose = (typed: string, city: string) => {
-  const a = typed.toUpperCase().replace(/[^A-Z]/g, ""), b = String(city || "").toUpperCase().replace(/[^A-Z]/g, "");
-  return !!a && !!b && (a === b || (Math.min(a.length, b.length) >= 5 && lev(a, b) <= 2));
-};
+
+
+const NYS_BOUNDS = "https://gisservices.its.ny.gov/arcgis/rest/services/NYS_Civil_Boundaries/FeatureServer";
+let placeCache: { at: number; names: string[] } | null = null;
+async function placeNames(): Promise<string[]> {
+  if (placeCache && Date.now() - placeCache.at < 24 * 3600_000) return placeCache.names;
+  const names = new Set<string>();
+  for (const layer of [6, 7]) {
+    const j = await getJSON(`${NYS_BOUNDS}/${layer}/query?${new URLSearchParams({ where: "1=1", outFields: "NAME", returnGeometry: "false", resultRecordCount: "2000", f: "json" })}`, 6000).catch(() => ({ features: [] }));
+    (j.features || []).forEach((f: any) => f.attributes?.NAME && names.add(String(f.attributes.NAME)));
+  }
+  placeCache = { at: Date.now(), names: [...names] };
+  return placeCache.names;
+}
+async function closestPlace(typed: string): Promise<string | null> {
+  const t = typed.toUpperCase().replace(/[^A-Z]/g, "");
+  if (t.length < 4) return null;
+  let best: string | null = null, bestD = 99;
+  for (const n of await placeNames()) {
+    const s = n.toUpperCase().replace(/[^A-Z]/g, "");
+    if (s === t) return null; // already a real place name — nothing to fix
+    if (Math.min(s.length, t.length) < 5 || Math.abs(s.length - t.length) > 2) continue;
+    const d = lev(s, t);
+    if (d < bestD) { bestD = d; best = n; }
+  }
+  return bestD <= 2 ? best : null;
+}
 
 export async function nysWhere(address: string) {
   let cands = await nysGeocode(address).catch(() => []);
   const tail = townTail(address);
   if (!cands.length && tail) {
-    // Town misspelled / split ("south hampton"): geocode the street alone, keep candidates in a similarly named town.
-    const streetOnly = address.split(",")[0].replace(new RegExp(tail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ".*$", "i"), "").replace(/\s+(NY|NEW YORK)\s*$/i, "").trim();
-    if (streetOnly && streetOnly !== address) {
-      cands = (await nysGeocode(`${streetOnly}, NY`, 20).catch(() => [])).filter((c: any) => townClose(tail, c.city));
+    // Town misspelled / split ("south hampton", "new rochel"): swap in the closest official
+    // city / town / village name and geocode again (the locator needs a valid town or ZIP).
+    const fixed = await closestPlace(tail);
+    if (fixed) {
+      const street = address.split(",")[0].replace(new RegExp("\\s" + tail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ".*$", "i"), "").trim();
+      cands = await nysGeocode(`${street}, ${fixed}, NY`).catch(() => []);
     }
   }
   if (!cands.length) return null;
