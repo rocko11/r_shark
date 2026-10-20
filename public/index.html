@@ -1895,7 +1895,7 @@ const NYS_COUNTIES = ["Albany","Allegany","Broome","Cattaraugus","Cayuga","Chaut
 function setSRegion(r) {
   sRegion = r;
   document.querySelectorAll('[data-r]').forEach(b => b.classList.toggle('smode-on', b.dataset.r === r));
-  document.getElementById('smodes-nyc').hidden = r !== 'nyc';
+  document.getElementById('smodes-nyc').style.display = r === 'nyc' ? '' : 'none';
   if (r === 'nyc') { setSMode(sMode === 'nys' ? 'owner' : sMode); return; }
   sMode = 'nys';
   const enter = `onkeydown="if(event.key==='Enter')runSearch()"`;
@@ -1931,7 +1931,8 @@ function setSRegion(r) {
           <option value="out_of_state">Out-of-state owner</option>
         </select></div>
     </div>
-    <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:6px 0 10px"><input type="checkbox" id="s_vacant"> Vacant land only</label>
+    <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:6px 0 4px"><input type="checkbox" id="s_vacant"> Vacant land only</label>
+    <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:0 0 10px"><input type="checkbox" id="s_taxable" checked> Taxable parcels only (hides government, school, church &amp; other exempt land)</label>
     <button class="sgo" onclick="runSearch()">Search →</button>
     <p class="hint" style="margin-top:8px">All 57 counties outside NYC — 4.7M parcels from the NY State assessment rolls (owner, mailing address, market value, property class). Pick a county (add a town to narrow it), or search an owner name statewide — statewide matches names that <em>start with</em> what you type (last name or company); pick a county to match anywhere in the name. <strong>Absentee</strong> = owner's mailing address differs from the property, a classic motivated-seller signal. Full reports and the map are NYC-only; state results expand in place.</p>`;
   document.getElementById('sresults').innerHTML = '';
@@ -2088,6 +2089,7 @@ async function runSearch() {
     if (sMode === 'nys') {
       const f = {}; ['county','muni','street','q','class','minval','maxval','absentee'].forEach(k => f[k] = k.endsWith('val') ? val('s_' + k).replace(/[$,\s]/g, '') : val('s_' + k));
       f.vacant = !!document.getElementById('s_vacant')?.checked;
+      f.taxable = !!document.getElementById('s_taxable')?.checked;
       try { d = await nysSearch(f); } catch (e) { d = { error: e.message }; }
     } else {
       const r = await fetch('/api/search?' + p.toString());
@@ -2157,6 +2159,7 @@ async function nysSearch(f) {
   const cls = String(f.class || '').replace(/\D/g, '').slice(0, 3);
   if (f.vacant) w.push('property_class between 300 and 399');
   else if (cls) { const span = 10 ** (3 - cls.length), lo = Number(cls) * span; w.push(`property_class between ${lo} and ${lo + span - 1}`); }
+  if (f.taxable) w.push('roll_section=1');
   if (Number(f.minval) > 0) w.push(`full_market_value>=${Number(f.minval)}`);
   if (Number(f.maxval) > 0) w.push(`full_market_value<=${Number(f.maxval)}`);
 
