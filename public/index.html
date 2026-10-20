@@ -756,6 +756,8 @@ const PARCEL_NAV = {
         key: a => a.PAMS_PIN, addr: a => a.PROP_LOC, town: a => String(a.MUN_NAME || '').replace(/\s+(CITY|TOWN|TOWNSHIP|TWP|BOROUGH|BORO|VILLAGE)$/i, ''),
         info: a => [a.PROP_CLASS ? 'class ' + a.PROP_CLASS : '', a.BLDG_DESC || '', a.NET_VALUE ? '$' + Number(a.NET_VALUE).toLocaleString() + ' assessed' : '', a.CALC_ACRE > 0 ? Math.round(a.CALC_ACRE * 43560).toLocaleString() + ' sf lot' : ''].filter(Boolean) },
   nys: { url: 'https://services6.arcgis.com/EbVsqZ18sv1kVJ3k/arcgis/rest/services/NYS_Tax_Parcels_Public/FeatureServer/1/query',
+        // every county, as points — used where a county doesn't share parcel outlines (Nassau, Monroe…)
+        pointsUrl: 'https://gisservices.its.ny.gov/arcgis/rest/services/NYS_Tax_Parcel_Centroid_Points/FeatureServer/0/query',
         fields: 'SWIS,PRINT_KEY,PARCEL_ADDR,MUNI_NAME,PROP_CLASS,FULL_MARKET_VAL,TOTAL_AV,ACRES,YR_BLT,PRIMARY_OWNER',
         key: a => a.SWIS + '|' + a.PRINT_KEY, addr: a => a.PARCEL_ADDR, town: a => a.MUNI_NAME,
         info: a => [a.PRIMARY_OWNER || '', a.PROP_CLASS ? 'class ' + a.PROP_CLASS : '', a.YR_BLT ? 'built ' + a.YR_BLT : '',
@@ -773,6 +775,13 @@ function initParcelNav(map, region, selfKey) {
   const style = (self, hover) => self ? { color: '#0d9488', weight: 3, fillOpacity: 0.25 }
     : { color: '#64748b', weight: hover ? 2.2 : 1, fillColor: '#38A8B8', fillOpacity: hover ? 0.28 : 0.06 };
   let seq = 0, anyOutline = false;
+  function popupFor(a, self, ll) {
+    L.popup().setLatLng(ll).setContent(`<div class="pop-addr">${esc(cfg.addr(a) || 'Parcel')}</div>
+      <div class="pop-k">${esc(cfg.town(a) || '')}</div>
+      ${cfg.info(a).map(t => `<div class="pop-k">${esc(t)}</div>`).join('')}
+      ${self ? '<div class="pop-k" style="margin-top:6px">You are viewing this lot.</div>'
+        : `<button class="pop-btn" onclick="runAt('${region}',${ll.lat.toFixed(7)},${ll.lng.toFixed(7)})">See this lot's report →</button>`}`).openOn(map);
+  }
   async function load() {
     if (map.getZoom() < 16) { setHint('Zoom in to see neighbouring lots'); return; }
     const b = map.getBounds(), my = ++seq;
@@ -791,16 +800,23 @@ function initParcelNav(map, region, selfKey) {
           poly.on('mouseover', () => poly.setStyle(style(false, true)));
           poly.on('mouseout', () => poly.setStyle(style(false, false)));
         }
-        poly.on('click', e => {
-          L.DomEvent.stopPropagation(e);
-          const ll = e.latlng;
-          L.popup().setLatLng(ll).setContent(`<div class="pop-addr">${esc(cfg.addr(a) || 'Parcel')}</div>
-            <div class="pop-k">${esc(cfg.town(a) || '')}</div>
-            ${cfg.info(a).map(t => `<div class="pop-k">${esc(t)}</div>`).join('')}
-            ${self ? '<div class="pop-k" style="margin-top:6px">You are viewing this lot.</div>'
-              : `<button class="pop-btn" onclick="runAt('${region}',${ll.lat.toFixed(7)},${ll.lng.toFixed(7)})">See this lot's report →</button>`}`).openOn(map);
-        });
+        poly.on('click', e => { L.DomEvent.stopPropagation(e); popupFor(a, self, e.latlng); });
         poly.addTo(layer); seen.set(k, poly); anyOutline = true;
+      }
+      // No outlines here (county doesn't share them): show every parcel as a clickable dot instead.
+      if (!(j.features || []).length && cfg.pointsUrl) {
+        const pj = await fetch(cfg.pointsUrl + '?' + new URLSearchParams({ geometry: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(','), geometryType: 'esriGeometryEnvelope',
+          inSR: '4326', spatialRel: 'esriSpatialRelIntersects', outFields: cfg.fields, returnGeometry: 'true', outSR: '4326', resultRecordCount: '800', f: 'json' })).then(r => r.json());
+        if (my !== seq) return;
+        for (const f of pj.features || []) {
+          const a = f.attributes, k = cfg.key(a);
+          if (!k || seen.has(k) || !f.geometry) continue;
+          const self = k === selfKey;
+          const ll = [f.geometry.y, f.geometry.x];
+          const dot = L.circleMarker(ll, { radius: self ? 8 : 5, color: '#0D1117', weight: 1, fillColor: self ? '#0d9488' : '#38A8B8', fillOpacity: self ? 1 : 0.75 });
+          dot.on('click', e => { L.DomEvent.stopPropagation(e); popupFor(a, self, L.latLng(ll)); });
+          dot.addTo(layer); seen.set(k, dot); anyOutline = true;
+        }
       }
       setHint(anyOutline ? 'Click any lot for its report' : 'Click anywhere for the property at that spot');
     } catch { setHint('Lots unavailable — click anywhere for that spot'); }

@@ -17,6 +17,9 @@ const NYS_ROLLS = "https://data.ny.gov/resource/7vem-aaz7.json";
 const APP_TOKEN = process.env.SOCRATA_APP_TOKEN;
 
 export const NYC_COUNTIES = new Set(["New York", "Kings", "Queens", "Bronx", "Richmond"]);
+// NYS Civil Boundaries stores NYC as one area: COUNTY = "New York, Bronx, Kings, Richmond, Queens".
+const isNYC = (county?: string) => !!county && county.split(/\s*,\s*/).some(c => NYC_COUNTIES.has(c));
+const NYS_CENTROIDS = "https://gisservices.its.ny.gov/arcgis/rest/services/NYS_Tax_Parcel_Centroid_Points/FeatureServer/0/query";
 
 const PARCEL_FIELDS = [
   "COUNTY_NAME", "MUNI_NAME", "CITYTOWN_NAME", "SWIS", "PRINT_KEY", "SBL", "PARCEL_ADDR", "LOC_ZIP", "PROP_CLASS", "ROLL_SECTION",
@@ -103,7 +106,7 @@ export async function nysWhere(address: string) {
   const typedNYC = !tail || NYC_PLACE_RE.test(` ${tail} `) || /\bNEW YORK\b/.test(tail);
   for (const cand of cands.slice(0, 3)) {
     const town = await townAt(cand.x, cand.y).catch(() => null);
-    const inNYC = !!town && NYC_COUNTIES.has(town.county);
+    const inNYC = !!town && isNYC(town.county);
     if (inNYC && !typedNYC) continue;          // upstate town typed, NYC point returned → not a match
     return { cand, cands, town, inNYC };
   }
@@ -178,19 +181,23 @@ const ownersFromRoll = (r: any) => [
 // outline at the point, so the spot is reverse-geocoded and looked up by address instead.
 export async function buildNYSReportAt(lat: number, lon: number): Promise<any> {
   const town = await townAt(lon, lat).catch(() => null);
-  if (town && NYC_COUNTIES.has(town.county)) return { found: false, region: "nyc_redirect" };
+  if (town && isNYC(town.county)) return { found: false, region: "nyc_redirect" };
   const pm = await parcelAt(lon, lat, []);
   if (pm.f) {
     const a = pm.f.attributes;
     const cand = { address: `${clean(a.PARCEL_ADDR)}, ${clean(a.MUNI_NAME)}, NY`, score: 100, x: lon, y: lat };
     return buildNYSReport(cand.address, { cand, cands: [], town, inNYC: false }, pm);
   }
-  try {
-    const j = await getJSON(`${NYS_GEOCODE.replace(/findAddressCandidates$/, "reverseGeocode")}?${new URLSearchParams({ location: `${lon},${lat}`, outSR: "4326", f: "json" })}`, 6000);
-    const addr = j.address?.Match_addr || j.address?.LongLabel;
-    if (addr) return buildNYSReport(addr);
-  } catch {}
-  return { found: false, region: "nys", error: "No parcel or street address found at that spot on the map." };
+  // Counties without shared parcel outlines: nearest statewide parcel centroid within 60 m.
+  const j = await getJSON(`${NYS_CENTROIDS}?${new URLSearchParams({ geometry: `${lon},${lat}`, geometryType: "esriGeometryPoint", inSR: "4326",
+    spatialRel: "esriSpatialRelIntersects", distance: "60", units: "esriSRUnit_Meter", outFields: PARCEL_FIELDS, returnGeometry: "true", outSR: "4326", f: "json" })}`, 6000).catch(() => ({ features: [] }));
+  const near = (j.features || []).map((f: any) => ({ f, d: (f.geometry.x - lon) ** 2 + (f.geometry.y - lat) ** 2 })).sort((a: any, b: any) => a.d - b.d)[0]?.f;
+  if (near) {
+    const a = near.attributes;
+    const cand = { address: `${clean(a.PARCEL_ADDR)}, ${clean(a.MUNI_NAME)}, NY`, score: 100, x: near.geometry.x, y: near.geometry.y };
+    return buildNYSReport(cand.address, { cand, cands: [], town, inNYC: false }, { f: { attributes: a, geometry: null }, exact: true });
+  }
+  return { found: false, region: "nys", error: "No tax parcel at that spot on the map." };
 }
 
 export async function buildNYSReport(address: string, where?: Awaited<ReturnType<typeof nysWhere>>, preParcel?: { f: any; exact: boolean }) {
