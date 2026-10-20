@@ -886,7 +886,7 @@ function runAt(region, lat, lng) {
   openTab(`${location.pathname}?at=${region},${lat},${lng}`, () => runAtHere(region, lat, lng));
 }
 async function runAtHere(region, lat, lng) {
-  document.title = 'Loading lot — R Shark';
+  document.title = 'Map lot — R Shark';
   out.innerHTML = `<p class="loading">Loading that lot…</p>`;
   window.scrollTo({ top: 0, behavior: 'smooth' });
   try {
