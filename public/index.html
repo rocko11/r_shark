@@ -2018,6 +2018,11 @@ function setSRegion(r) {
           <option value="out_of_state">Out-of-state owner</option>
         </select></div>
     </div>
+    <div class="sfilters" style="margin-top:8px">
+      <div class="sfield"><label>Min lot size (sf or acres)</label><input id="s_minlot" placeholder="e.g. 5000 or 1 ac" ${enter}></div>
+      <div class="sfield"><label>Max lot size (sf or acres)</label><input id="s_maxlot" placeholder="e.g. 20000" ${enter}></div>
+      <div class="sfield"><label>Sort by</label><select id="s_sort"><option value="value">Highest market value</option><option value="lot_desc">Largest lot</option><option value="lot_asc">Smallest lot</option><option value="ppsf">Lowest $ / sf of land</option><option value="ppsf_desc">Highest $ / sf of land</option></select></div>
+    </div>
     <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:6px 0 4px"><input type="checkbox" id="s_vacant"> Vacant land only</label>
     <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:0 0 10px"><input type="checkbox" id="s_taxable" checked> Taxable parcels only (hides government, school, church &amp; other exempt land)</label>
     <button class="sgo" onclick="runSearch()">Search →</button>
@@ -2187,8 +2192,10 @@ async function runSearch() {
     window.__searchResults = d.results;
     window.__searchMeta = { mode: sMode, count: d.count };
     res.innerHTML = `<div style="display:flex;align-items:center;gap:12px;margin:10px 0;flex-wrap:wrap">
-        <span class="hint" style="margin:0">${d.count.toLocaleString()} result${d.count===1?'':'s'}${d.region === 'nys' ? ` · <span id="nys-size-prog">lot sizes…</span> · ${d.roll_year} assessment roll${d.capped ? ' · first matches only — narrow by town or street' : ''} — click any to expand.` : ' — click any to open its report.'}</span>
+        <span class="hint" style="margin:0"><span id="nys-count">${d.count.toLocaleString()} result${d.count===1?'':'s'}</span>${d.region === 'nys' ? ` · <span id="nys-size-prog">lot sizes…</span> · ${d.roll_year} assessment roll${d.capped ? ' · first matches only — narrow by town or street' : ''} — click any to expand.` : ' — click any to open its report.'}</span>
         <span class="vtoggle"><button class="mbtn mbtn-on" data-hv="list" onclick="huntView('list')">List</button><button class="mbtn" data-hv="map" onclick="huntView('map')">Map</button></span>
+        ${d.region === 'nys' ? `<span style="display:inline-flex;gap:6px;align-items:center;font-family:var(--mono);font-size:11px">Sort <select id="nys-sort" onchange="nysApplyView()" style="font-size:11px;padding:3px 6px"><option value="value">Highest market value</option><option value="lot_desc">Largest lot</option><option value="lot_asc">Smallest lot</option><option value="ppsf">Lowest $ / sf of land</option><option value="ppsf_desc">Highest $ / sf of land</option></select>
+          Lot <input id="nys-minlot" placeholder="min" style="width:70px;font-size:11px;padding:3px 6px" onchange="nysApplyView()"> – <input id="nys-maxlot" placeholder="max" style="width:70px;font-size:11px;padding:3px 6px" onchange="nysApplyView()"></span>` : ''}
         <button class="sgo" style="margin:0;padding:6px 12px;font-size:11px" onclick="downloadSearchCsv()">⭳ Download to Excel</button>
         <button class="sgo" id="bulk-skip-btn" style="margin:0;padding:6px 12px;font-size:11px;background:var(--teal);color:#0A0E14" onclick="bulkSkipTrace()">📞 Bulk skip-trace all (${Math.min(d.results.length,50)})</button>
       </div>
@@ -2206,7 +2213,15 @@ async function runSearch() {
     if (_huntMap) { _huntMap.remove(); _huntMap = null; }
     _huntData = null;
     _nysLoc = null;
-    if (d.region === 'nys') nysEnrichSizes(d.results);
+    if (d.region === 'nys') {
+      window.__nysAll = d.results;
+      const ns = document.getElementById('nys-sort'); if (ns) ns.value = val('s_sort') || 'value';
+      const mn = document.getElementById('nys-minlot'); if (mn) mn.value = val('s_minlot');
+      const mx = document.getElementById('nys-maxlot'); if (mx) mx.value = val('s_maxlot');
+      const hasLotFilter = !!(val('s_minlot') || val('s_maxlot')) || (val('s_sort') && val('s_sort') !== 'value');
+      if (hasLotFilter) document.getElementById('hunt-list').innerHTML = '<p class="loading">Getting lot sizes to filter / sort…</p>';
+      nysEnrichSizes(d.results).then(() => nysApplyView());
+    }
   } catch (e) {
     res.innerHTML = '<div class="err">Search failed: ' + esc(String(e)) + '</div>';
   }
@@ -2643,6 +2658,7 @@ function renderNysRow(x, contact) {
       ${kv('Assessed value', money(x.assessed_value) + (x.land_assessed ? ' (land ' + money(x.land_assessed) + ')' : ''))}
       ${kv('Lot size', `<span id="nyssd-${id}">${nysSizeTxt(x, true)}</span>`)}
       ${kv('Frontage × depth', x.frontage && x.depth ? `${x.frontage} × ${x.depth} ft` : '')}
+      ${kv('Value per sf of land', nysSf(x) && nysVal(x) ? '$' + (nysVal(x) / nysSf(x)).toFixed(2) + (x.market_value ? '' : ' (assessed)') : '')}
       ${kv('Tax map # (SBL)', esc(x.print_key))}
       ${kv('SWIS', esc(x.swis))}
       ${kv('School district', esc(x.school_district))}
@@ -2705,6 +2721,46 @@ async function nysEnrichSizes(rows) {
   await _pool(rb, 3, async b => { try { await sizeQuery(b, 60); } catch {} b.forEach(nysPaintSize); });
   rows.forEach(x => { x._sizeTried = true; nysPaintSize(x); });
   if (prog) { const n = rows.filter(x => x.acres || x.lot_area).length; prog.textContent = `lot size for ${n.toLocaleString()} of ${rows.length.toLocaleString()}`; }
+}
+// "5000" → 5000 sf; "1 ac" / "1.5 acres" → sf
+function parseLot(v) {
+  const s = String(v || '').trim().toLowerCase().replace(/,/g, '');
+  if (!s) return 0;
+  const n = parseFloat(s); if (!(n > 0)) return 0;
+  return /ac/.test(s) ? Math.round(n * 43560) : n;
+}
+const nysSf = x => x.acres ? Math.round(x.acres * 43560) : (x.lot_area || 0);
+const nysVal = x => x.market_value || x.assessed_value || 0;
+// Filter by lot size and sort the current state results client-side (sizes arrive after the query).
+function nysApplyView() {
+  const all = window.__nysAll || [];
+  if (!all.length) return;
+  const sort = document.getElementById('nys-sort')?.value || 'value';
+  const min = parseLot(document.getElementById('nys-minlot')?.value), max = parseLot(document.getElementById('nys-maxlot')?.value);
+  let rows = all;
+  let unknown = 0;
+  if (min || max) {
+    rows = all.filter(x => { const sf = nysSf(x); if (!sf) { unknown++; return false; } return (!min || sf >= min) && (!max || sf <= max); });
+  }
+  const ppsf = x => { const sf = nysSf(x), v = nysVal(x); return sf && v ? v / sf : null; };
+  const nullsLast = (a, b, f, dir) => { const A = f(a), B = f(b); if (A == null && B == null) return 0; if (A == null) return 1; if (B == null) return -1; return dir * (A - B); };
+  const cmp = {
+    value: (a, b) => nysVal(b) - nysVal(a),
+    lot_desc: (a, b) => nullsLast(a, b, x => nysSf(x) || null, -1),
+    lot_asc: (a, b) => nullsLast(a, b, x => nysSf(x) || null, 1),
+    ppsf: (a, b) => nullsLast(a, b, ppsf, 1),
+    ppsf_desc: (a, b) => nullsLast(a, b, ppsf, -1),
+  }[sort] || ((a, b) => 0);
+  rows = rows.slice().sort(cmp);
+  window.__searchResults = rows;
+  const list = document.getElementById('hunt-list');
+  if (list) list.innerHTML = rows.length ? rows.map(x => renderSearchRow(x)).join('') : '<p class="hint">No results in that lot-size range.</p>';
+  const cnt = document.getElementById('nys-count');
+  if (cnt) cnt.textContent = (min || max)
+    ? `${rows.length.toLocaleString()} of ${all.length.toLocaleString()} in lot range${unknown ? ` (${unknown.toLocaleString()} with no recorded size hidden)` : ''}`
+    : `${all.length.toLocaleString()} result${all.length === 1 ? '' : 's'}`;
+  const sk = document.getElementById('bulk-skip-btn'); if (sk && !sk.disabled) sk.innerText = `📞 Bulk skip-trace all (${Math.min(rows.length, 50)})`;
+  if (_huntMap && !document.getElementById('hunt-mapwrap')?.hidden) renderHuntMap();
 }
 function nysPaintSize(x) {
   const a = document.getElementById('nyssz-' + x.bbl), b = document.getElementById('nyssd-' + x.bbl);
