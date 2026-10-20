@@ -3,7 +3,8 @@
 // happily return "25 Hudson St, Manhattan" for "25 Hudson St, Hoboken NJ" — so
 // anything that is clearly outside NYC must be routed (NJ) or rejected (elsewhere).
 
-export type Region = "nyc" | "nj" | "nys" | "other";
+// "check": has a town we don't recognise and no NYC hint — geocode statewide to decide.
+export type Region = "nyc" | "nj" | "nys" | "other" | "check";
 
 const NJ_TOWNS = [
   "JERSEY CITY", "HOBOKEN", "NEWARK", "BAYONNE", "SECAUCUS", "WEEHAWKEN", "UNION CITY", "WEST NEW YORK",
@@ -54,5 +55,11 @@ export function detectRegion(address: string): Region {
     if (/\b(CT|CONNECTICUT|PA|PENNSYLVANIA|MA|FL|CA|TX)\b/.test(afterComma)) return "other";
   }
   if (/\bHOBOKEN\b|\bJERSEY CITY\b|\bSECAUCUS\b|\bWEEHAWKEN\b/.test(a)) return "nj";
+  // Anything left after the street that isn't just a state / country (a town, hamlet, village)
+  // might be upstate — let the statewide geocoder decide.
+  let tail = afterComma;
+  if (!tail) { const m = a.match(/\b(ST|STREET|AVE|AVENUE|RD|ROAD|BLVD|BOULEVARD|PL|PLACE|DR|DRIVE|LN|LANE|TER|TERRACE|CT|COURT|HWY|HIGHWAY|PKWY|PARKWAY|WAY|TPKE|TURNPIKE)\b(.*)$/); tail = m ? m[2] : ""; }
+  const rest = tail.replace(/[,]/g, " ").replace(/\b(NY|N Y|NEW YORK STATE|NEW YORK|NYS|USA|US|UNITED STATES)\b/g, " ").replace(/\s+/g, " ").trim();
+  if (rest && /[A-Z]{3,}/.test(rest)) return "check";
   return "nyc";
 }

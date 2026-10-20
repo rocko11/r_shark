@@ -3,6 +3,7 @@ import { buildReport } from "../lib/report.ts";
 import { resolve } from "../lib/geocode.ts";
 import { detectRegion } from "../lib/region.ts";
 import { buildNJReport } from "../lib/nj.ts";
+import { buildNYSReport, nysWhere } from "../lib/nys.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -33,8 +34,16 @@ export default async (req: Request, _ctx: Context) => {
         const nj: any = await buildNJReport(address);
         return json(nj, nj.found ? 200 : 404);
       }
-      if (region === "nys") {
-        return json({ found: false, region, error: "That address is in New York State outside NYC. Full reports cover the five boroughs (and New Jersey) — use Hunt → Rest of NY State to look up owner, value and mailing address for it." }, 422);
+      if (region === "nys" || region === "check") {
+        const where = await nysWhere(address);
+        if (where && !where.inNYC) {
+          const ny: any = await buildNYSReport(address, where);
+          return json(ny, ny.found ? 200 : 404);
+        }
+        if (!where) {
+          return json({ found: false, region: "nys", error: "Couldn't find that address in New York State. Check the house number and town — for NYC addresses, include the borough (e.g. \"166 Carlton Ave, Brooklyn\")." }, 404);
+        }
+        // inside the five boroughs (or unknown "check") → continue with the NYC report
       }
       if (region === "other") {
         return json({ found: false, region, error: "That address is outside NYC and New Jersey, which R Shark doesn't cover yet." }, 422);

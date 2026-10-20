@@ -668,6 +668,8 @@ async function run() {
   if (!v) return;
   out.innerHTML = /\b(NJ|New Jersey|0[78]\d{3})\b/i.test(v)
     ? `<p class="loading">Looking up the New Jersey tax parcel…</p>`
+    : /,\s*[A-Za-z]/.test(v) && !/\b(Brooklyn|Manhattan|Queens|Bronx|Staten Island|New York)\b/i.test(v)
+    ? `<p class="loading">Locating the address and its tax parcel…</p>`
     : `<p class="loading">Pulling PLUTO, DOB, ECB, HPD, ACRIS…</p>`;
   try {
     const isBBL = /^\d{10}$/.test(v);
@@ -684,15 +686,16 @@ async function run() {
         <code>/api/canary</code> to find out which.</div>`;
       return;
     }
-    if (d.region && d.region !== 'nj' && d.found === false) {
+    if (d.region === 'nys' && d.found !== false) { renderNYS(d); return; }
+    if (d.region && d.region !== 'nj' && d.region !== 'nys' && d.found === false) {
       out.innerHTML = `<div class="err"><strong>Outside R Shark's report coverage.</strong><br>${esc(d.error || '')}</div>`;
       return;
     }
     if (d.region === 'nj' && d.found !== false) { renderNJ(d); return; }
-    if (d.region === 'nj' && d.found === false) {
+    if ((d.region === 'nj' || d.region === 'nys') && d.found === false) {
       const sug = (d.suggestions || []).map(s => `<button onclick="q.value=this.dataset.a;run()" data-a="${esc(s)}"
         style="background:var(--steel);border:1px solid var(--line);border-radius:6px;padding:5px 10px;color:var(--shark);cursor:pointer;font-size:12px;margin:6px 6px 0 0">${esc(s)} →</button>`).join('');
-      out.innerHTML = `<div class="err"><strong>No New Jersey parcel at that address.</strong><br>${esc(d.error || '')}${sug ? `<div style="margin-top:6px">${sug}</div>` : ''}</div>`;
+      out.innerHTML = `<div class="err"><strong>No ${d.region === 'nj' ? 'New Jersey' : 'New York State'} parcel at that address.</strong><br>${esc(d.error || '')}${sug ? `<div style="margin-top:6px">${sug}</div>` : ''}</div>`;
       return;
     }
     if (!r.ok || d.found === false) {
@@ -743,6 +746,68 @@ async function run() {
   }
 }
 
+
+
+/* ---------- New York State (outside NYC) property report ---------- */
+let _nysMap = null;
+function renderNYS(d) {
+  lastReport = d;
+  const p = d.parcel || {}, g = d.geocode || {};
+  const money = n => n == null ? '—' : '$' + Math.round(Number(n)).toLocaleString('en-US');
+  const cell = (k, v) => `<div class="cell"><span class="k">${k}</span><span class="v">${v ?? '—'}</span></div>`;
+  const flags = [
+    p.out_of_state ? '<span class="neg" style="font-weight:700">Out-of-state owner</span>' : p.absentee ? '<span class="neg" style="font-weight:700">Absentee owner</span>' : '',
+    String(p.property_class || '').startsWith('3') ? '<span style="color:var(--shark);font-weight:700">Vacant land</span>' : '',
+    String(p.roll_section) === '8' ? '<span style="color:var(--ink-3);font-weight:700">Wholly exempt</span>' : '',
+  ].filter(Boolean).join(' · ');
+  const lot = p.lot_sf ? `${p.lot_sf.toLocaleString()} sf · ${p.acres < 10 ? p.acres.toFixed(2) : p.acres.toFixed(1)} acres${p.frontage && p.depth ? ` · ${p.frontage} × ${p.depth} ft` : ''}<br><span class="hint" style="margin:0">${esc(p.acres_source || '')}</span>` : (p.frontage && p.depth ? `${p.frontage} × ${p.depth} ft` : '—');
+  const val = p.market_value || null;
+  const ppsf = val && p.lot_sf ? '$' + (val / p.lot_sf).toFixed(2) + ' / sf of land' : '—';
+  const bld = [p.building_style, p.living_sf ? p.living_sf.toLocaleString() + ' sf living' : '', p.bedrooms ? p.bedrooms + ' bd' : '', p.full_baths ? p.full_baths + ' ba' : '', p.kitchens ? p.kitchens + ' kitchen' + (p.kitchens > 1 ? 's' : '') : ''].filter(Boolean).join(' · ');
+  const sug = (d.suggestions || []).map(s => `<button onclick="q.value=this.dataset.a;run()" data-a="${esc(s)}" style="background:var(--steel);border:1px solid var(--line);border-radius:6px;padding:4px 9px;color:var(--shark);cursor:pointer;font-size:12px;margin:4px 6px 0 0">${esc(s.split(',')[0])} →</button>`).join('');
+  out.innerHTML = `
+    ${!d.parcel_exact ? `<div class="err" style="margin-bottom:12px"><strong>Closest parcel shown.</strong> The address matched <em>${esc(g.matched || '')}</em>, but the parcel at that point is listed as <em>${esc(p.address || '')}</em>. Check the map before relying on it.${sug ? `<div style="margin-top:6px">Recorded addresses nearby: ${sug}</div>` : ''}</div>` : ''}
+    <section>
+      <div class="sec-head"><h2>${esc(p.address || g.matched || '')}</h2><span class="src">New York State · ${esc(p.municipality || '')}${p.city_town && p.city_town !== p.municipality ? ' (' + esc(p.city_town) + ')' : ''}, ${esc(p.county || '')} County</span></div>
+      <p class="hint" style="margin:0 0 10px">Matched: ${esc(g.matched || '')} · Tax map ${esc(p.print_key || '—')} · SWIS ${esc(p.swis || '')}${p.zip ? ' · ZIP ' + esc(p.zip) : ''} · ${esc(p.roll_year || '')} roll</p>
+      ${flags ? `<p style="margin:0 0 10px">${flags}</p>` : ''}
+      <div id="nysmap" style="height:300px;border-radius:12px;overflow:hidden;margin-bottom:14px;border:1px solid var(--line)"></div>
+      <div class="grid">
+        ${cell('Owner' + ((p.owners || []).length > 1 ? 's' : ''), esc((p.owners || []).join(' & ') || '—'))}
+        ${cell('Owner mailing address', esc(p.owner_mailing || '—'))}
+        ${cell('Property class', esc(p.property_class || '—') + (p.property_class_label ? ' · ' + esc(p.property_class_label) : ''))}
+        ${cell('Building', esc(bld || '—'))}
+        ${cell('Year built', p.year_built || '—')}
+        ${cell('Lot size', lot)}
+        ${cell('Full market value', val ? money(val) : '— <span class="hint" style="margin:0">(town reports assessed value only)</span>')}
+        ${cell('Assessed value', money(p.assessed_total) + (p.assessed_land ? ' (land ' + money(p.assessed_land) + ')' : ''))}
+        ${cell('Value per sf of land', ppsf)}
+        ${cell('Heat / fuel', esc([p.heat, p.fuel].filter(Boolean).join(' · ') || '—'))}
+        ${cell('Water / sewer', esc([p.water, p.sewer].filter(Boolean).join(' · ') || '—'))}
+        ${cell('School district', esc(p.school_district || '—'))}
+        ${cell('Deed', esc(p.deed || '—'))}
+        ${cell('Exemptions', esc((p.exemptions || []).join(', ') || 'none'))}
+        ${p.ag_district ? cell('Agricultural district', esc(p.ag_district)) : ''}
+      </div>
+    </section>
+    <p class="ownnote">Rest-of-state coverage: ${esc(d.source || '')}. NYC-only sections (violations, permits, zoning, ACRIS, liens) don't apply outside the five boroughs; upstate distress records are kept town by town.
+      <a href="https://www.google.com/maps/search/${encodeURIComponent(g.matched || p.address || '')}" target="_blank" rel="noopener">Google Maps →</a></p>`;
+
+  if (_nysMap) { _nysMap.remove(); _nysMap = null; }
+  const el = document.getElementById('nysmap');
+  const c = d.geometry?.centroid || [g.lat, g.lon];
+  if (el && c && c[0]) {
+    _nysMap = L.map(el, { zoomControl: true, scrollWheelZoom: false }).setView(c, 18);
+    applyBasemap({ map: _nysMap, baseLayer: null }, el, 'street');
+    const rings = (d.geometry?.rings || []).map(r => r.map(([x, y]) => [y, x]));
+    if (rings.length) {
+      const poly = L.polygon(rings, { color: '#0d9488', weight: 3, fillOpacity: 0.25 }).addTo(_nysMap);
+      _nysMap.fitBounds(poly.getBounds().pad(0.6), { maxZoom: 19 });
+    }
+    if (g.lat) L.circleMarker([g.lat, g.lon], { radius: 6, color: '#0D1117', weight: 1.5, fillColor: '#FF4B3E', fillOpacity: 1 }).addTo(_nysMap).bindTooltip(esc(g.matched || ''));
+    setTimeout(() => _nysMap && _nysMap.invalidateSize(), 60);
+  }
+}
 
 /* ---------- New Jersey property card (NJ geocoder + statewide parcel/MOD-IV composite) ---------- */
 let _njMap = null;
