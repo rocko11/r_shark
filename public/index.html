@@ -2414,10 +2414,10 @@ const NYS_PROJ = {
   'NAD83 Central': '+proj=tmerc +lat_0=40 +lon_0=-76.58333333333333 +k=0.9999375 +x_0=250000 +y_0=0 +ellps=GRS80 +units=us-ft +no_defs',
   'NAD83 West':    '+proj=tmerc +lat_0=40 +lon_0=-78.58333333333333 +k=0.9999375 +x_0=350000 +y_0=0 +ellps=GRS80 +units=us-ft +no_defs',
   'NAD83 LI':      '+proj=lcc +lat_1=41.03333333333333 +lat_2=40.66666666666666 +lat_0=40.16666666666666 +lon_0=-74 +x_0=300000 +y_0=0 +ellps=GRS80 +units=us-ft +no_defs',
-  'NAD27 East':    '+proj=tmerc +lat_0=40 +lon_0=-74.33333333333333 +k=0.999966667 +x_0=152400.3048006096 +y_0=0 +ellps=clrk66 +units=us-ft +no_defs',
-  'NAD27 Central': '+proj=tmerc +lat_0=40 +lon_0=-76.58333333333333 +k=0.9999375 +x_0=152400.3048006096 +y_0=0 +ellps=clrk66 +units=us-ft +no_defs',
-  'NAD27 West':    '+proj=tmerc +lat_0=40 +lon_0=-78.58333333333333 +k=0.9999375 +x_0=152400.3048006096 +y_0=0 +ellps=clrk66 +units=us-ft +no_defs',
-  'NAD27 LI':      '+proj=lcc +lat_1=40.66666666666666 +lat_2=41.03333333333333 +lat_0=40.5 +lon_0=-74 +x_0=609601.2192024384 +y_0=30480.06096012192 +ellps=clrk66 +units=us-ft +no_defs',
+  'NAD27 East':    '+proj=tmerc +lat_0=40 +lon_0=-74.33333333333333 +k=0.999966667 +x_0=152400.3048006096 +y_0=0 +ellps=clrk66 +towgs84=-8,160,176,0,0,0,0 +units=us-ft +no_defs',
+  'NAD27 Central': '+proj=tmerc +lat_0=40 +lon_0=-76.58333333333333 +k=0.9999375 +x_0=152400.3048006096 +y_0=0 +ellps=clrk66 +towgs84=-8,160,176,0,0,0,0 +units=us-ft +no_defs',
+  'NAD27 West':    '+proj=tmerc +lat_0=40 +lon_0=-78.58333333333333 +k=0.9999375 +x_0=152400.3048006096 +y_0=0 +ellps=clrk66 +towgs84=-8,160,176,0,0,0,0 +units=us-ft +no_defs',
+  'NAD27 LI':      '+proj=lcc +lat_1=40.66666666666666 +lat_2=41.03333333333333 +lat_0=40.5 +lon_0=-74 +x_0=609601.2192024384 +y_0=30480.06096012192 +ellps=clrk66 +towgs84=-8,160,176,0,0,0,0 +units=us-ft +no_defs',
 };
 // County defaults from a statewide calibration (Oct 2026) — used only when a town can't self-calibrate.
 const NYS_COUNTY_PROJ = {"Allegany":"NAD83 West","Cattaraugus":"NAD83 West","Broome":"NAD83 Central","Cayuga":"NAD83 Central","Chemung":"NAD83 Central","Chenango":"NAD83 Central","Albany":"NAD27 East","Columbia":"NAD83 East","Delaware":"NAD83 East","Chautauqua":"NAD83 West","Clinton":"NAD83 East","Cortland":"NAD83 Central","Dutchess":"NAD27 East","Erie":"NAD83 West","Essex":"NAD83 East","Franklin":"NAD83 East","Fulton":"NAD83 East","Genesee":"NAD83 West","Hamilton":"NAD83 East","Greene":"NAD83 East","Herkimer":"NAD83 East","Lewis":"NAD83 Central","Livingston":"NAD83 West","Jefferson":"NAD83 Central","Madison":"NAD83 Central","Montgomery":"NAD83 East","Monroe":"NAD83 West","Niagara":"NAD83 West","Onondaga":"NAD27 Central","Orleans":"NAD83 West","Ontario":"NAD83 Central","Orange":"NAD83 East","Oswego":"NAD83 Central","Otsego":"NAD27 East","Putnam":"NAD83 East","Rensselaer":"NAD83 East","Rockland":"NAD27 East","Saratoga":"NAD83 East","Schenectady":"NAD83 East","Schoharie":"NAD83 East","Schuyler":"NAD83 Central","Seneca":"NAD83 Central","Steuben":"NAD83 Central","St Lawrence":"NAD27 East","Sullivan":"NAD83 East","Tompkins":"NAD83 Central","Suffolk":"NAD27 LI","Ulster":"NAD83 East","Warren":"NAD83 East","Washington":"NAD83 East","Wayne":"NAD83 Central","Westchester":"NAD83 East","Wyoming":"NAD83 West","Yates":"NAD83 Central"};
@@ -2674,25 +2674,35 @@ async function nysEnrichSizes(rows) {
   const loc = _nysLoc || {};
   const placed = rows.filter(x => loc[x.bbl]);
   const batches = []; for (let i = 0; i < placed.length; i += 100) batches.push(placed.slice(i, i + 100));
+  // Pass 2 helper: unmatched rows (pin landed on a neighbouring lot) get a 60 m buffered query, joined by ID.
+  const sizeQuery = async (b, buffer) => {
+    const body = { geometry: JSON.stringify({ points: b.map(x => [loc[x.bbl][1], loc[x.bbl][0]]), spatialReference: { wkid: 4326 } }),
+      geometryType: 'esriGeometryMultipoint', inSR: '4326', spatialRel: 'esriSpatialRelIntersects',
+      outFields: 'SWIS,PRINT_KEY,ACRES,CALC_ACRES', returnGeometry: 'false', f: 'json' };
+    if (buffer) { body.distance = String(buffer); body.units = 'esriSRUnit_Meter'; }
+    const j = await fetch(L, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body) }).then(r => r.json());
+    const byKey = {}; (j.features || []).forEach(f => byKey[f.attributes.SWIS + '|' + f.attributes.PRINT_KEY] = f.attributes);
+    for (const x of b) {
+      const a = byKey[x.swis + '|' + x.print_key];
+      const ac = a ? (Number(a.ACRES) > 0 ? Number(a.ACRES) : Number(a.CALC_ACRES) > 0 ? Number(a.CALC_ACRES) : 0) : 0;
+      if (ac > 0) { x.acres = ac; x.size_src = Number(a.ACRES) > 0 ? 'assessor acreage' : 'parcel map'; x.lot_area = Math.round(ac * 43560); x._sizeFound = true; }
+      else if (a) x._inLayer = true;
+    }
+  };
   const prog = document.getElementById('nys-size-prog');
   let done = 0;
   await _pool(batches, 3, async b => {
-    try {
-      const j = await fetch(L, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({
-        geometry: JSON.stringify({ points: b.map(x => [loc[x.bbl][1], loc[x.bbl][0]]), spatialReference: { wkid: 4326 } }),
-        geometryType: 'esriGeometryMultipoint', inSR: '4326', spatialRel: 'esriSpatialRelIntersects',
-        outFields: 'SWIS,PRINT_KEY,ACRES,CALC_ACRES', returnGeometry: 'false', f: 'json' }) }).then(r => r.json());
-      const byKey = {}; (j.features || []).forEach(f => byKey[f.attributes.SWIS + '|' + f.attributes.PRINT_KEY] = f.attributes);
-      for (const x of b) {
-        const a = byKey[x.swis + '|' + x.print_key];
-        const ac = a ? (Number(a.ACRES) > 0 ? Number(a.ACRES) : Number(a.CALC_ACRES) > 0 ? Number(a.CALC_ACRES) : 0) : 0;
-        if (ac > 0) { x.acres = ac; x.size_src = Number(a.ACRES) > 0 ? 'assessor acreage' : 'parcel map'; x.lot_area = Math.round(ac * 43560); }
-      }
-    } catch {}
+    try { await sizeQuery(b, 0); } catch {}
     done += b.length;
     if (prog) prog.textContent = `lot sizes ${Math.min(done, placed.length)}/${placed.length}`;
     b.forEach(nysPaintSize);
   });
+  // Pass 2: rows the point query missed — only where the county shares parcel maps (a hit came back nearby)
+  const missed = placed.filter(x => !x._sizeFound && !x._inLayer);
+  const sharing = new Set(placed.filter(x => x._sizeFound || x._inLayer).map(x => x.county));
+  const retry = missed.filter(x => sharing.has(x.county));
+  const rb = []; for (let i = 0; i < retry.length; i += 30) rb.push(retry.slice(i, i + 30));
+  await _pool(rb, 3, async b => { try { await sizeQuery(b, 60); } catch {} b.forEach(nysPaintSize); });
   rows.forEach(x => { x._sizeTried = true; nysPaintSize(x); });
   if (prog) { const n = rows.filter(x => x.acres || x.lot_area).length; prog.textContent = `lot size for ${n.toLocaleString()} of ${rows.length.toLocaleString()}`; }
 }
