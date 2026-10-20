@@ -126,6 +126,9 @@ body{
 .mast{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;
       padding:34px 0 22px;margin-bottom:22px;border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:16px}
+.brand[role=button]{cursor:pointer;border-radius:10px;transition:opacity .15s}
+.brand[role=button]:hover{opacity:.85}
+.brand[role=button]:focus-visible{outline:2px solid var(--shark);outline-offset:4px}
 .fin{width:144px;height:110px;flex:none;filter:drop-shadow(0 0 32px rgba(47,224,198,.45));color:white}
 .lock{display:flex;flex-direction:column;gap:2px}
 .wordmark{font-family:var(--display);font-weight:700;font-size:clamp(60px,10vw,92px);
@@ -535,7 +538,8 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
 <div class="wrap">
 
   <header class="mast">
-    <div class="brand">
+    <div class="brand" role="button" tabindex="0" title="New search" aria-label="R Shark — start a new search"
+         onclick="freshSearch()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();freshSearch()}">
       <svg class="fin" viewBox="0 0 110 84" aria-hidden="true">
         <!-- Fin: sits inside the R bowl — teal shows through the counter of the R -->
         <path d="M72 52 C 56 50, 44 42, 41 14 C 30 30, 22 42, 16 52 C 30 52, 52 52, 72 52 Z" fill="var(--shark)"/>
@@ -3204,16 +3208,32 @@ async function skipTrace(address, opts) {
 }
 
 /* empty state */
-out.innerHTML = `
+const EMPTY_STATE = `
   <div class="empty">
     <h2>Start with an address</h2>
     <p>Every lot resolves to a BBL, then pulls PLUTO, both DOB filing systems,
        ECB and HPD violations, and the ACRIS record — and works out what you can
-       actually build on it.</p>
+       actually build on it. Addresses anywhere in New York State and New Jersey work too.</p>
     <p>Try <button class="link" onclick="q.value='350 5th Ave Manhattan';run()">350 5th Ave</button>,
        <button class="link" onclick="q.value='1 Bedford Ave Brooklyn';run()">1 Bedford Ave</button>,
        or paste a BBL.</p>
   </div>`;
+out.innerHTML = EMPTY_STATE;
+
+// Click the R SHARK header → clean slate: Property report tab, empty search box, no report.
+function freshSearch() {
+  if (typeof showTab === 'function') showTab('report');
+  q.value = ''; ac.hidden = true;
+  try { if (_map) { _map.remove(); _map = null; } } catch (e) {}
+  try { if (_njMap) { _njMap.remove(); _njMap = null; } } catch (e) {}
+  try { if (_nysMap) { _nysMap.remove(); _nysMap = null; } } catch (e) {}
+  try { if (_svPano) { _svPano.setVisible(false); _svPano = null; } } catch (e) {}
+  lastReport = null;
+  out.innerHTML = EMPTY_STATE;
+  if (location.search || location.hash) history.pushState({}, '', location.pathname);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  setTimeout(() => q.focus(), 250);
+}
 
 function mnavActive(id) {
   document.querySelectorAll('.mnav-btn').forEach(b => b.classList.remove('active'));
@@ -3601,6 +3621,7 @@ function applyTheme(theme) {
 window.addEventListener('popstate', function(e) {
   const bbl = e.state?.bbl || new URLSearchParams(location.search).get('bbl');
   if (bbl) { q.value = bbl; showTab('report'); run(); }
+  else if (!location.search) { q.value = ''; out.innerHTML = EMPTY_STATE; }
 });
 
 // On page load, if a ?bbl= param is present (direct link or page refresh), load it.
