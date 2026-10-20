@@ -120,7 +120,10 @@ export async function njSuggest(text: string) {
 
 // ── municipality names (565) — cached; used to find the town in free text ──
 let muniCache: { at: number; names: string[] } | null = null;
-const muniBase = (m: string) => up(m).replace(/\b(CITY|TOWN|TOWNSHIP|TWP|BOROUGH|BORO|VILLAGE)\b/g, "").replace(/\s+/g, " ").trim();
+// "JERSEY CITY CITY" → "JERSEY CITY"; "SECAUCUS TOWN" → "SECAUCUS" (only the trailing type word)
+const muniBase = (m: string) => up(m).replace(/\s+(CITY|TOWN|TOWNSHIP|TWP|BOROUGH|BORO|VILLAGE)$/, "").trim();
+// Also accept the name without a trailing CITY/TOWN ("Ventnor" for "VENTNOR CITY CITY")
+const muniAlt = (m: string) => muniBase(m).replace(/\s+(CITY|TOWN|TOWNSHIP|TWP|BOROUGH|BORO|VILLAGE)$/, "").trim();
 async function njMunis(): Promise<string[]> {
   if (muniCache && Date.now() - muniCache.at < 24 * 3600_000) return muniCache.names;
   const j = await getJSON(`${NJ_PARCELS}?${new URLSearchParams({ where: "1=1", outFields: "MUN_NAME", returnDistinctValues: "true", returnGeometry: "false", resultRecordCount: "2000", f: "json" })}`, 9000);
@@ -134,12 +137,13 @@ async function njTownsIn(address: string, geocodedCity?: string): Promise<string
   const a = up(address);
   let tail = a.includes(",") ? a.slice(a.indexOf(",")) : "";
   if (!tail) { const m = normStreet(address).match(/\b(ST|AVE|RD|BLVD|PL|DR|LN|TER|CT|HWY|PKWY|WAY)\b(.*)$/); tail = m ? m[2] : a; }
-  const hay = ` ${tail} ${up(geocodedCity || "")} `;
+  const hay = ` ${tail} ${up(geocodedCity || "")} `.replace(/\bNEW JERSEY\b/g, " ");
   let best = 0; let hits: string[] = [];
   for (const n of names) {
-    const b = muniBase(n);
-    if (!b || !new RegExp(`\\b${b.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(hay)) continue;
-    if (b.length > best) { best = b.length; hits = [n]; } else if (b.length === best) hits.push(n);
+    for (const b of [...new Set([muniBase(n), muniAlt(n)])]) {
+      if (!b || !new RegExp(`\\b${b.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(hay)) continue;
+      if (b.length > best) { best = b.length; hits = [n]; } else if (b.length === best && !hits.includes(n)) hits.push(n);
+    }
   }
   return hits;
 }
@@ -219,10 +223,10 @@ async function njSheriffSales(addrs: string[], muni: string, zip?: string) {
   try {
     const wants = addrs.filter(a => splitAddr(a).num);
     if (!wants.length) return [];
-    const town = muniBase(muni);
+    const town = muniAlt(muni);
     const rows = await njssRows();
     return rows.filter(r => {
-      const full = up(r.address || "");
+      const full = up(r.address || "").replace(/\bNEW JERSEY\b/g, " ");
       const aliases = String(r.address || "").split(/\s+A\/?K\/?A\s+/i).map(s => streetPart(s));
       const sameTown = (!!town && full.includes(town)) || (!!zip && full.includes(zip));
       return sameTown && aliases.some(al => wants.some(w => addrMatch(al, w)));
