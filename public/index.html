@@ -782,7 +782,7 @@ function renderNJ(d) {
         ${cell('Building', esc(p.building || '—'))}
         ${cell('Year built', p.year_built || '—')}
         ${cell('Dwellings', p.dwellings ?? '—')}
-        ${cell('Lot size', p.acres ? Number(p.acres).toFixed(3) + ' acres (' + Math.round(p.acres * 43560).toLocaleString() + ' sf)' : esc(p.land_desc || '—'))}
+        ${cell('Lot size', p.acres ? Math.round(p.acres * 43560).toLocaleString() + ' sf · ' + Number(p.acres).toFixed(p.acres < 10 ? 3 : 1) + ' acres' + (p.lot_dimensions ? ' · ' + esc(p.lot_dimensions) + ' ft' : '') + (p.acres_source === 'computed from parcel outline' ? '<br><span class="hint" style="margin:0">computed from the parcel outline</span>' : '') : esc(p.land_desc || '—'))}
         ${cell('Net taxable value', money(p.net_value))}
         ${cell('Land / improvements', money(p.land_value) + ' / ' + money(p.improvement_value))}
         ${cell('Last year\'s tax', money(p.last_year_tax))}
@@ -2187,7 +2187,7 @@ async function runSearch() {
     window.__searchResults = d.results;
     window.__searchMeta = { mode: sMode, count: d.count };
     res.innerHTML = `<div style="display:flex;align-items:center;gap:12px;margin:10px 0;flex-wrap:wrap">
-        <span class="hint" style="margin:0">${d.count.toLocaleString()} result${d.count===1?'':'s'}${d.region === 'nys' ? ` · ${d.roll_year} assessment roll${d.capped ? ' · first matches only — narrow by town or street' : ''} — click any to expand.` : ' — click any to open its report.'}</span>
+        <span class="hint" style="margin:0">${d.count.toLocaleString()} result${d.count===1?'':'s'}${d.region === 'nys' ? ` · <span id="nys-size-prog">lot sizes…</span> · ${d.roll_year} assessment roll${d.capped ? ' · first matches only — narrow by town or street' : ''} — click any to expand.` : ' — click any to open its report.'}</span>
         <span class="vtoggle"><button class="mbtn mbtn-on" data-hv="list" onclick="huntView('list')">List</button><button class="mbtn" data-hv="map" onclick="huntView('map')">Map</button></span>
         <button class="sgo" style="margin:0;padding:6px 12px;font-size:11px" onclick="downloadSearchCsv()">⭳ Download to Excel</button>
         <button class="sgo" id="bulk-skip-btn" style="margin:0;padding:6px 12px;font-size:11px;background:var(--teal);color:#0A0E14" onclick="bulkSkipTrace()">📞 Bulk skip-trace all (${Math.min(d.results.length,50)})</button>
@@ -2206,6 +2206,7 @@ async function runSearch() {
     if (_huntMap) { _huntMap.remove(); _huntMap = null; }
     _huntData = null;
     _nysLoc = null;
+    if (d.region === 'nys') nysEnrichSizes(d.results);
   } catch (e) {
     res.innerHTML = '<div class="err">Search failed: ' + esc(String(e)) + '</div>';
   }
@@ -2502,6 +2503,7 @@ async function renderNysHuntMap(rows, legend, vacantOnly) {
       <div class="pop-k">${esc(x.city)}, ${esc(x.county)} Co.</div>
       <div class="pop-k">${esc(x.owner || 'Owner not listed')}</div>
       <div class="pop-k">${esc(x.bldg_class || '')}${x.market_value ? ' · ' + money(x.market_value) : x.assessed_value ? ' · ' + money(x.assessed_value) + ' assessed' : ''}</div>
+      ${x.acres || x.lot_area ? `<div class="pop-k">Lot: ${nysSizeTxt(x)}</div>` : ''}
       ${x.out_of_state || x.absentee ? `<div class="pop-k neg">${x.out_of_state ? 'Out-of-state' : 'Absentee'} owner · ${esc(x.mailing || '')}</div>` : ''}
       <div class="pop-k" style="font-size:10px;color:var(--ink-3)">${p[2] === 'address' ? 'Placed by address' : 'Placed by tax-map grid'} · <span class="pop-outline">loading lot outline…</span></div>
       <button class="pop-btn" onclick="nysShowRow('${esc(x.bbl)}')">Show details →</button>`);
@@ -2634,12 +2636,13 @@ function renderNysRow(x, contact) {
       <div class="m">${esc(x.owner || 'Owner not listed')}${x.bldg_class ? ' · ' + esc(x.bldg_class) : ''}${flags ? ' · ' + flags : ''}</div>
       ${contactHtml}
     </div>
-    <div class="m" style="text-align:right;white-space:nowrap;flex-shrink:0">${x.market_value ? money(x.market_value) + '<br><span style="font-size:10px">market value</span>' : x.assessed_value ? money(x.assessed_value) + '<br><span style="font-size:10px">assessed</span>' : ''}${x.lot_area ? '<br>' + x.lot_area.toLocaleString() + ' sf' : ''}</div>
+    <div class="m" style="text-align:right;white-space:nowrap;flex-shrink:0">${x.market_value ? money(x.market_value) + '<br><span style="font-size:10px">market value</span>' : x.assessed_value ? money(x.assessed_value) + '<br><span style="font-size:10px">assessed</span>' : ''}<br><span class="nys-size" id="nyssz-${id}">${nysSizeTxt(x)}</span></div>
     <div class="nys-detail" id="nysd-${id}" style="flex-basis:100%;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-2);display:none;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:4px 16px">
       ${kv('Owner mailing address', esc(x.mailing))}
       ${kv('Full market value', money(x.market_value))}
       ${kv('Assessed value', money(x.assessed_value) + (x.land_assessed ? ' (land ' + money(x.land_assessed) + ')' : ''))}
-      ${kv('Lot', x.frontage && x.depth ? `${x.frontage} × ${x.depth} ft` : '')}
+      ${kv('Lot size', `<span id="nyssd-${id}">${nysSizeTxt(x, true)}</span>`)}
+      ${kv('Frontage × depth', x.frontage && x.depth ? `${x.frontage} × ${x.depth} ft` : '')}
       ${kv('Tax map # (SBL)', esc(x.print_key))}
       ${kv('SWIS', esc(x.swis))}
       ${kv('School district', esc(x.school_district))}
@@ -2649,6 +2652,53 @@ function renderNysRow(x, contact) {
       <div><a href="${maps}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--shark)">Open in Google Maps →</a></div>
     </div>
   </div>`;
+}
+function nysSizeTxt(x, long) {
+  if (x.acres) {
+    const sf = Math.round(x.acres * 43560);
+    return `${sf.toLocaleString()} sf · ${x.acres < 10 ? x.acres.toFixed(2) : x.acres.toFixed(1)} ac${long ? ` <span style="color:var(--ink-3)">(${esc(x.size_src || '')})</span>` : ''}`;
+  }
+  if (x.lot_area) return `${x.lot_area.toLocaleString()} sf${long ? ' <span style="color:var(--ink-3)">(frontage × depth)</span>' : ''}`;
+  return x._sizeTried ? (long ? 'not recorded' : '') : (long ? 'loading…' : '<span style="color:var(--ink-3)">size…</span>');
+}
+// Fill in lot size for every state result: official acreage from the NYS Tax Parcels layer
+// (38 counties) via batched multipoint queries at each parcel's located point; frontage × depth otherwise.
+async function nysEnrichSizes(rows) {
+  const L = NYS_PARCEL_LAYER;
+  try {
+    if (!window.proj4) await new Promise(r => setTimeout(r, 500));
+    _nysLoc = _nysLoc || await nysLocate(rows.slice(0, 400));
+    const more = rows.slice(400).filter(x => x._ge > 0);
+    if (more.length) Object.assign(_nysLoc, await nysLocate(more));
+  } catch {}
+  const loc = _nysLoc || {};
+  const placed = rows.filter(x => loc[x.bbl]);
+  const batches = []; for (let i = 0; i < placed.length; i += 100) batches.push(placed.slice(i, i + 100));
+  const prog = document.getElementById('nys-size-prog');
+  let done = 0;
+  await _pool(batches, 3, async b => {
+    try {
+      const j = await fetch(L, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({
+        geometry: JSON.stringify({ points: b.map(x => [loc[x.bbl][1], loc[x.bbl][0]]), spatialReference: { wkid: 4326 } }),
+        geometryType: 'esriGeometryMultipoint', inSR: '4326', spatialRel: 'esriSpatialRelIntersects',
+        outFields: 'SWIS,PRINT_KEY,ACRES,CALC_ACRES', returnGeometry: 'false', f: 'json' }) }).then(r => r.json());
+      const byKey = {}; (j.features || []).forEach(f => byKey[f.attributes.SWIS + '|' + f.attributes.PRINT_KEY] = f.attributes);
+      for (const x of b) {
+        const a = byKey[x.swis + '|' + x.print_key];
+        const ac = a ? (Number(a.ACRES) > 0 ? Number(a.ACRES) : Number(a.CALC_ACRES) > 0 ? Number(a.CALC_ACRES) : 0) : 0;
+        if (ac > 0) { x.acres = ac; x.size_src = Number(a.ACRES) > 0 ? 'assessor acreage' : 'parcel map'; x.lot_area = Math.round(ac * 43560); }
+      }
+    } catch {}
+    done += b.length;
+    if (prog) prog.textContent = `lot sizes ${Math.min(done, placed.length)}/${placed.length}`;
+    b.forEach(nysPaintSize);
+  });
+  rows.forEach(x => { x._sizeTried = true; nysPaintSize(x); });
+  if (prog) { const n = rows.filter(x => x.acres || x.lot_area).length; prog.textContent = `lot size for ${n.toLocaleString()} of ${rows.length.toLocaleString()}`; }
+}
+function nysPaintSize(x) {
+  const a = document.getElementById('nyssz-' + x.bbl), b = document.getElementById('nyssd-' + x.bbl);
+  if (a) a.innerHTML = nysSizeTxt(x); if (b) b.innerHTML = nysSizeTxt(x, true);
 }
 function toggleNysRow(id, ev) {
   if (ev && ev.target.closest('a')) return;
@@ -2741,7 +2791,7 @@ function downloadSearchCsv() {
     ["Is condo", "is_condo"],
     ...(rows.some(r => r.state_row) ? [
       ["City/town", "city"], ["County", "county"], ["Property class", "bldg_class"], ["Market value", "market_value"],
-      ["Assessed value", "assessed_value"], ["Owner mailing address", "mailing"], ["Absentee owner", "absentee"],
+      ["Assessed value", "assessed_value"], ["Acres", "acres"], ["Lot size source", "size_src"], ["Owner mailing address", "mailing"], ["Absentee owner", "absentee"],
       ["Out-of-state owner", "out_of_state"], ["Tax map # (SBL)", "print_key"], ["SWIS", "swis"], ["School district", "school_district"],
     ] : []),
     ...(hasContact ? [

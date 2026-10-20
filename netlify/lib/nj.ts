@@ -240,6 +240,19 @@ async function njSheriffSales(addrs: string[], muni: string, zip?: string) {
   } catch { return null; } // null = lookup unavailable, [] = none found
 }
 
+// Area of a lon/lat polygon in m² (local equirectangular projection; <0.5% error at lot scale).
+function ringsAreaM2(rings: number[][][]): number {
+  if (!rings.length) return 0;
+  const lat0 = rings[0][0]?.[1] || 40, kx = 111320 * Math.cos(lat0 * Math.PI / 180), ky = 110540;
+  let total = 0;
+  for (const r of rings) {
+    let a = 0;
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += (r[j][0] * kx) * (r[i][1] * ky) - (r[i][0] * kx) * (r[j][1] * ky);
+    total += a / 2; // ArcGIS: outer rings clockwise (negative here), holes counter-clockwise
+  }
+  return Math.abs(total);
+}
+
 export async function buildNJReport(address: string) {
   const variants = inputVariants(address);
   let top: any = null, feature: any = null, exact = false, via = "geocoder";
@@ -307,7 +320,9 @@ export async function buildNJReport(address: string) {
       address: propLoc, property_class: cls, property_class_label: PROP_CLASS_LABEL[cls] || null, facility: a.FAC_NAME || null,
       building: a.BLDG_DESC || null, land_desc: a.LAND_DESC || null, year_built: Number(a.YR_CONSTR) || null,
       dwellings: Number(a.DWELL) || null, commercial_dwellings: Number(a.COMM_DWELL) || null,
-      acres: Number(a.CALC_ACRE) || null,
+      acres: Number(a.CALC_ACRE) > 0 ? Number(a.CALC_ACRE) : (ringsAreaM2(feature.geometry?.rings || []) / 4046.8564224 || null),
+      acres_source: Number(a.CALC_ACRE) > 0 ? "state record" : "computed from parcel outline",
+      lot_dimensions: /\d+\s*X\s*\d+/i.test(String(a.LAND_DESC || "")) ? String(a.LAND_DESC).trim() : null,
       land_value: Number(a.LAND_VAL) || null, improvement_value: Number(a.IMPRVT_VAL) || null, net_value: Number(a.NET_VALUE) || null,
       last_year_tax: Number(a.LAST_YR_TX) || null,
       last_sale: { price: salePrice > 100 ? salePrice : null, nominal: salePrice > 0 && salePrice <= 100, date: dateFromYYMMDD(a.DEED_DATE), code: a.SALES_CODE || null,
