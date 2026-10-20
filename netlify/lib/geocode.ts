@@ -130,3 +130,17 @@ export async function autocomplete(text: string, size = 8) {
     bbl: f?.properties?.addendum?.pad?.bbl ?? null,
   }));
 }
+
+// For an address with a place name the statewide geocoder couldn't place: accept the NYC
+// GeoSearch match only if its neighbourhood / borough matches the typed place ("Fort Greene").
+export async function nycPlaceMatches(address: string, place: string): Promise<boolean> {
+  if (!place) return false;
+  try {
+    const r = await timedFetch(`${GEOSEARCH_URL}?text=${encodeURIComponent(address)}&size=1`, {}, 6000);
+    if (!r.ok) return false;
+    const p = (await r.json())?.features?.[0]?.properties || {};
+    const hay = [p.neighbourhood, p.borough, p.locality, p.label].filter(Boolean).join(" | ").toUpperCase();
+    const words = place.toUpperCase().split(/\s+/).filter(w => w.length > 2);
+    return words.length > 0 && words.every(w => hay.includes(w));
+  } catch { return false; }
+}

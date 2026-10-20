@@ -1,7 +1,7 @@
 import type { Config, Context } from "@netlify/functions";
 import { buildReport } from "../lib/report.ts";
-import { resolve } from "../lib/geocode.ts";
-import { detectRegion } from "../lib/region.ts";
+import { resolve, nycPlaceMatches } from "../lib/geocode.ts";
+import { detectRegion, townTail } from "../lib/region.ts";
 import { buildNJReport } from "../lib/nj.ts";
 import { buildNYSReport, nysWhere } from "../lib/nys.ts";
 
@@ -40,7 +40,7 @@ export default async (req: Request, _ctx: Context) => {
           const ny: any = await buildNYSReport(address, where);
           return json(ny, ny.found ? 200 : 404);
         }
-        if (!where) {
+        if (!where && !(region === "check" && await nycPlaceMatches(address, townTail(address)))) {
           return json({ found: false, region: "nys", error: "Couldn't find that address in New York State. Check the house number and town — for NYC addresses, include the borough (e.g. \"166 Carlton Ave, Brooklyn\")." }, 404);
         }
         // inside the five boroughs (or unknown "check") → continue with the NYC report

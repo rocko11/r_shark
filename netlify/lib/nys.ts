@@ -8,6 +8,7 @@
 //     (e.g. Nassau, Monroe, Dutchess) fall back to the assessment roll alone.
 
 import { addrMatch, normStreet, streetCore } from "./nj.ts";
+import { townTail, NYC_PLACE_RE } from "./region.ts";
 
 const NYS_GEOCODE = "https://gisservices.its.ny.gov/arcgis/rest/services/Locators/Street_and_Address_Composite/GeocodeServer/findAddressCandidates";
 const NYS_TOWNS = "https://gisservices.its.ny.gov/arcgis/rest/services/NYS_Civil_Boundaries/FeatureServer/6/query";
@@ -49,11 +50,20 @@ async function townAt(x: number, y: number) {
 }
 
 // Decide NYC vs rest-of-state for an ambiguous address. Returns null if it can't be geocoded.
+// A typed upstate town that the geocoder "matched" to an NYC street is rejected, so
+// "135 Woodlawn Ave, Saratoga Springs, Inside" never becomes 135 Woodlawn Ave, Staten Island.
 export async function nysWhere(address: string) {
   const cands = await nysGeocode(address).catch(() => []);
   if (!cands.length) return null;
-  const town = await townAt(cands[0].x, cands[0].y).catch(() => null);
-  return { cand: cands[0], cands, town, inNYC: !!town && NYC_COUNTIES.has(town.county) };
+  const tail = townTail(address);
+  const typedNYC = !tail || NYC_PLACE_RE.test(` ${tail} `) || /\bNEW YORK\b/.test(tail);
+  for (const cand of cands.slice(0, 3)) {
+    const town = await townAt(cand.x, cand.y).catch(() => null);
+    const inNYC = !!town && NYC_COUNTIES.has(town.county);
+    if (inNYC && !typedNYC) continue;          // upstate town typed, NYC point returned → not a match
+    return { cand, cands, town, inNYC };
+  }
+  return null;
 }
 
 async function parcelAt(x: number, y: number, want: string[]) {

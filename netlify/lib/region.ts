@@ -63,3 +63,12 @@ export function detectRegion(address: string): Region {
   if (rest && /[A-Z]{3,}/.test(rest)) return "check";
   return "nyc";
 }
+
+// The place text after the street ("Fort Greene", "Saratoga Springs"), minus state/ZIP/country.
+export function townTail(address: string): string {
+  const a = ` ${String(address || "").toUpperCase().replace(/[.]/g, "").replace(/\s+/g, " ")} `;
+  let tail = a.includes(",") ? a.slice(a.indexOf(",")) : "";
+  if (!tail) { const m = a.match(/\b(ST|STREET|AVE|AVENUE|RD|ROAD|BLVD|BOULEVARD|PL|PLACE|DR|DRIVE|LN|LANE|TER|TERRACE|CT|COURT|HWY|HIGHWAY|PKWY|PARKWAY|WAY|TPKE|TURNPIKE)\b(.*)$/); tail = m ? m[2] : ""; }
+  return tail.replace(/[,]/g, " ").replace(/\b\d{5}(-\d{4})?\b/g, " ").replace(/\b(NY|N Y|NEW YORK STATE|NYS|USA|US|UNITED STATES)\b/g, " ").replace(/\s+/g, " ").trim();
+}
+export const NYC_PLACE_RE = NYC_HINTS;
