@@ -12,6 +12,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62.5..125,400..700&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/proj4/proj4.js" defer></script>
 <style>
 :root{
   /* R Shark — a predator's instrument for NYC property. Deep water, cold chrome,
@@ -2181,7 +2182,7 @@ async function runSearch() {
     window.__searchMeta = { mode: sMode, count: d.count };
     res.innerHTML = `<div style="display:flex;align-items:center;gap:12px;margin:10px 0;flex-wrap:wrap">
         <span class="hint" style="margin:0">${d.count.toLocaleString()} result${d.count===1?'':'s'}${d.region === 'nys' ? ` · ${d.roll_year} assessment roll${d.capped ? ' · first matches only — narrow by town or street' : ''} — click any to expand.` : ' — click any to open its report.'}</span>
-        ${d.region === 'nys' ? '' : `<span class="vtoggle"><button class="mbtn mbtn-on" data-hv="list" onclick="huntView('list')">List</button><button class="mbtn" data-hv="map" onclick="huntView('map')">Map</button></span>`}
+        <span class="vtoggle"><button class="mbtn mbtn-on" data-hv="list" onclick="huntView('list')">List</button><button class="mbtn" data-hv="map" onclick="huntView('map')">Map</button></span>
         <button class="sgo" style="margin:0;padding:6px 12px;font-size:11px" onclick="downloadSearchCsv()">⭳ Download to Excel</button>
         <button class="sgo" id="bulk-skip-btn" style="margin:0;padding:6px 12px;font-size:11px;background:var(--teal);color:#0A0E14" onclick="bulkSkipTrace()">📞 Bulk skip-trace all (${Math.min(d.results.length,50)})</button>
       </div>
@@ -2198,6 +2199,7 @@ async function runSearch() {
       <div id="hunt-list">` + d.results.map(x => renderSearchRow(x)).join('') + `</div>`;
     if (_huntMap) { _huntMap.remove(); _huntMap = null; }
     _huntData = null;
+    _nysLoc = null;
   } catch (e) {
     res.innerHTML = '<div class="err">Search failed: ' + esc(String(e)) + '</div>';
   }
@@ -2249,7 +2251,7 @@ async function nysSearch(f) {
       + 'parcel_address_number,parcel_address_street,parcel_address_suff,front,depth,deed_book,page,'
       + 'primary_owner_first_name,primary_owner_mi,primary_owner_last_name,primary_owner_suffix,additional_owner_1_first,additional_owner_1_last_name,'
       + 'mailing_address_prefix,mailing_address_number,mailing_address_street,mailing_address_suff,mailing_address_city,mailing_address_state,mailing_address_zip,mailing_address_po_box,'
-      + 'full_market_value,assessment_land,assessment_total,exemption_code_1',
+      + 'full_market_value,assessment_land,assessment_total,exemption_code_1,grid_coordinates_east,grid_coordinates_north',
     $where: w.join(' AND '), $limit: String(fetchLimit),
   });
   const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 45000);
@@ -2291,6 +2293,7 @@ async function nysSearch(f) {
       print_key: clean(r.print_key_code), swis: clean(r.swis_code), school_district: clean(r.school_district_name) || null,
       deed: r.deed_book ? `Book ${clean(r.deed_book)}${r.page ? ', page ' + clean(r.page) : ''}` : null,
       exemption: clean(r.exemption_code_1) || null, roll_year: year,
+      _ge: Number(r.grid_coordinates_east) || 0, _gn: Number(r.grid_coordinates_north) || 0,
     };
   });
   if (f.absentee === 'absentee') results = results.filter(x => x.absentee);
@@ -2342,6 +2345,7 @@ async function renderHuntMap() {
     _huntPins = L.layerGroup().addTo(_huntMap);
   }
   setTimeout(() => _huntMap && _huntMap.invalidateSize(), 80);
+  if (rows[0] && rows[0].state_row) return renderNysHuntMap(rows, legend, vacantOnly);
 
   // One call gives us coordinates (for rows lacking them) and distress tiers.
   if (!_huntData) {
@@ -2386,6 +2390,147 @@ async function renderHuntMap() {
   legend.innerHTML = sw('#FF4B3E', '90-day notice / lien-listed') + sw('#F08A24', '60-day notice / serious')
     + sw('#E6C34A', 'minor signals') + sw('#8A97A8', 'final sale') + sw('#38A8B8', 'match, no signals')
     + `<span class="lg-note">${pts.length} pinned${skipped ? ' · ' + skipped + ' without coordinates' : ''}${(window.__searchResults || []).length > 400 ? ' · first 400 shown' : ''}</span>`;
+}
+
+
+/* ---------- Rest of NY State map ----------
+   Assessment rolls carry each parcel's state-plane grid coordinates, but towns record
+   them in different systems (NAD83 vs NAD27, different zones) — even within one county.
+   So each town self-calibrates: geocode 2–3 of its result addresses with the NYS
+   geocoder, pick the projection that lands them within ~400 m, apply it to the rest.
+   Towns that fit no projection (or have no grid coords, e.g. Nassau) fall back to
+   geocoding each address. Clicking a pin draws the lot outline from the NYS parcel layer. */
+const NYS_GEOCODER = 'https://gisservices.its.ny.gov/arcgis/rest/services/Locators/Street_and_Address_Composite/GeocodeServer/findAddressCandidates';
+const NYS_PARCEL_LAYER = 'https://services6.arcgis.com/EbVsqZ18sv1kVJ3k/arcgis/rest/services/NYS_Tax_Parcels_Public/FeatureServer/1/query';
+const NYS_PROJ = {
+  'NAD83 East':    '+proj=tmerc +lat_0=38.83333333333334 +lon_0=-74.5 +k=0.9999 +x_0=150000 +y_0=0 +ellps=GRS80 +units=us-ft +no_defs',
+  'NAD83 Central': '+proj=tmerc +lat_0=40 +lon_0=-76.58333333333333 +k=0.9999375 +x_0=250000 +y_0=0 +ellps=GRS80 +units=us-ft +no_defs',
+  'NAD83 West':    '+proj=tmerc +lat_0=40 +lon_0=-78.58333333333333 +k=0.9999375 +x_0=350000 +y_0=0 +ellps=GRS80 +units=us-ft +no_defs',
+  'NAD83 LI':      '+proj=lcc +lat_1=41.03333333333333 +lat_2=40.66666666666666 +lat_0=40.16666666666666 +lon_0=-74 +x_0=300000 +y_0=0 +ellps=GRS80 +units=us-ft +no_defs',
+  'NAD27 East':    '+proj=tmerc +lat_0=40 +lon_0=-74.33333333333333 +k=0.999966667 +x_0=152400.3048006096 +y_0=0 +ellps=clrk66 +units=us-ft +no_defs',
+  'NAD27 Central': '+proj=tmerc +lat_0=40 +lon_0=-76.58333333333333 +k=0.9999375 +x_0=152400.3048006096 +y_0=0 +ellps=clrk66 +units=us-ft +no_defs',
+  'NAD27 West':    '+proj=tmerc +lat_0=40 +lon_0=-78.58333333333333 +k=0.9999375 +x_0=152400.3048006096 +y_0=0 +ellps=clrk66 +units=us-ft +no_defs',
+  'NAD27 LI':      '+proj=lcc +lat_1=40.66666666666666 +lat_2=41.03333333333333 +lat_0=40.5 +lon_0=-74 +x_0=609601.2192024384 +y_0=30480.06096012192 +ellps=clrk66 +units=us-ft +no_defs',
+};
+// County defaults from a statewide calibration (Oct 2026) — used only when a town can't self-calibrate.
+const NYS_COUNTY_PROJ = {"Allegany":"NAD83 West","Cattaraugus":"NAD83 West","Broome":"NAD83 Central","Cayuga":"NAD83 Central","Chemung":"NAD83 Central","Chenango":"NAD83 Central","Albany":"NAD27 East","Columbia":"NAD83 East","Delaware":"NAD83 East","Chautauqua":"NAD83 West","Clinton":"NAD83 East","Cortland":"NAD83 Central","Dutchess":"NAD27 East","Erie":"NAD83 West","Essex":"NAD83 East","Franklin":"NAD83 East","Fulton":"NAD83 East","Genesee":"NAD83 West","Hamilton":"NAD83 East","Greene":"NAD83 East","Herkimer":"NAD83 East","Lewis":"NAD83 Central","Livingston":"NAD83 West","Jefferson":"NAD83 Central","Madison":"NAD83 Central","Montgomery":"NAD83 East","Monroe":"NAD83 West","Niagara":"NAD83 West","Onondaga":"NAD27 Central","Orleans":"NAD83 West","Ontario":"NAD83 Central","Orange":"NAD83 East","Oswego":"NAD83 Central","Otsego":"NAD27 East","Putnam":"NAD83 East","Rensselaer":"NAD83 East","Rockland":"NAD27 East","Saratoga":"NAD83 East","Schenectady":"NAD83 East","Schoharie":"NAD83 East","Schuyler":"NAD83 Central","Seneca":"NAD83 Central","Steuben":"NAD83 Central","St Lawrence":"NAD27 East","Sullivan":"NAD83 East","Tompkins":"NAD83 Central","Suffolk":"NAD27 LI","Ulster":"NAD83 East","Warren":"NAD83 East","Washington":"NAD83 East","Wayne":"NAD83 Central","Westchester":"NAD83 East","Wyoming":"NAD83 West","Yates":"NAD83 Central"};
+let _nysLoc = null;            // { [row.bbl]: [lat, lon, how] } for the current result set
+const _nysTownProj = {};       // swis4 → projection name | null (no fit) — cached across searches
+const _nysGeoCache = {};
+
+function _dist(a, b) {
+  const R = 6371000, r = Math.PI / 180, dLat = (b[0] - a[0]) * r, dLon = (b[1] - a[1]) * r;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+function _gridLL(x, projName) {
+  if (!projName || !window.proj4 || !(x._ge > 0 && x._gn > 0)) return null;
+  try { const [lon, lat] = proj4(NYS_PROJ[projName], 'WGS84', [x._ge, x._gn]); return (lat > 40 && lat < 45.2 && lon > -80 && lon < -71.7) ? [lat, lon] : null; }
+  catch { return null; }
+}
+async function _nysGeocode(x) {
+  const addr = `${x.address}, ${x.city}, NY`;
+  if (addr in _nysGeoCache) return _nysGeoCache[addr];
+  let pt = null;
+  try {
+    const j = await fetch(NYS_GEOCODER + '?' + new URLSearchParams({ SingleLine: addr, outSR: '4326', maxLocations: '1', f: 'json' })).then(r => r.json());
+    const c = j.candidates && j.candidates[0];
+    if (c && c.score >= 88 && /^\d/.test(String(x.address))) pt = [c.location.y, c.location.x];
+  } catch {}
+  return (_nysGeoCache[addr] = pt);
+}
+async function _pool(items, n, fn) {
+  const q = items.slice(); await Promise.all(Array.from({ length: n }, async () => { while (q.length) await fn(q.shift()); }));
+}
+async function nysLocate(rows, onProgress) {
+  const loc = {};
+  const towns = {};
+  rows.forEach(x => { (towns[String(x.swis || '').slice(0, 4)] ||= []).push(x); });
+  let done = 0; const total = rows.length;
+  const tick = () => onProgress && onProgress(done, total);
+  // 1. Calibrate each town from up to 3 geocoded addresses that also have grid coords
+  await _pool(Object.entries(towns), 6, async ([t, list]) => {
+    if (!(t in _nysTownProj)) {
+      const samples = list.filter(x => x._ge > 0 && /^\d/.test(String(x.address))).slice(0, 3);
+      const pts = [];
+      for (const s of samples) { const g = await _nysGeocode(s); if (g) pts.push([s, g]); }
+      let best = null, bestErr = Infinity;
+      if (pts.length) for (const p of Object.keys(NYS_PROJ)) {
+        const errs = pts.map(([s, g]) => { const ll = _gridLL(s, p); return ll ? _dist(ll, g) : Infinity; }).sort((a, b) => a - b);
+        const med = errs[Math.floor((errs.length - 1) / 2)];
+        if (med < bestErr) { bestErr = med; best = p; }
+      }
+      _nysTownProj[t] = bestErr <= 400 ? best : (pts.length ? null : (NYS_COUNTY_PROJ[list[0].county] || null));
+      pts.forEach(([s, g]) => { loc[s.bbl] = [g[0], g[1], 'address']; });
+    }
+    const proj = _nysTownProj[t];
+    for (const x of list) {
+      if (loc[x.bbl]) continue;
+      const ll = _gridLL(x, proj);
+      if (ll) loc[x.bbl] = [ll[0], ll[1], 'grid'];
+    }
+    done += list.filter(x => loc[x.bbl]).length; tick();
+  });
+  // 2. Anything still unplaced (no grid coords, or town fits no projection): geocode each address
+  const rest = rows.filter(x => !loc[x.bbl]).slice(0, 300);
+  await _pool(rest, 8, async x => { const g = await _nysGeocode(x); if (g) loc[x.bbl] = [g[0], g[1], 'address']; done++; tick(); });
+  return loc;
+}
+
+async function renderNysHuntMap(rows, legend, vacantOnly) {
+  if (!window.proj4) await new Promise(r => setTimeout(r, 400));
+  if (!_nysLoc) {
+    legend.innerHTML = '<span class="lg-note">locating parcels…</span>';
+    _nysLoc = await nysLocate(rows, (d, t) => { legend.innerHTML = `<span class="lg-note">locating parcels… ${d}/${t}</span>`; });
+  }
+  _huntPins.clearLayers();
+  const color = x => x.out_of_state ? '#FF4B3E' : x.absentee ? '#F08A24' : (x.prop_class >= 300 && x.prop_class < 400) ? '#2BB673' : '#38A8B8';
+  const money = n => n ? '$' + Number(n).toLocaleString() : '';
+  const pts = []; let skipped = 0;
+  for (const x of rows) {
+    const p = _nysLoc[x.bbl];
+    if (!p) { skipped++; continue; }
+    if (vacantOnly && !(x.prop_class >= 300 && x.prop_class < 400)) continue;
+    const m = L.circleMarker([p[0], p[1]], { radius: 7, color: '#0D1117', weight: 1.2, fillColor: color(x), fillOpacity: 0.9 });
+    m.bindPopup(`<div class="pop-addr">${esc(x.address)}</div>
+      <div class="pop-k">${esc(x.city)}, ${esc(x.county)} Co.</div>
+      <div class="pop-k">${esc(x.owner || 'Owner not listed')}</div>
+      <div class="pop-k">${esc(x.bldg_class || '')}${x.market_value ? ' · ' + money(x.market_value) : x.assessed_value ? ' · ' + money(x.assessed_value) + ' assessed' : ''}</div>
+      ${x.out_of_state || x.absentee ? `<div class="pop-k neg">${x.out_of_state ? 'Out-of-state' : 'Absentee'} owner · ${esc(x.mailing || '')}</div>` : ''}
+      <div class="pop-k" style="font-size:10px;color:var(--ink-3)">${p[2] === 'address' ? 'Placed by address' : 'Placed by tax-map grid'} · <span class="pop-outline">loading lot outline…</span></div>
+      <button class="pop-btn" onclick="nysShowRow('${esc(x.bbl)}')">Show details →</button>`);
+    m.on('popupopen', e => nysOutline(x, p, e.popup));
+    m.on('mouseover', function () { this.setStyle({ weight: 2.5 }); this.setRadius(10); });
+    m.on('mouseout', function () { this.setStyle({ weight: 1.2 }); this.setRadius(7); });
+    m.addTo(_huntPins);
+    pts.push([p[0], p[1]]);
+  }
+  if (pts.length) _huntMap.fitBounds(L.latLngBounds(pts).pad(0.12), { maxZoom: 17 });
+  const sw = (bg, t) => `<span><i style="background:${bg}"></i>${t}</span>`;
+  legend.innerHTML = sw('#FF4B3E', 'out-of-state owner') + sw('#F08A24', 'absentee owner') + sw('#2BB673', 'vacant land') + sw('#38A8B8', 'other')
+    + `<span class="lg-note">${pts.length} pinned${skipped ? ' · ' + skipped + ' couldn\'t be located' : ''}${(window.__searchResults || []).length > 400 ? ' · first 400 shown' : ''}</span>`;
+}
+
+// Lot outline from the NYS parcel layer (38 counties share geometry). Point-in-polygon queries are indexed.
+let _nysOutlineLayer = null;
+async function nysOutline(x, p, popup) {
+  const set = t => { const el = popup.getElement && popup.getElement(); const s = el && el.querySelector('.pop-outline'); if (s) s.textContent = t; };
+  if (_nysOutlineLayer) { _huntMap.removeLayer(_nysOutlineLayer); _nysOutlineLayer = null; }
+  try {
+    const j = await fetch(NYS_PARCEL_LAYER + '?' + new URLSearchParams({ geometry: `${p[1]},${p[0]}`, geometryType: 'esriGeometryPoint', inSR: '4326',
+      spatialRel: 'esriSpatialRelIntersects', distance: '25', units: 'esriSRUnit_Meter', outFields: 'SWIS,PRINT_KEY,PARCEL_ADDR', returnGeometry: 'true', outSR: '4326', geometryPrecision: '6', f: 'json' })).then(r => r.json());
+    const feats = j.features || [];
+    const f = feats.find(f => f.attributes.PRINT_KEY === x.print_key) || null;
+    if (!f) { set(feats.length ? 'lot outline: no exact match nearby' : 'no lot outline (county doesn\'t share parcel maps)'); return; }
+    _nysOutlineLayer = L.layerGroup(f.geometry.rings.map(r => L.polygon(r.map(([lon, lat]) => [lat, lon]), { color: '#0d9488', weight: 3, fillOpacity: 0.2 }))).addTo(_huntMap);
+    set('lot outlined');
+  } catch { set('lot outline unavailable'); }
+}
+function nysShowRow(id) {
+  huntView('list');
+  const d = document.getElementById('nysd-' + id), row = document.getElementById('srow-' + id);
+  if (d) d.style.display = 'grid';
+  if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); row.style.outline = '2px solid var(--shark)'; setTimeout(() => row.style.outline = '', 2500); }
 }
 
 // Manually trigger the daily motivated-seller report on demand.
