@@ -771,7 +771,7 @@ function renderNJ(d) {
   const saleTxt = sale.price ? `${money(sale.price)}${sale.date ? ' · ' + esc(sale.date) : ''}` : sale.nominal ? `Nominal ($1 transfer)${sale.date ? ' · ' + esc(sale.date) : ''}` : (sale.date ? esc(sale.date) : '—');
 
   out.innerHTML = `
-    ${!d.parcel_exact ? `<div class="err" style="margin-bottom:12px"><strong>Closest parcel shown.</strong> The geocoder matched <em>${esc(g.matched || '')}</em>, but the parcel at that point is listed as <em>${esc(p.address || '')}</em>. Check the map before relying on it.</div>` : ''}
+    ${!d.parcel_exact ? `<div class="err" style="margin-bottom:12px"><strong>Closest parcel shown.</strong> The geocoder matched <em>${esc(g.matched || '')}</em>, but the parcel at that point is listed as <em>${esc(p.address || '')}</em>. Check the map before relying on it.${(d.suggestions||[]).length ? `<div style="margin-top:6px">Recorded addresses nearby on that street: ${d.suggestions.map(s => `<button onclick="q.value=this.dataset.a;run()" data-a="${esc(s)}" style="background:var(--steel);border:1px solid var(--line);border-radius:6px;padding:4px 9px;color:var(--shark);cursor:pointer;font-size:12px;margin:4px 6px 0 0">${esc(s.split(',')[0])} →</button>`).join('')}</div>` : ''}</div>` : ''}
     <section>
       <div class="sec-head"><h2>${esc(p.address || g.matched || '')}</h2><span class="src">New Jersey · ${esc(town)}, ${esc(p.county || '')} County</span></div>
       <p class="hint" style="margin:0 0 10px">Matched: ${esc(g.matched || '')} (score ${esc(String(Math.round(g.score || 0)))}) · Block ${esc(p.block || '—')} · Lot ${esc(p.lot || '—')}${p.qualifier ? ' · Qual ' + esc(p.qualifier) : ''} · PIN ${esc(p.pams_pin || '')}</p>

@@ -127,6 +127,14 @@ async function njTownsIn(address: string, geocodedCity?: string): Promise<string
   return hits;
 }
 
+// "22 grove street jersey city NJ" → "22 grove street" (cut at comma, else after the first street-type word)
+export function streetPart(v: string): string {
+  let t = v.split(",")[0].replace(/\s+(NJ|NEW JERSEY)\b.*$/i, "").trim();
+  const words = t.split(/\s+/);
+  const i = words.findIndex((w, k) => k > 1 && STREET_TYPES.has(normStreet(w)));
+  if (i >= 0) t = words.slice(0, i + 1).join(" ");
+  return t;
+}
 // Text search of the parcel composite: every lot on that street in that town, matched in code
 // (handles "106-108 N 6TH ST" for "108 North Sixth St"). Also returns nearest house numbers.
 async function njParcelByText(addr: string, towns: string[]) {
@@ -223,7 +231,7 @@ export async function buildNJReport(address: string) {
     if (!cands.length) continue;
     geos.push(...cands);
     const c = cands[0];
-    const r = await njParcelFor(c.x, c.y, [c.address.split(",")[0], v.split(",")[0]]);
+    const r = await njParcelFor(c.x, c.y, [c.address.split(",")[0], streetPart(v)]);
     if (r.feature && (r.exact || !feature)) { top = c; feature = r.feature; exact = r.exact; }
     if (exact) break;
   }
@@ -231,7 +239,7 @@ export async function buildNJReport(address: string) {
   if (!exact) {
     for (const v of variants) {
       const towns = await njTownsIn(v, geos[0]?.city);
-      const t = await njParcelByText(v.split(",")[0].replace(/\s+(NJ|NEW JERSEY)\b.*$/i, ""), towns).catch(() => ({ feature: null, suggestions: [] as string[] }));
+      const t = await njParcelByText(streetPart(v), towns).catch(() => ({ feature: null, suggestions: [] as string[] }));
       if (t.feature) { feature = t.feature; exact = true; via = "parcel records"; break; }
       if (!suggestions.length) suggestions = t.suggestions;
     }
@@ -272,6 +280,7 @@ export async function buildNJReport(address: string) {
     query: address,
     geocode: { matched: top.address, score: top.score, type: top.type, lat: top.y, lon: top.x, via, alternatives: geos.slice(1, 4).map((c: any) => c.address) },
     parcel_exact: exact,
+    suggestions: exact ? [] : suggestions,
     parcel: {
       pams_pin: a.PAMS_PIN, county: a.COUNTY, municipality: a.MUN_NAME, block: a.PCLBLOCK, lot: a.PCLLOT, qualifier: a.PCLQCODE || null,
       address: propLoc, property_class: cls, property_class_label: PROP_CLASS_LABEL[cls] || null, facility: a.FAC_NAME || null,
@@ -288,7 +297,7 @@ export async function buildNJReport(address: string) {
       out_of_state: outOfState,
     },
     geometry: { rings: feature.geometry?.rings || [], centroid },
-    sheriff_sales: await njSheriffSales([propLoc, top.address.split(",")[0], ...variants.map(v => v.split(",")[0])], String(a.MUN_NAME || ""), String(top.address).match(/\b0[78]\d{3}\b/)?.[0]),
+    sheriff_sales: await njSheriffSales([propLoc, top.address.split(",")[0], ...variants.map(v => streetPart(v))], String(a.MUN_NAME || ""), String(top.address).match(/\b0[78]\d{3}\b/)?.[0]),
     sources: [
       { name: "NJ Geocoder (NJOGIS)", url: NJ_GEOCODE },
       { name: "Parcels & MOD-IV Composite of NJ (NJOGIS)", url: NJ_PARCELS.replace(/\/query$/, "") },
