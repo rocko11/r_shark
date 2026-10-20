@@ -689,6 +689,12 @@ async function run() {
       return;
     }
     if (d.region === 'nj' && d.found !== false) { renderNJ(d); return; }
+    if (d.region === 'nj' && d.found === false) {
+      const sug = (d.suggestions || []).map(s => `<button onclick="q.value=this.dataset.a;run()" data-a="${esc(s)}"
+        style="background:var(--steel);border:1px solid var(--line);border-radius:6px;padding:5px 10px;color:var(--shark);cursor:pointer;font-size:12px;margin:6px 6px 0 0">${esc(s)} →</button>`).join('');
+      out.innerHTML = `<div class="err"><strong>No New Jersey parcel at that address.</strong><br>${esc(d.error || '')}${sug ? `<div style="margin-top:6px">${sug}</div>` : ''}</div>`;
+      return;
+    }
     if (!r.ok || d.found === false) {
       const e = String(d.error || d.detail || "");
       // Distinguish "this lot has no record" from "we couldn't reach the
