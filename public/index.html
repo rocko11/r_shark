@@ -749,6 +749,22 @@ async function run() {
 
 
 
+
+// Same Street View panel as the NYC report (interactive panorama, static photo fallback).
+const svSectionHtml = () => `
+    <section id="svsection" style="display:none">
+      <div class="sec-head"><h2>Street view</h2>
+        <span class="count" id="svmeta">Google</span></div>
+      <div class="svwrap">
+        <div id="svpano" style="display:none;height:400px;width:100%"></div>
+        <img id="svimg" alt="Street View of the property" style="width:100%;display:block">
+      </div>
+      <div class="maplegend" id="svbar" style="justify-content:space-between">
+        <span class="lg-note" id="svhint">static photo</span>
+        <a id="svopen" href="#" target="_blank" rel="noopener" style="color:var(--ink)">Open in Google Maps ↗</a>
+      </div>
+    </section>`;
+
 /* ---------- Map navigation outside NYC: neighbouring lots → their reports ---------- */
 const PARCEL_NAV = {
   nj: { url: 'https://services2.arcgis.com/XVOqAjTOJ5P6ngMu/arcgis/rest/services/Parcels_Composite_NJ_WM/FeatureServer/0/query',
@@ -889,6 +905,7 @@ function renderNYS(d) {
         ${p.ag_district ? cell('Agricultural district', esc(p.ag_district)) : ''}
       </div>
     </section>
+    ${svSectionHtml()}
     <p class="ownnote">Rest-of-state coverage: ${esc(d.source || '')}. NYC-only sections (violations, permits, zoning, ACRIS, liens) don't apply outside the five boroughs; upstate distress records are kept town by town.
       <a href="https://www.google.com/maps/search/${encodeURIComponent(g.matched || p.address || '')}" target="_blank" rel="noopener">Google Maps →</a></p>`;
 
@@ -907,6 +924,8 @@ function renderNYS(d) {
     setTimeout(() => _nysMap && _nysMap.invalidateSize(), 60);
     initParcelNav(_nysMap, 'nys', p.swis && p.print_key ? p.swis + '|' + p.print_key : null);
   }
+  const svAt = g.lat ? [g.lat, g.lon] : (d.geometry?.centroid || null);
+  if (svAt) loadStreetView(svAt[0], svAt[1]);
 }
 
 /* ---------- New Jersey property card (NJ geocoder + statewide parcel/MOD-IV composite) ---------- */
@@ -957,6 +976,7 @@ function renderNJ(d) {
         ${cell('Owner mailing address', esc(p.owner_mailing || '—'))}
       </div>
     </section>
+    ${svSectionHtml()}
     <section>
       <div class="sec-head"><h2>Sheriff sales</h2><span class="src">17 NJ counties · updated daily</span></div>
       ${sheriffHtml}
@@ -980,6 +1000,8 @@ function renderNJ(d) {
     setTimeout(() => _njMap && _njMap.invalidateSize(), 60);
     initParcelNav(_njMap, 'nj', p.pams_pin || null);
   }
+  const svAt = g.lat ? [g.lat, g.lon] : (d.geometry?.centroid || null);
+  if (svAt) loadStreetView(svAt[0], svAt[1]);
 }
 
 /* ---------- FAR section diagram (the signature) ----------
