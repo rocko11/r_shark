@@ -904,6 +904,9 @@ function renderNYS(d) {
         ${cell('Exemptions', esc((p.exemptions || []).join(', ') || 'none'))}
         ${p.ag_district ? cell('Agricultural district', esc(p.ag_district)) : ''}
       </div>
+      ${ownerLookupHtml({
+        property: { address: p.address || '', city: (String(g.matched || '').split(',')[1] || p.municipality || '').trim(), state: 'NY', zip: p.zip || (String(g.matched || '').match(/\b\d{5}\b/) || [''])[0] },
+        mailing: parseMailing(p.owner_mailing) })}
     </section>
     ${svSectionHtml()}
     <p class="ownnote">Rest-of-state coverage: ${esc(d.source || '')}. NYC-only sections (violations, permits, zoning, ACRIS, liens) don't apply outside the five boroughs; upstate distress records are kept town by town.
@@ -975,6 +978,9 @@ function renderNJ(d) {
         ${cell('Owner name', '<span class="hint" style="margin:0">Redacted statewide (Daniel\'s Law)</span>')}
         ${cell('Owner mailing address', esc(p.owner_mailing || '—'))}
       </div>
+      ${ownerLookupHtml({
+        property: { address: p.address || '', city: (String(g.matched || '').split(',')[1] || town || '').trim(), state: 'NJ', zip: (String(g.matched || '').match(/\b0[78]\d{3}\b/) || [''])[0] },
+        mailing: parseMailing(p.owner_mailing) })}
     </section>
     ${svSectionHtml()}
     <section>
@@ -1346,14 +1352,7 @@ function render(d) {
       // On-demand paid skip-trace for phone/email. Button only; fires a paid lookup on click.
       const addr = esc((id.address||"") + "");
       const zip = "";
-      const stHtml = `
-        <div class="ownblock" style="margin-top:8px">
-          <div class="edhead" style="font-size:11px;margin-bottom:6px">Owner phone &amp; email <span class="pop-k" style="text-transform:none;letter-spacing:0">· paid lookup</span></div>
-          <div id="stbox">
-            <button class="pop-btn" onclick="skipTrace('${addr}')" style="padding:7px 12px">Look up owner phone &amp; email →</button>
-            <p class="ownnote" style="margin:8px 0 0">Runs a paid skip-trace (DataSkip) for this owner's phone and email. Charged per successful match; a miss costs nothing. Not legal-to-call advice — you're responsible for DNC/TCPA compliance.</p>
-          </div>
-        </div>`;
+      const stHtml = ownerLookupHtml({ property: { address: id.address || "", city: /manhattan/i.test(id.borough || "") ? "New York" : (id.borough || ""), state: "NY", zip: id.zip || "" } });
       return pfHtml + ctHtml + stHtml;
     })()}
 
@@ -3102,21 +3101,68 @@ function downloadPdf() {
   }, 200);
 }
 
+// "505 LA GUARDIA PLACE 9B, NEW YORK, NY, 10012" → parts for the lookup form.
+function parseMailing(s) {
+  const parts = String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+  const out = { address: '', city: '', state: '', zip: '' };
+  if (!parts.length) return out;
+  if (/^\d{5}(-?\d{4})?$/.test(parts[parts.length - 1])) out.zip = parts.pop().slice(0, 5);
+  const last = parts[parts.length - 1] || '';
+  const m = last.match(/^(.*?)[\s,]+([A-Z]{2})(?:\s+(\d{5}))?$/i);
+  if (/^[A-Z]{2}$/i.test(last)) { out.state = parts.pop().toUpperCase(); }
+  else if (m && parts.length > 1) { parts.pop(); out.city = m[1]; out.state = m[2].toUpperCase(); if (m[3]) out.zip = m[3]; }
+  if (!out.city && parts.length > 1) out.city = parts.pop();
+  // "SOUTHAMPTON NY 11968" packed into one segment
+  const packed = out.city.match(/^(.*?)\s+([A-Z]{2})(?:\s+(\d{5}))?$/i);
+  if (packed) { out.city = packed[1]; out.state = out.state || packed[2].toUpperCase(); if (packed[3] && !out.zip) out.zip = packed[3]; }
+  out.address = parts.join(', ');
+  return out;
+}
+// Owner phone & email search box (paid DataSkip skip-trace), shared by NYC / NJ / NY State reports.
+// presets: { property: {address, city, state, zip}, mailing?: {...} }
+function ownerLookupHtml(presets) {
+  window.__stPresets = presets;
+  const p = presets.property || {};
+  const inp = (id, v, ph, w) => `<input id="${id}" value="${esc(v || '')}" placeholder="${ph}" style="flex:${w};min-width:0;padding:7px 9px;font-size:13px" onkeydown="if(event.key==='Enter')skipTraceForm()">`;
+  const btn = (k, label) => `<button class="link" style="font-size:11.5px;margin-right:10px" onclick="stUse('${k}')">${label}</button>`;
+  return `
+    <div class="ownblock" style="margin-top:8px">
+      <div class="edhead" style="font-size:11px;margin-bottom:6px">Owner phone &amp; email <span class="pop-k" style="text-transform:none;letter-spacing:0">· paid lookup</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        ${inp('st_addr', p.address, 'Street address', 4)}${inp('st_city', p.city, 'City', 2)}${inp('st_state', p.state || 'NY', 'ST', 0.6)}${inp('st_zip', p.zip, 'ZIP', 1)}
+      </div>
+      <div style="margin-bottom:6px">Search by: ${btn('property', 'Property address')}${presets.mailing && presets.mailing.address ? btn('mailing', "Owner's mailing address") : ''}</div>
+      <button class="pop-btn" onclick="skipTraceForm()" style="padding:7px 12px">Look up owner phone &amp; email →</button>
+      <div id="stbox"><p class="ownnote" style="margin:8px 0 0">Runs a paid skip-trace (DataSkip) on the address above. Charged per successful match; a miss costs nothing. For absentee or LLC owners, searching the owner's mailing address often matches better. Not legal-to-call advice — you're responsible for DNC/TCPA compliance.</p></div>
+    </div>`;
+}
+function stUse(which) {
+  const p = (window.__stPresets || {})[which]; if (!p) return;
+  const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v || ''; };
+  set('st_addr', p.address); set('st_city', p.city); set('st_state', p.state || 'NY'); set('st_zip', p.zip);
+}
+function skipTraceForm() {
+  const v = id => (document.getElementById(id)?.value || '').trim();
+  if (!v('st_addr')) { const b = document.getElementById('stbox'); if (b) b.innerHTML = '<p class="ownnote" style="margin:8px 0 0">Enter a street address to search.</p>'; return; }
+  skipTrace(v('st_addr'), { city: v('st_city'), state: (v('st_state') || 'NY').toUpperCase(), zip: v('st_zip') });
+}
+
 // On-demand paid owner skip-trace. Calls /api/skiptrace and renders phone/email.
-async function skipTrace(address) {
+async function skipTrace(address, opts) {
   const box = document.getElementById("stbox");
   if (!box) return;
-  box.innerHTML = '<p class="ownnote" style="margin:0">Looking up owner contact… (paid lookup in progress)</p>';
-  // DataSkip matches far better with full city/state/zip — pull them from the loaded report.
+  box.innerHTML = '<p class="ownnote" style="margin:8px 0 0">Looking up owner contact… (paid lookup in progress)</p>';
+  // DataSkip matches far better with full city/state/zip — from the form, else from the loaded NYC report.
   const rid = (lastReport && lastReport.identity) || {};
   // NYC borough is the USPS city, except Manhattan's postal city is "New York".
-  let city = rid.borough || "";
+  let city = (opts && opts.city) || rid.borough || "";
   if (/manhattan/i.test(city)) city = "New York";
-  const zip = rid.zip || "";
+  const zip = (opts && opts.zip) || rid.zip || "";
+  const state = (opts && opts.state) || "NY";
   try {
     const r = await fetch("/api/skiptrace", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ address: address, city: city, state: "NY", zip: zip }),
+      body: JSON.stringify({ address: address, city: city, state: state, zip: zip }),
     });
     const d = await r.json();
     if (d.enabled === false) {
