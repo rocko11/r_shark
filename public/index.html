@@ -762,7 +762,8 @@ function renderNYS(d) {
   ].filter(Boolean).join(' · ');
   const lot = p.lot_sf ? `${p.lot_sf.toLocaleString()} sf · ${p.acres < 10 ? p.acres.toFixed(2) : p.acres.toFixed(1)} acres${p.frontage && p.depth ? ` · ${p.frontage} × ${p.depth} ft` : ''}<br><span class="hint" style="margin:0">${esc(p.acres_source || '')}</span>` : (p.frontage && p.depth ? `${p.frontage} × ${p.depth} ft` : '—');
   const val = p.market_value || null;
-  const ppsf = val && p.lot_sf ? '$' + (val / p.lot_sf).toFixed(2) + ' / sf of land' : '—';
+  const basis = val || p.assessed_total || null;
+  const ppsf = basis && p.lot_sf ? '$' + (basis / p.lot_sf).toFixed(2) + ' / sf of land' + (val ? '' : ' (assessed)') : '—';
   const bld = [p.building_style, p.living_sf ? p.living_sf.toLocaleString() + ' sf living' : '', p.bedrooms ? p.bedrooms + ' bd' : '', p.full_baths ? p.full_baths + ' ba' : '', p.kitchens ? p.kitchens + ' kitchen' + (p.kitchens > 1 ? 's' : '') : ''].filter(Boolean).join(' · ');
   const sug = (d.suggestions || []).map(s => `<button onclick="q.value=this.dataset.a;run()" data-a="${esc(s)}" style="background:var(--steel);border:1px solid var(--line);border-radius:6px;padding:4px 9px;color:var(--shark);cursor:pointer;font-size:12px;margin:4px 6px 0 0">${esc(s.split(',')[0])} →</button>`).join('');
   out.innerHTML = `
