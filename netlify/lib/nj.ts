@@ -27,7 +27,8 @@ async function getJSON(url: string, ms = 8000): Promise<any> {
 const up = (s: any) => String(s ?? "").toUpperCase().replace(/[^A-Z0-9 \-]/g, " ").replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();
 const STREET_ABBR: [RegExp, string][] = [
   [/\bSTREET\b/g, "ST"], [/\bAVENUE\b/g, "AVE"], [/\bAV\b/g, "AVE"], [/\bBOULEVARD\b/g, "BLVD"], [/\bROAD\b/g, "RD"],
-  [/\bPLACE\b/g, "PL"], [/\bDRIVE\b/g, "DR"], [/\bLANE\b/g, "LN"], [/\bTERRACE\b/g, "TER"], [/\bCOURT\b/g, "CT"],
+  [/\bPLACE\b/g, "PL"], [/\bTERR\b/g, "TER"], [/\bPLAZA\b/g, "PLZ"], [/\bCIRCLE\b/g, "CIR"], [/\bTURNPIKE\b/g, "TPKE"],
+  [/\bSQUARE\b/g, "SQ"], [/\bEXTENSION\b/g, "EXT"], [/\bTRAIL\b/g, "TRL"], [/\bCRESCENT\b/g, "CRES"], [/\bSAINT\b/g, "ST"], [/\bMOUNT\b/g, "MT"], [/\bDRIVE\b/g, "DR"], [/\bLANE\b/g, "LN"], [/\bTERRACE\b/g, "TER"], [/\bCOURT\b/g, "CT"],
   [/\bHIGHWAY\b/g, "HWY"], [/\bPARKWAY\b/g, "PKWY"], [/\bNORTH\b/g, "N"], [/\bSOUTH\b/g, "S"], [/\bEAST\b/g, "E"], [/\bWEST\b/g, "W"],
   [/\bFIRST\b/g, "1ST"], [/\bSECOND\b/g, "2ND"], [/\bTHIRD\b/g, "3RD"], [/\bFOURTH\b/g, "4TH"], [/\bFIFTH\b/g, "5TH"],
   [/\bSIXTH\b/g, "6TH"], [/\bSEVENTH\b/g, "7TH"], [/\bEIGHTH\b/g, "8TH"], [/\bNINTH\b/g, "9TH"], [/\bTENTH\b/g, "10TH"],
@@ -38,8 +39,9 @@ export function normStreet(s: string) {
   return t;
 }
 // "714 THIRD STREET" → { num: "714", street: "3RD ST" }
+const stripUnit = (s: string) => String(s || "").replace(/\s*(#\s*\S+|\b(APT|APARTMENT|UNIT|STE|SUITE|FL|FLOOR)\b\.?\s*\S+)\s*$/i, "").replace(/\s*(#\s*\S+|\b(APT|APARTMENT|UNIT|STE|SUITE)\b\.?\s*\S+)(?=\s*,)/i, "");
 function splitAddr(s: string) {
-  const t = normStreet(s);
+  const t = normStreet(stripUnit(s));
   const m = t.match(/^(\d+[A-Z]?(?:\s*-\s*\d+[A-Z]?)?)\s+(.*)$/);
   return m ? { num: m[1].replace(/\s/g, ""), street: m[2] } : { num: "", street: t };
 }
@@ -54,16 +56,31 @@ export function numRange(n: string): [number, number] | null {
 }
 const STREET_TYPES = new Set(["ST", "AVE", "RD", "BLVD", "PL", "DR", "LN", "TER", "CT", "HWY", "PKWY", "WAY", "PLZ", "PLAZA", "SQ", "CIR", "TPKE", "PIKE", "ROUTE", "RT", "EXT", "ALY", "ROW", "WALK", "PATH", "XING", "TRL", "LOOP"]);
 // Core street name: drop directionals, type words, "JR", single-letter initials ("J F KENNEDY" → "KENNEDY").
+function coreTokens(street: string): string[] {
+  const toks = normStreet(street).replace(/#.*$/, "").split(" ").filter(Boolean);
+  // keep a type word that IS the name ("AVENUE A" → A, "ST" in "ST JAMES" is SAINT)
+  const core = toks.filter((t, i) => !(STREET_TYPES.has(t) && i > 0 && i === toks.length - 1) && !(STREET_TYPES.has(t) && i > 0 && i < toks.length - 1 && t !== "ST")
+    && !(["N", "S", "E", "W", "JR", "SR"].includes(t) && toks.length > 1) && !(t.length === 1 && i < toks.length - 1 && /[A-Z]/.test(t)));
+  return core.length ? core : toks.slice(0, 1);
+}
+// Last word of the name — used for the SQL LIKE prefilter.
 export function streetCore(street: string): string {
-  const toks = normStreet(street).split(" ").filter(Boolean);
-  const core = toks.filter((t, i) => !STREET_TYPES.has(t) && !(["N", "S", "E", "W", "JR"].includes(t)) && !(t.length === 1 && i < toks.length - 1 && /[A-Z]/.test(t)));
-  return core.length ? core[core.length - 1] : (toks[0] || "");
+  const c = coreTokens(street);
+  return c[c.length - 1] || "";
+}
+// Names compared with spaces removed; one may end with the other ("JOHN F KENNEDY" ~ "KENNEDY").
+function sameStreet(a: string, b: string): boolean {
+  const x = coreTokens(a).join(""), y = coreTokens(b).join("");
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const [s, l] = x.length < y.length ? [x, y] : [y, x];
+  return s.length >= 5 && l.endsWith(s);
 }
 export function addrMatch(a: string, b: string): boolean {
   const A = splitAddr(a), B = splitAddr(b);
   const ra = numRange(A.num), rb = numRange(B.num);
   if (!ra || !rb) return false;
-  return ra[0] <= rb[1] && rb[0] <= ra[1] && streetCore(A.street) === streetCore(B.street);
+  return ra[0] <= rb[1] && rb[0] <= ra[1] && sameStreet(A.street, B.street);
 }
 // Collapse doubled street types the user typed ("newark avenue street" → "newark avenue")
 // and split "A/K/A" aliases into separate addresses to try.
@@ -129,7 +146,7 @@ async function njTownsIn(address: string, geocodedCity?: string): Promise<string
 
 // "22 grove street jersey city NJ" → "22 grove street" (cut at comma, else after the first street-type word)
 export function streetPart(v: string): string {
-  let t = v.split(",")[0].replace(/\s+(NJ|NEW JERSEY)\b.*$/i, "").trim();
+  let t = v.split(",")[0].replace(/\s+(NJ|NEW JERSEY)\b.*$/i, "").replace(/\s*(#\s*\S+|\b(APT|APARTMENT|UNIT|STE|SUITE)\b\.?\s*\S+)/i, "").trim();
   const words = t.split(/\s+/);
   const i = words.findIndex((w, k) => k > 1 && STREET_TYPES.has(normStreet(w)));
   if (i >= 0) t = words.slice(0, i + 1).join(" ");
@@ -143,7 +160,7 @@ async function njParcelByText(addr: string, towns: string[]) {
   if (!towns.length || !core || core.length < 2) return { feature: null, suggestions: [] as string[] };
   const where = `MUN_NAME IN (${towns.map(t => `'${t.replace(/'/g, "''")}'`).join(",")}) AND PROP_LOC LIKE '%${core.replace(/'/g, "''")}%'`;
   const j = await getJSON(`${NJ_PARCELS}?${new URLSearchParams({ where, outFields: PARCEL_FIELDS, returnGeometry: "true", outSR: "4326", geometryPrecision: "6", resultRecordCount: "2000", f: "json" })}`, 9000);
-  const onStreet = (j.features || []).filter((f: any) => streetCore(splitAddr(f.attributes?.PROP_LOC || "").street) === core);
+  const onStreet = (j.features || []).filter((f: any) => sameStreet(splitAddr(f.attributes?.PROP_LOC || "").street, want.street));
   const hit = onStreet.find((f: any) => addrMatch(f.attributes.PROP_LOC, addr));
   if (hit) return { feature: hit, suggestions: [] };
   const target = numRange(want.num)?.[0] ?? 0;
@@ -206,7 +223,7 @@ async function njSheriffSales(addrs: string[], muni: string, zip?: string) {
     const rows = await njssRows();
     return rows.filter(r => {
       const full = up(r.address || "");
-      const aliases = String(r.address || "").split(/\s+A\/?K\/?A\s+/i).map(s => s.split(",")[0]);
+      const aliases = String(r.address || "").split(/\s+A\/?K\/?A\s+/i).map(s => streetPart(s));
       const sameTown = (!!town && full.includes(town)) || (!!zip && full.includes(zip));
       return sameTown && aliases.some(al => wants.some(w => addrMatch(al, w)));
     }).map(r => ({
