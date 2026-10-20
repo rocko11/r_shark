@@ -586,7 +586,11 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
   </div>
 
   <div id="panel-search" hidden>
-    <div class="smodes">
+    <div class="smodes sregion" style="margin-bottom:6px">
+      <button class="smode smode-on" data-r="nyc" onclick="setSRegion('nyc')">🗽 NYC — 5 boroughs</button>
+      <button class="smode" data-r="nys" onclick="setSRegion('nys')">🌲 Rest of NY State</button>
+    </div>
+    <div class="smodes" id="smodes-nyc">
       <button class="smode smode-on" data-m="owner" onclick="setSMode('owner')">By owner</button>
       <button class="smode" data-m="zip" onclick="setSMode('zip')">By ZIP</button>
       <button class="smode" data-m="cd" onclick="setSMode('cd')">By community board</button>
@@ -1886,6 +1890,52 @@ function showTab(name) {
 
 /* ---------- property search ---------- */
 let sMode = 'owner';
+let sRegion = 'nyc';
+const NYS_COUNTIES = ["Albany","Allegany","Broome","Cattaraugus","Cayuga","Chautauqua","Chemung","Chenango","Clinton","Columbia","Cortland","Delaware","Dutchess","Erie","Essex","Franklin","Fulton","Genesee","Greene","Hamilton","Herkimer","Jefferson","Lewis","Livingston","Madison","Monroe","Montgomery","Nassau","Niagara","Oneida","Onondaga","Ontario","Orange","Orleans","Oswego","Otsego","Putnam","Rensselaer","Rockland","Saratoga","Schenectady","Schoharie","Schuyler","Seneca","Steuben","St Lawrence","Suffolk","Sullivan","Tioga","Tompkins","Ulster","Warren","Washington","Wayne","Westchester","Wyoming","Yates"];
+function setSRegion(r) {
+  sRegion = r;
+  document.querySelectorAll('[data-r]').forEach(b => b.classList.toggle('smode-on', b.dataset.r === r));
+  document.getElementById('smodes-nyc').hidden = r !== 'nyc';
+  if (r === 'nyc') { setSMode(sMode === 'nys' ? 'owner' : sMode); return; }
+  sMode = 'nys';
+  const enter = `onkeydown="if(event.key==='Enter')runSearch()"`;
+  document.getElementById('sform').innerHTML = `
+    <div class="sfilters">
+      <div class="sfield"><label>County</label>
+        <select id="s_county"><option value="">Any county (owner search)</option>${NYS_COUNTIES.map(c => `<option>${c}</option>`).join('')}</select></div>
+      <div class="sfield"><label>City / town / village</label><input id="s_muni" placeholder="e.g. Yonkers, Hempstead" ${enter}></div>
+      <div class="sfield"><label>Street</label><input id="s_street" placeholder="e.g. Main" ${enter}></div>
+      <div class="sfield"><label>Owner name</label><input id="s_q" placeholder="e.g. Smith or ACME LLC" ${enter}></div>
+    </div>
+    <div class="sfilters" style="margin-top:8px">
+      <div class="sfield"><label>Property type</label>
+        <select id="s_class">
+          <option value="">Any</option>
+          <option value="2">Residential (all)</option>
+          <option value="210">1-family</option>
+          <option value="220">2-family</option>
+          <option value="230">3-family</option>
+          <option value="28">Multiple residences</option>
+          <option value="411">Apartments (4+ units)</option>
+          <option value="4">Commercial (all)</option>
+          <option value="48">Mixed-use / multi-purpose</option>
+          <option value="7">Industrial</option>
+          <option value="1">Agricultural</option>
+        </select></div>
+      <div class="sfield"><label>Min market value ($)</label><input id="s_minval" placeholder="" ${enter}></div>
+      <div class="sfield"><label>Max market value ($)</label><input id="s_maxval" placeholder="750000" ${enter}></div>
+      <div class="sfield"><label>Owner</label>
+        <select id="s_absentee">
+          <option value="">Any owner</option>
+          <option value="absentee">Absentee (mails elsewhere)</option>
+          <option value="out_of_state">Out-of-state owner</option>
+        </select></div>
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:6px 0 10px"><input type="checkbox" id="s_vacant"> Vacant land only</label>
+    <button class="sgo" onclick="runSearch()">Search →</button>
+    <p class="hint" style="margin-top:8px">All 57 counties outside NYC — 4.7M parcels from the NY State assessment rolls (owner, mailing address, market value, property class). Pick a county (add a town to narrow it), or search an owner name statewide. <strong>Absentee</strong> = owner's mailing address differs from the property, a classic motivated-seller signal. Full reports and the map are NYC-only; state results expand in place.</p>`;
+  document.getElementById('sresults').innerHTML = '';
+}
 function setSMode(m) {
   sMode = m;
   document.querySelectorAll('.smode').forEach(b => b.classList.toggle('smode-on', b.dataset.m === m));
@@ -2024,6 +2074,9 @@ async function runSearch() {
     if (val('s_zip')) p.set('zip', val('s_zip'));
     p.set('stage', document.getElementById('s_fc_stage')?.value || 'all');
     if (val('s_class')) p.set('class', val('s_class'));
+  } else if (sMode === 'nys') {
+    ['county','muni','street','q','class','minval','maxval','absentee'].forEach(k => { const v = val('s_' + k); if (v) p.set(k, k.endsWith('val') ? v.replace(/[$,\s]/g, '') : v); });
+    if (document.getElementById('s_vacant')?.checked) p.set('vacant', '1');
   } else if (sMode === 'lotsize') {
     p.set('mode', 'filter'); // backend handles lot size under the filter mode
     ['zip','cd','boro:borough','minlot','maxlot'].forEach(pair => {
@@ -2032,7 +2085,7 @@ async function runSearch() {
     });
     if (document.getElementById('s_vacant')?.checked) p.set('vacant', '1');
   }
-  res.innerHTML = '<p class="loading">Searching PLUTO…</p>';
+  res.innerHTML = `<p class="loading">${sMode === 'nys' ? 'Searching NY State assessment rolls…' : 'Searching PLUTO…'}</p>`;
   try {
     const r = await fetch('/api/search?' + p.toString());
     const d = await r.json();
@@ -2041,8 +2094,8 @@ async function runSearch() {
     window.__searchResults = d.results;
     window.__searchMeta = { mode: sMode, count: d.count };
     res.innerHTML = `<div style="display:flex;align-items:center;gap:12px;margin:10px 0;flex-wrap:wrap">
-        <span class="hint" style="margin:0">${d.count} result${d.count===1?'':'s'} — click any to open its report.</span>
-        <span class="vtoggle"><button class="mbtn mbtn-on" data-hv="list" onclick="huntView('list')">List</button><button class="mbtn" data-hv="map" onclick="huntView('map')">Map</button></span>
+        <span class="hint" style="margin:0">${d.count.toLocaleString()} result${d.count===1?'':'s'}${d.region === 'nys' ? ` · ${d.roll_year} assessment roll${d.capped ? ' · first matches only — narrow by town or street' : ''} — click any to expand.` : ' — click any to open its report.'}</span>
+        ${d.region === 'nys' ? '' : `<span class="vtoggle"><button class="mbtn mbtn-on" data-hv="list" onclick="huntView('list')">List</button><button class="mbtn" data-hv="map" onclick="huntView('map')">Map</button></span>`}
         <button class="sgo" style="margin:0;padding:6px 12px;font-size:11px" onclick="downloadSearchCsv()">⭳ Download to Excel</button>
         <button class="sgo" id="bulk-skip-btn" style="margin:0;padding:6px 12px;font-size:11px;background:var(--teal);color:#0A0E14" onclick="bulkSkipTrace()">📞 Bulk skip-trace all (${Math.min(d.results.length,50)})</button>
       </div>
@@ -2180,6 +2233,7 @@ async function triggerDailyReport() {
 
 // Render a single Hunt result row, optionally with injected contact data.
 function renderSearchRow(x, contact) {
+  if (x.state_row) return renderNysRow(x, contact);
   const bbl = esc(x.bbl);
   const addr = esc(x.address || x.bbl);
   const distress = x.fc_stage
@@ -2221,6 +2275,52 @@ function renderSearchRow(x, contact) {
   </div>`;
 }
 
+// NY State (outside NYC) result row — no PLUTO report, so it expands in place.
+function renderNysRow(x, contact) {
+  const id = esc(x.bbl);
+  const money = n => n ? '$' + Number(n).toLocaleString() : '—';
+  const flags = [
+    x.out_of_state ? '<span class="neg" style="font-weight:700">Out-of-state owner</span>' : x.absentee ? '<span class="neg" style="font-weight:700">Absentee owner</span>' : '',
+    x.prop_class >= 300 && x.prop_class < 400 ? '<span style="color:var(--shark);font-weight:700">Vacant land</span>' : '',
+  ].filter(Boolean).join(' · ');
+  let contactHtml = '';
+  if (contact && contact.hit) {
+    const phones = (contact.phones||[]).map(p => `<strong>${esc(p.number)}</strong>${p.dnc ? ' <span style="color:var(--blood);font-size:10px">DNC</span>' : ''}`).join(' · ');
+    const emails = (contact.emails||[]).map(esc).join(', ');
+    contactHtml = `<div class="ownnote" style="margin:4px 0 0">${contact.owner_name ? esc(contact.owner_name) + ' &nbsp;' : ''}${phones}${emails ? (phones ? ' · ' : '') + `<span style="color:var(--teal)">${emails}</span>` : ''}${!phones && !emails ? '<span style="color:var(--iron)">No phone/email returned</span>' : ''}</div>`;
+  } else if (contact) {
+    contactHtml = `<div class="ownnote" style="margin:4px 0 0;color:var(--iron)">${contact.error ? 'Lookup error: ' + esc(contact.error) : 'No match found'}</div>`;
+  }
+  const maps = 'https://www.google.com/maps/search/' + encodeURIComponent(`${x.address}, ${x.city}, NY`);
+  const kv = (k, v) => v ? `<div><span style="color:var(--ink-3)">${k}:</span> ${v}</div>` : '';
+  return `<div class="srow" id="srow-${id}" onclick="toggleNysRow('${id}', event)" style="flex-wrap:wrap">
+    <div style="flex:1;min-width:0">
+      <div class="a">${esc(x.address)}<span style="font-weight:400;color:var(--ink-2)"> · ${esc(x.city)}, ${esc(x.county)} Co.</span></div>
+      <div class="m">${esc(x.owner || 'Owner not listed')}${x.bldg_class ? ' · ' + esc(x.bldg_class) : ''}${flags ? ' · ' + flags : ''}</div>
+      ${contactHtml}
+    </div>
+    <div class="m" style="text-align:right;white-space:nowrap;flex-shrink:0">${x.market_value ? money(x.market_value) + '<br><span style="font-size:10px">market value</span>' : x.assessed_value ? money(x.assessed_value) + '<br><span style="font-size:10px">assessed</span>' : ''}${x.lot_area ? '<br>' + x.lot_area.toLocaleString() + ' sf' : ''}</div>
+    <div class="nys-detail" id="nysd-${id}" style="flex-basis:100%;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-2);display:none;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:4px 16px">
+      ${kv('Owner mailing address', esc(x.mailing))}
+      ${kv('Full market value', money(x.market_value))}
+      ${kv('Assessed value', money(x.assessed_value) + (x.land_assessed ? ' (land ' + money(x.land_assessed) + ')' : ''))}
+      ${kv('Lot', x.frontage && x.depth ? `${x.frontage} × ${x.depth} ft` : '')}
+      ${kv('Tax map # (SBL)', esc(x.print_key))}
+      ${kv('SWIS', esc(x.swis))}
+      ${kv('School district', esc(x.school_district))}
+      ${kv('Deed', esc(x.deed))}
+      ${kv('Exemption code', esc(x.exemption))}
+      ${kv('Roll year', esc(x.roll_year))}
+      <div><a href="${maps}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--shark)">Open in Google Maps →</a></div>
+    </div>
+  </div>`;
+}
+function toggleNysRow(id, ev) {
+  if (ev && ev.target.closest('a')) return;
+  const d = document.getElementById('nysd-' + id);
+  if (d) d.style.display = d.style.display === 'grid' ? 'none' : 'grid';
+}
+
 // Bulk skip-trace all Hunt results (up to 50). Calls /api/skiptrace-bulk, then
 // re-renders each row with the returned contact data inline.
 async function bulkSkipTrace() {
@@ -2234,7 +2334,7 @@ async function bulkSkipTrace() {
   const toTrace = rows.slice(0, 50).map(x => ({
     bbl: x.bbl,
     address: x.address || x.bbl,
-    city: /manhattan/i.test(x.borough||'') ? 'New York' : (x.borough || 'Brooklyn'),
+    city: x.state_row ? x.city : /manhattan/i.test(x.borough||'') ? 'New York' : (x.borough || 'Brooklyn'),
     state: 'NY',
     zip: x.zip || '',
   }));
@@ -2267,7 +2367,7 @@ async function bulkSkipTrace() {
       el.outerHTML = newHtml;
       // Re-attach click handler (outerHTML replaces the element)
       const newEl = document.getElementById(`srow-${x.bbl}`);
-      if (newEl) newEl.onclick = () => loadBBL(x.bbl);
+      if (newEl && !x.state_row) newEl.onclick = () => loadBBL(x.bbl);
     });
 
     // Store contacts on results for CSV export
@@ -2304,6 +2404,11 @@ function downloadSearchCsv() {
     ["ZIP", "zip"], ["Lien type", "lien_type"], ["Lien cycle", "cycle"],
     ["Foreclosure stage", "fc_stage"], ["Foreclosure date", "fc_date"], ["Source", "source"],
     ["Is condo", "is_condo"],
+    ...(rows.some(r => r.state_row) ? [
+      ["City/town", "city"], ["County", "county"], ["Property class", "bldg_class"], ["Market value", "market_value"],
+      ["Assessed value", "assessed_value"], ["Owner mailing address", "mailing"], ["Absentee owner", "absentee"],
+      ["Out-of-state owner", "out_of_state"], ["Tax map # (SBL)", "print_key"], ["SWIS", "swis"], ["School district", "school_district"],
+    ] : []),
     ...(hasContact ? [
       ["Matched name", "_c_name"], ["Phone 1", "_c_phone1"], ["Phone 2", "_c_phone2"],
       ["Email 1", "_c_email1"], ["Email 2", "_c_email2"], ["Mailing address", "_c_mailing"],
@@ -2328,7 +2433,7 @@ function downloadSearchCsv() {
       _c_mailing: ct ? (ct.mailing_address || '') : '',
     };
     return cols.map(c =>
-      c[1] === null ? q("https://rshark.netlify.app/?bbl=" + (r.bbl || "")) :
+      c[1] === null ? q(r.state_row ? "" : "https://rshark.netlify.app/?bbl=" + (r.bbl || "")) :
       (c[1].startsWith('_c_') ? q(extra[c[1]]) : q(r[c[1]]))
     ).join(",");
   }).join("\r\n");
