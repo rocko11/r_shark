@@ -665,7 +665,9 @@ document.addEventListener("click", e => {
 async function run() {
   const v = q.value.trim();
   if (!v) return;
-  out.innerHTML = `<p class="loading">Pulling PLUTO, DOB, ECB, HPD, ACRIS…</p>`;
+  out.innerHTML = /\b(NJ|New Jersey|0[78]\d{3})\b/i.test(v)
+    ? `<p class="loading">Looking up the New Jersey tax parcel…</p>`
+    : `<p class="loading">Pulling PLUTO, DOB, ECB, HPD, ACRIS…</p>`;
   try {
     const isBBL = /^\d{10}$/.test(v);
     const url = isBBL ? `/api/report?bbl=${v}` : `/api/report?address=${encodeURIComponent(v)}`;
@@ -681,6 +683,11 @@ async function run() {
         <code>/api/canary</code> to find out which.</div>`;
       return;
     }
+    if (d.region && d.region !== 'nj' && d.found === false) {
+      out.innerHTML = `<div class="err"><strong>Outside R Shark's report coverage.</strong><br>${esc(d.error || '')}</div>`;
+      return;
+    }
+    if (d.region === 'nj' && d.found !== false) { renderNJ(d); return; }
     if (!r.ok || d.found === false) {
       const e = String(d.error || d.detail || "");
       // Distinguish "this lot has no record" from "we couldn't reach the
@@ -726,6 +733,79 @@ async function run() {
   } catch (err) {
     out.innerHTML = `<div class="err"><strong>Request failed.</strong><br>
       ${esc(err.message)}. Check the API is running and the Socrata token is set in Netlify.</div>`;
+  }
+}
+
+
+/* ---------- New Jersey property card (NJ geocoder + statewide parcel/MOD-IV composite) ---------- */
+let _njMap = null;
+function renderNJ(d) {
+  lastReport = d;
+  const p = d.parcel || {}, g = d.geocode || {};
+  const money = n => n == null ? '—' : '$' + Math.round(Number(n)).toLocaleString('en-US');
+  const cell = (k, v) => `<div class="cell"><span class="k">${k}</span><span class="v">${v ?? '—'}</span></div>`;
+  const town = String(p.municipality || '').replace(/\s+(CITY|TOWN|TOWNSHIP|BOROUGH|VILLAGE)$/i, '');
+  const sales = d.sheriff_sales;
+  const openSale = (sales || []).find(s => s.on_open_list);
+  const sheriffHtml = sales === null
+    ? `<p class="hint">Sheriff-sale list unavailable right now.</p>`
+    : !sales.length ? `<p class="hint">Not on any of the 17 CivilView county sheriff-sale lists.</p>`
+    : sales.map(s => `<div style="border:1px solid ${s.on_open_list ? 'var(--blood,#dc2626)' : 'var(--line)'};border-radius:10px;padding:10px 12px;margin-bottom:8px">
+        <div><strong style="color:${s.on_open_list ? 'var(--blood,#dc2626)' : 'var(--ink-2)'}">${esc(s.status || '')}${s.sale_date ? ' · sale ' + esc(s.sale_date) : ''}</strong> <span class="hint" style="margin:0">${esc(s.county || '')} · Sheriff #${esc(s.sheriff_number || '')} · Docket ${esc(s.docket || '')}</span></div>
+        <div style="font-size:13px;margin-top:4px">Judgment <strong>${money(s.judgment)}</strong> · Upset (opening bid) <strong>${money(s.upset)}</strong></div>
+        <div style="font-size:12px;color:var(--ink-2);margin-top:3px">Plaintiff: ${esc(s.plaintiff || '—')}<br>Defendant: ${esc(s.defendant || '—')}<br>Attorney: ${esc(s.attorney || '—')}${s.attorney_phone ? ' · ' + esc(s.attorney_phone) : ''}</div>
+      </div>`).join('');
+  const flags = [
+    openSale ? `<span class="neg" style="font-weight:700">⚖️ Sheriff sale ${esc(openSale.sale_date || '')}</span>` : '',
+    p.out_of_state ? '<span class="neg" style="font-weight:700">Out-of-state owner</span>' : p.absentee ? '<span class="neg" style="font-weight:700">Absentee owner</span>' : '',
+    String(p.property_class) === '1' ? '<span style="color:var(--shark);font-weight:700">Vacant land</span>' : '',
+  ].filter(Boolean).join(' · ');
+  const sale = p.last_sale || {};
+  const saleTxt = sale.price ? `${money(sale.price)}${sale.date ? ' · ' + esc(sale.date) : ''}` : sale.nominal ? `Nominal ($1 transfer)${sale.date ? ' · ' + esc(sale.date) : ''}` : (sale.date ? esc(sale.date) : '—');
+
+  out.innerHTML = `
+    ${!d.parcel_exact ? `<div class="err" style="margin-bottom:12px"><strong>Closest parcel shown.</strong> The geocoder matched <em>${esc(g.matched || '')}</em>, but the parcel at that point is listed as <em>${esc(p.address || '')}</em>. Check the map before relying on it.</div>` : ''}
+    <section>
+      <div class="sec-head"><h2>${esc(p.address || g.matched || '')}</h2><span class="src">New Jersey · ${esc(town)}, ${esc(p.county || '')} County</span></div>
+      <p class="hint" style="margin:0 0 10px">Matched: ${esc(g.matched || '')} (score ${esc(String(Math.round(g.score || 0)))}) · Block ${esc(p.block || '—')} · Lot ${esc(p.lot || '—')}${p.qualifier ? ' · Qual ' + esc(p.qualifier) : ''} · PIN ${esc(p.pams_pin || '')}</p>
+      ${flags ? `<p style="margin:0 0 10px">${flags}</p>` : ''}
+      <div id="njmap" style="height:300px;border-radius:12px;overflow:hidden;margin-bottom:14px;border:1px solid var(--line)"></div>
+      <div class="grid">
+        ${cell('Property class', esc(p.property_class || '—') + (p.property_class_label ? ' · ' + esc(p.property_class_label) : ''))}
+        ${cell('Building', esc(p.building || '—'))}
+        ${cell('Year built', p.year_built || '—')}
+        ${cell('Dwellings', p.dwellings ?? '—')}
+        ${cell('Lot size', p.acres ? Number(p.acres).toFixed(3) + ' acres (' + Math.round(p.acres * 43560).toLocaleString() + ' sf)' : esc(p.land_desc || '—'))}
+        ${cell('Net taxable value', money(p.net_value))}
+        ${cell('Land / improvements', money(p.land_value) + ' / ' + money(p.improvement_value))}
+        ${cell('Last year\'s tax', money(p.last_year_tax))}
+        ${cell('Last sale', saleTxt)}
+        ${cell('Deed', sale.deed_book ? 'Book ' + esc(sale.deed_book) + (sale.deed_page ? ', page ' + esc(sale.deed_page) : '') : '—')}
+        ${cell('Owner name', '<span class="hint" style="margin:0">Redacted statewide (Daniel\'s Law)</span>')}
+        ${cell('Owner mailing address', esc(p.owner_mailing || '—'))}
+      </div>
+    </section>
+    <section>
+      <div class="sec-head"><h2>Sheriff sales</h2><span class="src">17 NJ counties · updated daily</span></div>
+      ${sheriffHtml}
+    </section>
+    <p class="ownnote">New Jersey coverage: tax parcel, assessment, last sale and owner mailing address from the state's Parcels &amp; MOD-IV composite (sales through 2024); sheriff sales from the daily CivilView capture. NYC-only sections (violations, permits, zoning, ACRIS) don't apply here.
+      <a href="https://www.google.com/maps/search/${encodeURIComponent(g.matched || p.address || '')}" target="_blank" rel="noopener">Google Maps →</a></p>`;
+
+  // Map: parcel outline + geocoded point
+  if (_njMap) { _njMap.remove(); _njMap = null; }
+  const el = document.getElementById('njmap');
+  const c = d.geometry?.centroid || [g.lat, g.lon];
+  if (el && c && c[0]) {
+    _njMap = L.map(el, { zoomControl: true, scrollWheelZoom: false }).setView(c, 19);
+    applyBasemap({ map: _njMap, baseLayer: null }, el, 'street');
+    const rings = (d.geometry?.rings || []).map(r => r.map(([x, y]) => [y, x]));
+    if (rings.length) {
+      const poly = L.polygon(rings, { color: '#0d9488', weight: 3, fillOpacity: 0.25 }).addTo(_njMap);
+      _njMap.fitBounds(poly.getBounds().pad(0.6), { maxZoom: 19 });
+    }
+    if (g.lat) L.circleMarker([g.lat, g.lon], { radius: 6, color: '#0D1117', weight: 1.5, fillColor: '#FF4B3E', fillOpacity: 1 }).addTo(_njMap).bindTooltip(esc(g.matched || ''));
+    setTimeout(() => _njMap && _njMap.invalidateSize(), 60);
   }
 }
 

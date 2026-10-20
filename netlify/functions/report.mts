@@ -1,6 +1,8 @@
 import type { Config, Context } from "@netlify/functions";
 import { buildReport } from "../lib/report.ts";
 import { resolve } from "../lib/geocode.ts";
+import { detectRegion } from "../lib/region.ts";
+import { buildNJReport } from "../lib/nj.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -24,6 +26,19 @@ export default async (req: Request, _ctx: Context) => {
       return json(await buildReport(bbl, bin));
     }
     if (address) {
+      // Route by jurisdiction first: the NYC geocoders silently map out-of-city
+      // addresses onto a same-named NYC street.
+      const region = detectRegion(address);
+      if (region === "nj") {
+        const nj: any = await buildNJReport(address);
+        return json(nj, nj.found ? 200 : 404);
+      }
+      if (region === "nys") {
+        return json({ found: false, region, error: "That address is in New York State outside NYC. Full reports cover the five boroughs (and New Jersey) — use Hunt → Rest of NY State to look up owner, value and mailing address for it." }, 422);
+      }
+      if (region === "other") {
+        return json({ found: false, region, error: "That address is outside NYC and New Jersey, which R Shark doesn't cover yet." }, 422);
+      }
       const cands = await resolve(address);
       if (!cands.length) return json({ found: false, error: "Could not resolve that address." }, 404);
       const top = cands[0];
