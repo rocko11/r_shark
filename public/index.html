@@ -748,6 +748,88 @@ async function run() {
 
 
 
+
+/* ---------- Map navigation outside NYC: neighbouring lots → their reports ---------- */
+const PARCEL_NAV = {
+  nj: { url: 'https://services2.arcgis.com/XVOqAjTOJ5P6ngMu/arcgis/rest/services/Parcels_Composite_NJ_WM/FeatureServer/0/query',
+        fields: 'PAMS_PIN,PROP_LOC,MUN_NAME,PROP_CLASS,NET_VALUE,CALC_ACRE,BLDG_DESC',
+        key: a => a.PAMS_PIN, addr: a => a.PROP_LOC, town: a => String(a.MUN_NAME || '').replace(/\s+(CITY|TOWN|TOWNSHIP|TWP|BOROUGH|BORO|VILLAGE)$/i, ''),
+        info: a => [a.PROP_CLASS ? 'class ' + a.PROP_CLASS : '', a.BLDG_DESC || '', a.NET_VALUE ? '$' + Number(a.NET_VALUE).toLocaleString() + ' assessed' : '', a.CALC_ACRE > 0 ? Math.round(a.CALC_ACRE * 43560).toLocaleString() + ' sf lot' : ''].filter(Boolean) },
+  nys: { url: 'https://services6.arcgis.com/EbVsqZ18sv1kVJ3k/arcgis/rest/services/NYS_Tax_Parcels_Public/FeatureServer/1/query',
+        fields: 'SWIS,PRINT_KEY,PARCEL_ADDR,MUNI_NAME,PROP_CLASS,FULL_MARKET_VAL,TOTAL_AV,ACRES,YR_BLT,PRIMARY_OWNER',
+        key: a => a.SWIS + '|' + a.PRINT_KEY, addr: a => a.PARCEL_ADDR, town: a => a.MUNI_NAME,
+        info: a => [a.PRIMARY_OWNER || '', a.PROP_CLASS ? 'class ' + a.PROP_CLASS : '', a.YR_BLT ? 'built ' + a.YR_BLT : '',
+          a.FULL_MARKET_VAL ? '$' + Number(a.FULL_MARKET_VAL).toLocaleString() + ' market' : a.TOTAL_AV ? '$' + Number(a.TOTAL_AV).toLocaleString() + ' assessed' : '',
+          a.ACRES > 0 ? Math.round(a.ACRES * 43560).toLocaleString() + ' sf lot' : ''].filter(Boolean) },
+};
+function initParcelNav(map, region, selfKey) {
+  const cfg = PARCEL_NAV[region];
+  const layer = L.layerGroup().addTo(map);
+  const seen = new Map();
+  const hint = L.control({ position: 'bottomleft' });
+  hint.onAdd = () => { const d = L.DomUtil.create('div'); d.style.cssText = 'background:rgba(255,255,255,.9);padding:3px 8px;border-radius:6px;font:11px var(--mono,monospace);color:#334155'; d.id = 'pnav-hint-' + region; return d; };
+  hint.addTo(map);
+  const setHint = t => { const d = document.getElementById('pnav-hint-' + region); if (d) d.textContent = t; };
+  const style = (self, hover) => self ? { color: '#0d9488', weight: 3, fillOpacity: 0.25 }
+    : { color: '#64748b', weight: hover ? 2.2 : 1, fillColor: '#38A8B8', fillOpacity: hover ? 0.28 : 0.06 };
+  let seq = 0, anyOutline = false;
+  async function load() {
+    if (map.getZoom() < 16) { setHint('Zoom in to see neighbouring lots'); return; }
+    const b = map.getBounds(), my = ++seq;
+    setHint('Loading lots…');
+    try {
+      const j = await fetch(cfg.url + '?' + new URLSearchParams({ geometry: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(','), geometryType: 'esriGeometryEnvelope',
+        inSR: '4326', spatialRel: 'esriSpatialRelIntersects', outFields: cfg.fields, returnGeometry: 'true', outSR: '4326', geometryPrecision: '6',
+        maxAllowableOffset: '0.000005', resultRecordCount: '800', f: 'json' })).then(r => r.json());
+      if (my !== seq) return;
+      for (const f of j.features || []) {
+        const a = f.attributes, k = cfg.key(a);
+        if (!k || seen.has(k) || !f.geometry?.rings) continue;
+        const self = k === selfKey;
+        const poly = L.polygon(f.geometry.rings.map(r => r.map(([x, y]) => [y, x])), style(self, false));
+        if (!self) {
+          poly.on('mouseover', () => poly.setStyle(style(false, true)));
+          poly.on('mouseout', () => poly.setStyle(style(false, false)));
+        }
+        poly.on('click', e => {
+          L.DomEvent.stopPropagation(e);
+          const ll = e.latlng;
+          L.popup().setLatLng(ll).setContent(`<div class="pop-addr">${esc(cfg.addr(a) || 'Parcel')}</div>
+            <div class="pop-k">${esc(cfg.town(a) || '')}</div>
+            ${cfg.info(a).map(t => `<div class="pop-k">${esc(t)}</div>`).join('')}
+            ${self ? '<div class="pop-k" style="margin-top:6px">You are viewing this lot.</div>'
+              : `<button class="pop-btn" onclick="runAt('${region}',${ll.lat.toFixed(7)},${ll.lng.toFixed(7)})">See this lot's report →</button>`}`).openOn(map);
+        });
+        poly.addTo(layer); seen.set(k, poly); anyOutline = true;
+      }
+      setHint(anyOutline ? 'Click any lot for its report' : 'Click anywhere for the property at that spot');
+    } catch { setHint('Lots unavailable — click anywhere for that spot'); }
+  }
+  // Counties without shared parcel maps (NYS) have no outlines: clicking the map looks up that spot.
+  map.on('click', e => {
+    const ll = e.latlng;
+    L.popup().setLatLng(ll).setContent(`<div class="pop-k">Property at this spot</div>
+      <button class="pop-btn" onclick="runAt('${region}',${ll.lat.toFixed(7)},${ll.lng.toFixed(7)})">Look up this spot →</button>`).openOn(map);
+  });
+  map.on('moveend', load);
+  load();
+}
+// Load a report for the parcel at a map point (NJ / rest of NY State).
+async function runAt(region, lat, lng) {
+  out.innerHTML = `<p class="loading">Loading that lot…</p>`;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  try {
+    const r = await fetch(`/api/report?${region === 'nj' ? 'nj_at' : 'nys_at'}=${lat},${lng}`);
+    const d = await r.json();
+    if (d.region === 'nyc_redirect') { out.innerHTML = '<div class="err">That spot is in New York City — search the address to open its NYC report.</div>'; return; }
+    if (d.found === false) { out.innerHTML = `<div class="err"><strong>No parcel found there.</strong><br>${esc(d.error || '')}</div>`; return; }
+    q.value = (d.parcel?.address || '') + (d.parcel?.municipality ? ', ' + String(d.parcel.municipality).replace(/\s+(CITY|TOWN|TOWNSHIP|TWP|BOROUGH|BORO|VILLAGE)$/i, '') : '') + (region === 'nj' ? ', NJ' : ', NY');
+    if (d.region === 'nj') renderNJ(d); else renderNYS(d);
+  } catch (e) {
+    out.innerHTML = `<div class="err">Couldn't load that lot: ${esc(e.message)}</div>`;
+  }
+}
+
 /* ---------- New York State (outside NYC) property report ---------- */
 let _nysMap = null;
 function renderNYS(d) {
@@ -798,15 +880,16 @@ function renderNYS(d) {
   const el = document.getElementById('nysmap');
   const c = d.geometry?.centroid || [g.lat, g.lon];
   if (el && c && c[0]) {
-    _nysMap = L.map(el, { zoomControl: true, scrollWheelZoom: false }).setView(c, 18);
+    _nysMap = L.map(el, { zoomControl: true, scrollWheelZoom: true }).setView(c, 18);
     applyBasemap({ map: _nysMap, baseLayer: null }, el, 'street');
     const rings = (d.geometry?.rings || []).map(r => r.map(([x, y]) => [y, x]));
     if (rings.length) {
-      const poly = L.polygon(rings, { color: '#0d9488', weight: 3, fillOpacity: 0.25 }).addTo(_nysMap);
+      const poly = L.polygon(rings, { color: '#0d9488', weight: 3, fillOpacity: 0.25, interactive: false }).addTo(_nysMap);
       _nysMap.fitBounds(poly.getBounds().pad(0.6), { maxZoom: 19 });
     }
-    if (g.lat) L.circleMarker([g.lat, g.lon], { radius: 6, color: '#0D1117', weight: 1.5, fillColor: '#FF4B3E', fillOpacity: 1 }).addTo(_nysMap).bindTooltip(esc(g.matched || ''));
+    if (g.lat) L.circleMarker([g.lat, g.lon], { radius: 6, color: '#0D1117', weight: 1.5, fillColor: '#FF4B3E', fillOpacity: 1, interactive: false }).addTo(_nysMap);
     setTimeout(() => _nysMap && _nysMap.invalidateSize(), 60);
+    initParcelNav(_nysMap, 'nys', p.swis && p.print_key ? p.swis + '|' + p.print_key : null);
   }
 }
 
@@ -870,15 +953,16 @@ function renderNJ(d) {
   const el = document.getElementById('njmap');
   const c = d.geometry?.centroid || [g.lat, g.lon];
   if (el && c && c[0]) {
-    _njMap = L.map(el, { zoomControl: true, scrollWheelZoom: false }).setView(c, 19);
+    _njMap = L.map(el, { zoomControl: true, scrollWheelZoom: true }).setView(c, 19);
     applyBasemap({ map: _njMap, baseLayer: null }, el, 'street');
     const rings = (d.geometry?.rings || []).map(r => r.map(([x, y]) => [y, x]));
     if (rings.length) {
-      const poly = L.polygon(rings, { color: '#0d9488', weight: 3, fillOpacity: 0.25 }).addTo(_njMap);
+      const poly = L.polygon(rings, { color: '#0d9488', weight: 3, fillOpacity: 0.25, interactive: false }).addTo(_njMap);
       _njMap.fitBounds(poly.getBounds().pad(0.6), { maxZoom: 19 });
     }
-    if (g.lat) L.circleMarker([g.lat, g.lon], { radius: 6, color: '#0D1117', weight: 1.5, fillColor: '#FF4B3E', fillOpacity: 1 }).addTo(_njMap).bindTooltip(esc(g.matched || ''));
+    if (g.lat) L.circleMarker([g.lat, g.lon], { radius: 6, color: '#0D1117', weight: 1.5, fillColor: '#FF4B3E', fillOpacity: 1, interactive: false }).addTo(_njMap);
     setTimeout(() => _njMap && _njMap.invalidateSize(), 60);
+    initParcelNav(_njMap, 'nj', p.pams_pin || null);
   }
 }
 

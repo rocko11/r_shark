@@ -253,11 +253,22 @@ function ringsAreaM2(rings: number[][][]): number {
   return Math.abs(total);
 }
 
-export async function buildNJReport(address: string) {
-  const variants = inputVariants(address);
-  let top: any = null, feature: any = null, exact = false, via = "geocoder";
+// Report for the parcel under a map click.
+export async function buildNJReportAt(lat: number, lon: number) {
+  return buildNJReport("", { lat, lon });
+}
+
+export async function buildNJReport(address: string, at?: { lat: number; lon: number }) {
+  const variants = at ? [] : inputVariants(address);
+  let top: any = null, feature: any = null, exact = false, via = at ? "map" : "geocoder";
   let suggestions: string[] = [];
   const geos: any[] = [];
+
+  if (at) {
+    const r = await njParcelFor(at.lon, at.lat, []);
+    feature = r.feature; exact = !!r.feature;
+    if (!feature) return { found: false, region: "nj", error: "No New Jersey tax parcel at that spot on the map." };
+  }
 
   // 1. State geocoder (point addresses) → parcel at/near that point
   for (const v of variants) {
@@ -270,7 +281,7 @@ export async function buildNJReport(address: string) {
     if (exact) break;
   }
   // 2. Not exact → search the parcel records themselves by street + town
-  if (!exact) {
+  if (!exact && !at) {
     for (const v of variants) {
       const towns = await njTownsIn(v, geos[0]?.city);
       const t = await njParcelByText(streetPart(v), towns).catch(() => ({ feature: null, suggestions: [] as string[] }));

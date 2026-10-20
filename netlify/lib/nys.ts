@@ -174,7 +174,26 @@ const ownersFromRoll = (r: any) => [
   clean([r.additional_owner_2_first, r.additional_owner_2_last_name].join(" ")),
 ].filter(Boolean);
 
-export async function buildNYSReport(address: string, where?: Awaited<ReturnType<typeof nysWhere>>) {
+// Report for the parcel under a map click. Counties that don't share parcel maps have no
+// outline at the point, so the spot is reverse-geocoded and looked up by address instead.
+export async function buildNYSReportAt(lat: number, lon: number): Promise<any> {
+  const town = await townAt(lon, lat).catch(() => null);
+  if (town && NYC_COUNTIES.has(town.county)) return { found: false, region: "nyc_redirect" };
+  const pm = await parcelAt(lon, lat, []);
+  if (pm.f) {
+    const a = pm.f.attributes;
+    const cand = { address: `${clean(a.PARCEL_ADDR)}, ${clean(a.MUNI_NAME)}, NY`, score: 100, x: lon, y: lat };
+    return buildNYSReport(cand.address, { cand, cands: [], town, inNYC: false }, pm);
+  }
+  try {
+    const j = await getJSON(`${NYS_GEOCODE.replace(/findAddressCandidates$/, "reverseGeocode")}?${new URLSearchParams({ location: `${lon},${lat}`, outSR: "4326", f: "json" })}`, 6000);
+    const addr = j.address?.Match_addr || j.address?.LongLabel;
+    if (addr) return buildNYSReport(addr);
+  } catch {}
+  return { found: false, region: "nys", error: "No parcel or street address found at that spot on the map." };
+}
+
+export async function buildNYSReport(address: string, where?: Awaited<ReturnType<typeof nysWhere>>, preParcel?: { f: any; exact: boolean }) {
   const w = where || await nysWhere(address);
   if (!w) return { found: false, region: "nys", error: "Couldn't find that address in New York State. Check the house number and include the town, e.g. \"399 Park Hill Ave, Yonkers NY\"." };
   if (w.inNYC) return { found: false, region: "nyc_redirect" };
@@ -182,7 +201,7 @@ export async function buildNYSReport(address: string, where?: Awaited<ReturnType
   const inputStreet = address.split(",")[0];
   const want = [c.address.split(",")[0], inputStreet];
 
-  const pm = await parcelAt(c.x, c.y, want);
+  const pm = preParcel ? { f: preParcel.f, exact: true } : await parcelAt(c.x, c.y, want);
   let layer = pm.f?.attributes || null;
   let exact = pm.exact;
   let roll: any = null;

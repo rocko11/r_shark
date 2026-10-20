@@ -2,8 +2,8 @@ import type { Config, Context } from "@netlify/functions";
 import { buildReport } from "../lib/report.ts";
 import { resolve, nycPlaceMatches } from "../lib/geocode.ts";
 import { detectRegion, townTail } from "../lib/region.ts";
-import { buildNJReport } from "../lib/nj.ts";
-import { buildNYSReport, nysWhere } from "../lib/nys.ts";
+import { buildNJReport, buildNJReportAt } from "../lib/nj.ts";
+import { buildNYSReport, buildNYSReportAt, nysWhere } from "../lib/nys.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -22,6 +22,14 @@ export default async (req: Request, _ctx: Context) => {
     const rawBbl = url.searchParams.get("bbl");
     const bbl = rawBbl ? rawBbl.split(".")[0].padStart(10, "0") : null;
 
+    // Map navigation outside NYC: ?nj_at=lat,lon or ?nys_at=lat,lon → the parcel at that point.
+    const atParam = url.searchParams.get("nj_at") || url.searchParams.get("nys_at");
+    if (atParam) {
+      const [lat, lon] = atParam.split(",").map(Number);
+      if (!(lat > 38 && lat < 46 && lon > -80.5 && lon < -71)) return json({ found: false, error: "Point out of range." }, 400);
+      const rep: any = url.searchParams.get("nj_at") ? await buildNJReportAt(lat, lon) : await buildNYSReportAt(lat, lon);
+      return json(rep, rep.found ? 200 : 404);
+    }
     if (bbl) {
       if (!/^\d{10}$/.test(bbl)) return json({ found: false, error: "BBL must be 10 digits." }, 400);
       return json(await buildReport(bbl, bin));
