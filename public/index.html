@@ -3164,6 +3164,8 @@ async function downloadPdf() {
     await loadHtml2Pdf();
     root.setAttribute('data-theme', 'light');   // paper is white — render with the light palette
     root.classList.add('pdf-export');           // mirrors the @media print rules
+    var keepY = window.scrollY;
+    window.scrollTo(0, 0);                      // html2canvas offsets the capture by the scroll position
     await new Promise(r => setTimeout(r, 400)); // let maps repaint in the light theme
     const w = out.scrollWidth, h = out.scrollHeight;
     // Phones cap canvas size (~16M px on iOS); shrink the render scale for long reports.
@@ -3173,7 +3175,7 @@ async function downloadPdf() {
       margin: [10, 10, 12, 10],
       filename: name,
       image: { type: 'jpeg', quality: 0.9 },
-      html2canvas: { scale, useCORS: true, backgroundColor: '#ffffff', windowWidth: 1000, logging: false,
+      html2canvas: { scale, useCORS: true, backgroundColor: '#ffffff', scrollX: 0, scrollY: 0, logging: false,
         ignoreElements: el => el.id === 'svsection' || (el.classList && (el.classList.contains('no-print') || el.classList.contains('leaflet-control-container'))) },
       jsPDF: { unit: 'mm', format: 'letter', orientation: 'portrait' },
       pagebreak: { mode: ['css', 'legacy'], avoid: ['.titleblock', '.flag', 'tr', '.cell'] },
@@ -3185,6 +3187,7 @@ async function downloadPdf() {
   } finally {
     root.classList.remove('pdf-export');
     if (prevTheme) root.setAttribute('data-theme', prevTheme); else root.removeAttribute('data-theme');
+    if (typeof keepY === 'number') window.scrollTo(0, keepY);
     busy(false);
   }
 }
