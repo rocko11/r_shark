@@ -324,6 +324,11 @@ footer{border-top:1px solid var(--rule);margin-top:40px;padding-top:14px;
 .pdf-btn:hover{background:var(--slate)}
 .pdf-btn:disabled{opacity:.6;cursor:default}
 
+/* --- Download PDF (html2pdf renders #out while <html> has .pdf-export) — same look as print. --- */
+.pdf-export #out { background: #fff !important; border: none !important; box-shadow: none !important; }
+.pdf-export #out .no-print, .pdf-export #out .leaflet-control-container, .pdf-export #out .pop-btn,
+.pdf-export #out #svsection { display: none !important; }
+.pdf-export #out a { color: #000 !important; text-decoration: none; }
 /* --- Print / Save-as-PDF: strip the app chrome, keep just the report on white paper. --- */
 @media print {
   @page { margin: 14mm; }
@@ -923,7 +928,7 @@ function renderNYS(d) {
   out.innerHTML = `
     ${!d.parcel_exact ? `<div class="err" style="margin-bottom:12px"><strong>Closest parcel shown.</strong> The address matched <em>${esc(g.matched || '')}</em>, but the parcel at that point is listed as <em>${esc(p.address || '')}</em>. Check the map before relying on it.${sug ? `<div style="margin-top:6px">Recorded addresses nearby: ${sug}</div>` : ''}</div>` : ''}
     <section>
-      <div class="sec-head"><h2>${esc(p.address || g.matched || '')}</h2><span class="src">New York State · ${esc(p.municipality || '')}${p.city_town && p.city_town !== p.municipality ? ' (' + esc(p.city_town) + ')' : ''}, ${esc(p.county || '')} County</span></div>
+      <div class="sec-head"><h2>${esc(p.address || g.matched || '')}</h2><button class="pdf-btn no-print" onclick="downloadPdf()">⭳ Download PDF</button><span class="src">New York State · ${esc(p.municipality || '')}${p.city_town && p.city_town !== p.municipality ? ' (' + esc(p.city_town) + ')' : ''}, ${esc(p.county || '')} County</span></div>
       <p class="hint" style="margin:0 0 10px">Matched: ${esc(g.matched || '')} · Tax map ${esc(p.print_key || '—')} · SWIS ${esc(p.swis || '')}${p.zip ? ' · ZIP ' + esc(p.zip) : ''} · ${esc(p.roll_year || '')} roll</p>
       ${flags ? `<p style="margin:0 0 10px">${flags}</p>` : ''}
       <div id="nysmap" style="height:300px;border-radius:12px;overflow:hidden;margin-bottom:14px;border:1px solid var(--line)"></div>
@@ -1000,7 +1005,7 @@ function renderNJ(d) {
   out.innerHTML = `
     ${!d.parcel_exact ? `<div class="err" style="margin-bottom:12px"><strong>Closest parcel shown.</strong> The geocoder matched <em>${esc(g.matched || '')}</em>, but the parcel at that point is listed as <em>${esc(p.address || '')}</em>. Check the map before relying on it.${(d.suggestions||[]).length ? `<div style="margin-top:6px">Recorded addresses nearby on that street: ${d.suggestions.map(s => `<button onclick="q.value=this.dataset.a;run()" data-a="${esc(s)}" style="background:var(--steel);border:1px solid var(--line);border-radius:6px;padding:4px 9px;color:var(--shark);cursor:pointer;font-size:12px;margin:4px 6px 0 0">${esc(s.split(',')[0])} →</button>`).join('')}</div>` : ''}</div>` : ''}
     <section>
-      <div class="sec-head"><h2>${esc(p.address || g.matched || '')}</h2><span class="src">New Jersey · ${esc(town)}, ${esc(p.county || '')} County</span></div>
+      <div class="sec-head"><h2>${esc(p.address || g.matched || '')}</h2><button class="pdf-btn no-print" onclick="downloadPdf()">⭳ Download PDF</button><span class="src">New Jersey · ${esc(town)}, ${esc(p.county || '')} County</span></div>
       <p class="hint" style="margin:0 0 10px">Matched: ${esc(g.matched || '')} (score ${esc(String(Math.round(g.score || 0)))}) · Block ${esc(p.block || '—')} · Lot ${esc(p.lot || '—')}${p.qualifier ? ' · Qual ' + esc(p.qualifier) : ''} · PIN ${esc(p.pams_pin || '')}</p>
       ${flags ? `<p style="margin:0 0 10px">${flags}</p>` : ''}
       <div id="njmap" style="height:300px;border-radius:12px;overflow:hidden;margin-bottom:14px;border:1px solid var(--line)"></div>
@@ -3132,17 +3137,63 @@ function downloadSearchCsv() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// Export the current property report to PDF via the browser's print-to-PDF. Print CSS
-// (below) hides the search UI, tabs, buttons and map controls and formats for paper.
-function downloadPdf() {
-  // Brief delay to let tiles finish loading, then open print dialog.
-  // Uses setTimeout to ensure the call is trusted (avoids popup blockers).
-  const btn = document.querySelector('.pdf-btn');
-  if (btn) { btn.textContent = '⏳ Preparing…'; btn.disabled = true; }
-  setTimeout(() => {
-    if (btn) { btn.textContent = '⭳ Download PDF'; btn.disabled = false; }
+// Export the current property report as a real .pdf file, built in the browser
+// (html2pdf = html2canvas + jsPDF, vendored, loaded on first use). The old version
+// called window.print(), which silently does nothing on phones, tablets and in-app
+// browsers. Print-to-PDF stays as the fallback if building the file fails.
+let _h2pLoading = null;
+function loadHtml2Pdf() {
+  if (window.html2pdf) return Promise.resolve();
+  return _h2pLoading ||= new Promise((ok, bad) => {
+    const s = document.createElement('script');
+    s.src = '/vendor/html2pdf/html2pdf.bundle.min.js';
+    s.onload = ok; s.onerror = () => { _h2pLoading = null; bad(new Error('PDF library failed to load')); };
+    document.head.appendChild(s);
+  });
+}
+function pdfFileName() {
+  const t = (document.querySelector('#out h2.addr, #out .sec-head h2')?.innerText || 'property').split('\n')[0];
+  return 'R Shark - ' + t.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) + '.pdf';
+}
+async function downloadPdf() {
+  const btns = [...document.querySelectorAll('.pdf-btn')];
+  const busy = on => btns.forEach(b => { b.disabled = on; b.textContent = on ? '⏳ Building PDF…' : '⭳ Download PDF'; });
+  busy(true);
+  const root = document.documentElement, prevTheme = root.getAttribute('data-theme');
+  try {
+    await loadHtml2Pdf();
+    root.setAttribute('data-theme', 'light');   // paper is white — render with the light palette
+    root.classList.add('pdf-export');           // mirrors the @media print rules
+    await new Promise(r => setTimeout(r, 400)); // let maps repaint in the light theme
+    const w = out.scrollWidth, h = out.scrollHeight;
+    // Phones cap canvas size (~16M px on iOS); shrink the render scale for long reports.
+    const scale = Math.max(1, Math.min(2, Math.sqrt(14e6 / Math.max(1, Math.max(w, 820) * h))));
+    const name = pdfFileName();
+    const blob = await html2pdf().set({
+      margin: [10, 10, 12, 10],
+      filename: name,
+      image: { type: 'jpeg', quality: 0.9 },
+      html2canvas: { scale, useCORS: true, backgroundColor: '#ffffff', windowWidth: 1000, logging: false,
+        ignoreElements: el => el.id === 'svsection' || (el.classList && (el.classList.contains('no-print') || el.classList.contains('leaflet-control-container'))) },
+      jsPDF: { unit: 'mm', format: 'letter', orientation: 'portrait' },
+      pagebreak: { mode: ['css', 'legacy'], avoid: ['.titleblock', '.flag', 'tr', '.cell'] },
+    }).from(out).outputPdf('blob');
+    deliverPdf(new File([blob], name, { type: 'application/pdf' }));
+  } catch (e) {
+    console.error('PDF export failed, falling back to print', e);
     window.print();
-  }, 200);
+  } finally {
+    root.classList.remove('pdf-export');
+    if (prevTheme) root.setAttribute('data-theme', prevTheme); else root.removeAttribute('data-theme');
+    busy(false);
+  }
+}
+function deliverPdf(file) {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url; a.download = file.name; a.rel = 'noopener';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 // "505 LA GUARDIA PLACE 9B, NEW YORK, NY, 10012" → parts for the lookup form.
