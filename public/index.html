@@ -1794,10 +1794,17 @@ function render(d) {
   if (hasGeo && window.L) initBlockMap(lat, lng, d.bbl);
 }
 
-let lastReport = null, rzTimer;
+let lastReport = null, rzTimer, rzW = innerWidth;
 addEventListener("resize", () => {
   clearTimeout(rzTimer);
-  rzTimer = setTimeout(() => { if (lastReport) render(lastReport); }, 250);
+  rzTimer = setTimeout(() => {
+    // Phones fire "resize" while scrolling (address bar collapsing = height-only change).
+    // Rebuilding the report then wipes the Street View panorama and the map every time and
+    // loses where you'd driven to. Only a real width change needs a re-layout.
+    if (innerWidth === rzW) { if (typeof _map !== "undefined" && _map) _map.invalidateSize(); return; }
+    rzW = innerWidth;
+    if (lastReport) render(lastReport);
+  }, 250);
 });
 
 /* ---------- street view ---------- */
