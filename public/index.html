@@ -932,6 +932,7 @@ function renderNYS(d) {
       <p class="hint" style="margin:0 0 10px">Matched: ${esc(g.matched || '')} · Tax map ${esc(p.print_key || '—')} · SWIS ${esc(p.swis || '')}${p.zip ? ' · ZIP ' + esc(p.zip) : ''} · ${esc(p.roll_year || '')} roll</p>
       ${flags ? `<p style="margin:0 0 10px">${flags}</p>` : ''}
       <div id="nysmap" style="height:300px;border-radius:12px;overflow:hidden;margin-bottom:14px;border:1px solid var(--line)"></div>
+      ${svSectionHtml()}
       <div class="grid">
         ${cell('Owner' + ((p.owners || []).length > 1 ? 's' : ''), esc((p.owners || []).join(' & ') || '—'))}
         ${cell('Owner mailing address', esc(p.owner_mailing || '—'))}
@@ -953,7 +954,6 @@ function renderNYS(d) {
         property: { address: p.address || '', city: (String(g.matched || '').split(',')[1] || p.municipality || '').trim(), state: 'NY', zip: p.zip || (String(g.matched || '').match(/\b\d{5}\b/) || [''])[0] },
         mailing: parseMailing(p.owner_mailing) })}
     </section>
-    ${svSectionHtml()}
     <p class="ownnote">Rest-of-state coverage: ${esc(d.source || '')}. NYC-only sections (violations, permits, zoning, ACRIS, liens) don't apply outside the five boroughs; upstate distress records are kept town by town.
       <a href="https://www.google.com/maps/search/${encodeURIComponent(g.matched || p.address || '')}" target="_blank" rel="noopener">Google Maps →</a></p>`;
 
@@ -1009,6 +1009,7 @@ function renderNJ(d) {
       <p class="hint" style="margin:0 0 10px">Matched: ${esc(g.matched || '')} (score ${esc(String(Math.round(g.score || 0)))}) · Block ${esc(p.block || '—')} · Lot ${esc(p.lot || '—')}${p.qualifier ? ' · Qual ' + esc(p.qualifier) : ''} · PIN ${esc(p.pams_pin || '')}</p>
       ${flags ? `<p style="margin:0 0 10px">${flags}</p>` : ''}
       <div id="njmap" style="height:300px;border-radius:12px;overflow:hidden;margin-bottom:14px;border:1px solid var(--line)"></div>
+      ${svSectionHtml()}
       <div class="grid">
         ${cell('Property class', esc(p.property_class || '—') + (p.property_class_label ? ' · ' + esc(p.property_class_label) : ''))}
         ${cell('Building', esc(p.building || '—'))}
@@ -1027,7 +1028,6 @@ function renderNJ(d) {
         property: { address: p.address || '', city: (String(g.matched || '').split(',')[1] || town || '').trim(), state: 'NJ', zip: (String(g.matched || '').match(/\b0[78]\d{3}\b/) || [''])[0] },
         mailing: parseMailing(p.owner_mailing) })}
     </section>
-    ${svSectionHtml()}
     <section>
       <div class="sec-head"><h2>Sheriff sales</h2><span class="src">17 NJ counties · updated daily</span></div>
       ${sheriffHtml}
