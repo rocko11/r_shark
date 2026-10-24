@@ -910,7 +910,7 @@ async function runAtHere(region, lat, lng) {
 /* ---------- New York State (outside NYC) property report ---------- */
 let _nysMap = null;
 function renderNYS(d) {
-  lastReport = d;
+  lastReport = d; lastRenderer = renderNYS;
   const p = d.parcel || {}, g = d.geocode || {};
   const money = n => n == null ? '—' : '$' + Math.round(Number(n)).toLocaleString('en-US');
   const cell = (k, v) => `<div class="cell"><span class="k">${k}</span><span class="v">${v ?? '—'}</span></div>`;
@@ -979,7 +979,7 @@ function renderNYS(d) {
 /* ---------- New Jersey property card (NJ geocoder + statewide parcel/MOD-IV composite) ---------- */
 let _njMap = null;
 function renderNJ(d) {
-  lastReport = d;
+  lastReport = d; lastRenderer = renderNJ;
   const p = d.parcel || {}, g = d.geocode || {};
   const money = n => n == null ? '—' : '$' + Math.round(Number(n)).toLocaleString('en-US');
   const cell = (k, v) => `<div class="cell"><span class="k">${k}</span><span class="v">${v ?? '—'}</span></div>`;
@@ -1178,7 +1178,7 @@ function diagram(dev) {
 
 /* ---------- render ---------- */
 function render(d) {
-  lastReport = d;
+  lastReport = d; lastRenderer = render;
   const id = d.identity || {}, dev = d.development || {}, v = d.violations || {};
   const dob = d.dob || {}, acris = d.acris || {};
   const flags = dev.flags || [];
@@ -1790,11 +1790,11 @@ function render(d) {
       document.getElementById('out').scrollTop = 0;
     }
   }
-  lastReport = d;
+  lastReport = d; lastRenderer = render;
   if (hasGeo && window.L) initBlockMap(lat, lng, d.bbl);
 }
 
-let lastReport = null, rzTimer, rzW = innerWidth;
+let lastReport = null, lastRenderer = null, rzTimer, rzW = innerWidth;
 addEventListener("resize", () => {
   clearTimeout(rzTimer);
   rzTimer = setTimeout(() => {
@@ -1803,7 +1803,8 @@ addEventListener("resize", () => {
     // loses where you'd driven to. Only a real width change needs a re-layout.
     if (innerWidth === rzW) { if (typeof _map !== "undefined" && _map) _map.invalidateSize(); return; }
     rzW = innerWidth;
-    if (lastReport) render(lastReport);
+    // Re-render with the renderer that produced the report on screen (NYC, NJ or NYS).
+    if (lastReport) (lastRenderer || render)(lastReport);
   }, 250);
 });
 
