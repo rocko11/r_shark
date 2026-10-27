@@ -1624,33 +1624,35 @@ function render(d) {
       <p class="hint">${esc(tx.reason||"Not available.")} ${esc(tx.caveat)}</p>
     </section>`;
       const hasActual = tx.actual_annual != null;
+      const $ = n => '$' + Math.round(n || 0).toLocaleString();
       const displayAnnual = hasActual ? tx.actual_annual : tx.annual_tax_estimate;
-      const displayQtr = hasActual ? tx.actual_quarterly : tx.quarterly;
-      const displayLabel = hasActual ? "actual DOF bill" : "estimate";
+      const freq = hasActual ? tx.actual_frequency : 'quarterly';
+      const inst = hasActual ? tx.actual_installment : tx.quarterly;
       const yearLabel = hasActual ? tx.actual_tax_year : tx.rate_year;
+      const prior = hasActual && tx.actual_prior_year;
+      const chg = prior && prior.annual ? (tx.actual_annual - prior.annual) / prior.annual * 100 : null;
+      const sched = hasActual && (tx.actual_schedule || []).length
+        ? tx.actual_schedule.map(s => `${new Date(s.due + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}: ${$(s.amount)}`).join(' · ') : '';
+      const gap = hasActual && tx.annual_tax_estimate ? tx.actual_annual - tx.annual_tax_estimate : 0;
       return `
     <section>
       <div class="sec-head"><h2>Property tax</h2>
-        <span class="count">${esc(yearLabel)} · ${displayLabel}</span></div>
+        <span class="count">${esc(yearLabel)} · ${hasActual ? 'actual DOF bill' : 'estimate'}</span></div>
       <div class="taxwrap">
         <div class="taxbig">
-          <div class="taxbignum">$${displayAnnual.toLocaleString()}<span class="taxper">/yr${hasActual?" billed":" est."}</span></div>
-          <div class="taxsub">≈ $${displayQtr.toLocaleString()} per quarter${!hasActual&&tx.has_exemption?` · <span style="color:var(--ochre)">exemption applied</span>`:""}</div>
+          <div class="taxbignum">${$(displayAnnual)}<span class="taxper">/yr${hasActual ? ' billed' : ' est.'}</span></div>
+          <div class="taxsub">${$(inst)} per ${freq === 'semi-annual' ? 'half-year (billed Jul &amp; Jan)' : 'quarter'}${chg != null ? ` · <span style="color:${chg > 0 ? 'var(--iron)' : 'var(--moss)'}">${chg > 0 ? '+' : ''}${chg.toFixed(1)}% vs ${esc('FY' + prior.fiscal_year)} (${$(prior.annual)})</span>` : ''}${!hasActual && tx.has_exemption ? ` · <span style="color:var(--ochre)">exemption applied</span>` : ''}</div>
+          ${sched ? `<div class="taxsub" style="margin-top:2px">${sched}</div>` : ''}
         </div>
         <div class="taxgrid">
-          ${cellSmall("Tax class", esc(tx.tax_class))}
-          ${hasActual
-            ? cellSmall("Source", "DOF Property Charges Balance")
-            : cellSmall("Rate", tx.rate_pct.toFixed(3)+"%")}
-          ${hasActual
-            ? cellSmall("PLUTO assessed", "$"+(tx.assessed_total||0).toLocaleString())
-            : cellSmall("Assessed total", "$"+tx.assessed_total.toLocaleString())}
-          ${hasActual
-            ? `<div></div>`
-            : (tx.exempt_total>0?cellSmall("Exempt portion", "$"+tx.exempt_total.toLocaleString()):cellSmall("Taxable assessed", "$"+tx.taxable_assessed.toLocaleString()))}
+          ${cellSmall("Tax class", esc(tx.tax_class) + (tx.tax_class_code && tx.tax_class_code.length > 1 ? ' (' + esc(tx.tax_class_code) + ')' : ''))}
+          ${cellSmall("Rate", tx.rate_pct.toFixed(3) + "%")}
+          ${tx.market_value ? cellSmall("DOF market value", $(tx.market_value)) : cellSmall("Assessed (actual)", $(tx.assessed_total))}
+          ${cellSmall(tx.basis === 'dof_taxable' ? "Taxable assessed" : "Taxable (PLUTO)", $(tx.taxable_assessed) + (tx.exempt_total > 0 ? ` <span class="hint" style="margin:0">after ${$(tx.exempt_total)} exempt</span>` : ''))}
+          ${hasActual ? cellSmall("Taxable × rate", $(tx.annual_tax_estimate) + (Math.abs(gap) > Math.max(250, tx.actual_annual * 0.02) ? ` <span class="hint" style="margin:0">bill is ${$(Math.abs(gap))} ${gap < 0 ? 'lower — abatement or credit' : 'higher — check for charges or a reassessment'}</span>` : ` <span class="hint" style="margin:0">matches the bill</span>`)) : ''}
         </div>
         ${hasActual
-          ? `<p class="ownnote" style="margin-bottom:0">Actual billed amount from NYC DOF records — includes all abatements and exemptions (421-a, J-51, STAR, co-op/condo, etc.). Refreshed quarterly.</p>`
+          ? `<p class="ownnote" style="margin-bottom:0">Billed property tax from NYC DOF's charges ledger (newest version of each bill; water, sewer and BID charges excluded) — net of exemptions and abatements (421-a, J-51, STAR, co-op/condo). Taxable value from the DOF ${esc(tx.roll_year || 'assessment roll')}.</p>`
           : `<p class="ownnote" style="margin-bottom:0"><strong>Estimate only.</strong> ${esc(tx.caveat)}</p>`}
       </div>
     </section>`;})()}

@@ -3,7 +3,7 @@ import { ACRIS_BOROUGHS, BOROUGH_NAME, DATASETS, splitBBL } from "./datasets.ts"
 import { analyzeTitle } from "./title.ts";
 import { ownerPortfolio, ownerContacts } from "./owner.ts";
 import { assessRentStabilization } from "./rentstab.ts";
-import { estimatePropertyTax, fetchActualTax } from "./tax.ts";
+import { estimatePropertyTax, fetchActualTax, fetchAssessment } from "./tax.ts";
 import { checkArrears } from "./arrears.ts";
 import { developmentRights, redFlags } from "./derive.ts";
 
@@ -287,14 +287,21 @@ export async function buildReport(bbl: string, bin: string | null = null) {
     owner_intel: { ownership_type: ownershipType, portfolio, contacts },
     rent_stabilization: assessRentStabilization(pluto, bbl),
     property_tax: await (async () => {
-      const estimate = estimatePropertyTax(pluto);
-      const actual = await fetchActualTax(bbl).catch(() => null);
+      const [assess, actual] = await Promise.all([
+        fetchAssessment(bbl).catch(() => null),
+        fetchActualTax(bbl).catch(() => null),
+      ]);
+      const estimate = estimatePropertyTax(pluto, assess);
       if (actual) {
         return {
           ...estimate,
           actual_annual: actual.annual,
-          actual_quarterly: Math.round(actual.annual / 4),
+          actual_installment: actual.installment,
+          actual_installments: actual.installments,
+          actual_frequency: actual.frequency,
+          actual_schedule: actual.schedule,
           actual_tax_year: actual.tax_year,
+          actual_prior_year: actual.prior_year || null,
           actual_source: "DOF Property Charges Balance (NYC Open Data)",
         };
       }
