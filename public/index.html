@@ -1969,7 +1969,9 @@ async function loadStreetView(lat, lng) {
       img.style.display = "none";
       section.style.display = "";
       meta.textContent = "Google";
-      if (hint) hint.textContent = "Street View couldn't load here — open it in Google Maps";
+      if (hint) hint.textContent = /billing/i.test(d.google_error || "")
+        ? "Street View is paused — Google Cloud billing is off for this site's Maps key. Open it in Google Maps →"
+        : "Street View couldn't load here — open it in Google Maps";
     } else {
       section.style.display = "none";
     }
@@ -1978,6 +1980,9 @@ async function loadStreetView(lat, lng) {
   // (e.g. the server key was rejected), the browser key can still find and show the panorama.
   if (d && !d.available && !d.key_error && d.status) { section.style.display = "none"; return; }
   if (d && d.key_error) console.warn("Street View server key:", d.status, d.google_error || "");
+  // Billing off on the Google Cloud project: the browser panorama would only render Google's
+  // "For development purposes only" degraded view, so show the open-in-Maps link instead.
+  if (d && d.key_error && /billing/i.test(d.google_error || "")) return showStatic();
 
   // 2. Interactive panorama if we have a browser key.
   try {
