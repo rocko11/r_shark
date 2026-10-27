@@ -802,8 +802,9 @@ const envSectionHtml = () => `
       <div class="sec-head"><h2>Environmental</h2><span class="count" id="envmeta">checking…</span></div>
       <div id="envbody"><p class="loading" style="margin:0">Checking flood maps, contamination databases, E-designations and spill records…</p></div>
     </section>`;
-let _envSeq = 0;
+let _envSeq = 0, _envParams = null;
 async function loadEnvironment(p) {
+  _envParams = p;
   const body = document.getElementById('envbody'), meta = document.getElementById('envmeta');
   if (!body || !p || !p.lat || !p.lon) { if (body) body.innerHTML = '<div class="clear">No coordinates for this property, so the environmental screen could not run.</div>'; return; }
   const seq = ++_envSeq;
@@ -881,7 +882,7 @@ function envHtml(e) {
   const failed = Object.keys(e.sources_failed || {});
   return `${findings}${floodHtml}${edHtml}${sitesHtml}${sfHtml}${spHtml}
     <p class="ownnote" style="margin-top:10px">Desktop screen only — not a Phase I Environmental Site Assessment. Sources: FEMA NFHL${e.region === 'nyc' ? ', NYC DCP E-designations, NYC OER' : ''}${e.region !== 'nj' ? ', NYS DEC remediation &amp; spill databases' : ', NJDEP Known Contaminated Sites'}, EPA Superfund.
-    Underground tanks, asbestos, lead paint and historical uses (gas stations, dry cleaners, manufacturing) need a Phase I.${failed.length ? ` <strong>Unavailable right now: ${esc(failed.join(', '))}.</strong>` : ''}</p>`;
+    Underground tanks, asbestos, lead paint and historical uses (gas stations, dry cleaners, manufacturing) need a Phase I.${failed.length ? ` <strong>Unavailable right now: ${esc(failed.join(', '))}.</strong> <button class="link no-print" onclick="loadEnvironment(_envParams)">retry</button>` : ''}</p>`;
 }
 
 // Same Street View panel as the NYC report (interactive panorama, static photo fallback).

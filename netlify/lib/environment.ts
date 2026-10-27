@@ -76,9 +76,12 @@ function floodRow(f: any) {
 }
 async function flood(lat: number, lon: number) {
   const fields = { outFields: "FLD_ZONE,ZONE_SUBTY,SFHA_TF,STATIC_BFE,DFIRM_ID" };
+  // hazards.fema.gov drops connections now and then — one quick retry fixes almost all of it
+  // (the whole function has to finish inside Netlify's 10 s limit).
+  const tryTwice = async (url: string) => { try { return await getJSON(url, 4500); } catch { return await getJSON(url, 4000); } };
   const [eff, pre] = await Promise.allSettled([
-    getJSON(arcPoint(FEMA_EFF, lat, lon, fields), 8000),
-    getJSON(arcPoint(FEMA_PRELIM, lat, lon, fields), 8000),
+    tryTwice(arcPoint(FEMA_EFF, lat, lon, fields)),
+    tryTwice(arcPoint(FEMA_PRELIM, lat, lon, fields)),
   ]);
   if (eff.status === "rejected" && pre.status === "rejected") throw new Error("FEMA flood service unavailable");
   // A point on a zone line can return two polygons — keep the riskier one.

@@ -17,7 +17,10 @@ export default async (req: Request, _ctx: Context) => {
       lat, lon, region: region as any,
       bbl: u.get("bbl") || undefined, address: u.get("address") || undefined, county: u.get("county") || undefined,
     });
-    return json(env);
+    // Don't let a CDN cache a half-failed screen for an hour.
+    const partial = Object.keys((env as any).sources_failed || {}).length > 0;
+    return new Response(JSON.stringify(env), { status: 200, headers: { "content-type": "application/json",
+      "cache-control": partial ? "no-store" : "public, max-age=3600" } });
   } catch (e: any) {
     return json({ error: String(e?.message || e) }, 502);
   }
