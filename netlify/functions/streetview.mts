@@ -70,7 +70,15 @@ export default async (req: Request, _ctx: Context) => {
   }
 
   if (meta.status !== "OK") {
-    return json({ available: false, reason: "No Street View imagery at this location.", status: meta.status });
+    // ZERO_RESULTS / NOT_FOUND = genuinely no imagery. Anything else (REQUEST_DENIED,
+    // OVER_QUERY_LIMIT, ...) is a problem with GOOGLE_MAPS_KEY, not with the location —
+    // say so, so the page can still try the interactive panorama with the browser key.
+    const none = meta.status === "ZERO_RESULTS" || meta.status === "NOT_FOUND";
+    return json({
+      available: false, status: meta.status, key_error: !none,
+      reason: none ? "No Street View imagery at this location." : `Google rejected the server Street View key (${meta.status}).`,
+      google_error: meta.error_message || null,
+    });
   }
 
   let captured: string | null = null;

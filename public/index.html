@@ -1964,11 +1964,20 @@ async function loadStreetView(lat, lng) {
       img.src = d.image_url;
       meta.textContent = d.captured ? ("Google · " + d.captured) : "Google";
       if (hint) hint.textContent = "static photo · open in Google Maps to drive around";
+    } else if (d && d.key_error) {
+      // Neither key worked: keep the section with a way to open it in Google Maps.
+      img.style.display = "none";
+      section.style.display = "";
+      meta.textContent = "Google";
+      if (hint) hint.textContent = "Street View couldn't load here — open it in Google Maps";
     } else {
       section.style.display = "none";
     }
   };
-  if (!(d && d.available)) { section.style.display = "none"; return; }
+  // Only give up when Google says there's no imagery here. If the server-side check failed
+  // (e.g. the server key was rejected), the browser key can still find and show the panorama.
+  if (d && !d.available && !d.key_error && d.status) { section.style.display = "none"; return; }
+  if (d && d.key_error) console.warn("Street View server key:", d.status, d.google_error || "");
 
   // 2. Interactive panorama if we have a browser key.
   try {
