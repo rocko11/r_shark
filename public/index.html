@@ -195,6 +195,11 @@ body{
 .tb-head .boro{font-family:var(--mono);font-size:12px;letter-spacing:.12em;
                text-transform:uppercase;color:var(--ink-2);margin-top:6px}
 .tb-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr))}
+/* environmental screen */
+.envgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));border:1px solid var(--rule);border-bottom:none;margin:12px 0 6px}
+.envgrid .cell .v{font-size:13px}
+.subh{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin:16px 0 6px}
+#envsection .flag{margin-bottom:6px}
 .cell{padding:9px 12px;border-right:1px solid var(--rule);border-bottom:1px solid var(--rule)}
 .cell:last-child{border-right:none}
 .cell .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.11em;
@@ -789,6 +794,96 @@ async function run() {
 
 
 
+/* ---------- Environmental screen (all regions) ----------
+   Placeholder renders with the report; /api/environment fills it in afterwards so a slow
+   government GIS server never holds up the main report. */
+const envSectionHtml = () => `
+    <section id="envsection">
+      <div class="sec-head"><h2>Environmental</h2><span class="count" id="envmeta">checking…</span></div>
+      <div id="envbody"><p class="loading" style="margin:0">Checking flood maps, contamination databases, E-designations and spill records…</p></div>
+    </section>`;
+let _envSeq = 0;
+async function loadEnvironment(p) {
+  const body = document.getElementById('envbody'), meta = document.getElementById('envmeta');
+  if (!body || !p || !p.lat || !p.lon) { if (body) body.innerHTML = '<div class="clear">No coordinates for this property, so the environmental screen could not run.</div>'; return; }
+  const seq = ++_envSeq;
+  const qs = new URLSearchParams({ lat: (+p.lat).toFixed(6), lon: (+p.lon).toFixed(6), region: p.region });
+  if (p.bbl) qs.set('bbl', p.bbl); if (p.address) qs.set('address', p.address); if (p.county) qs.set('county', p.county);
+  let e;
+  try {
+    const r = await fetch('/api/environment?' + qs);
+    e = await r.json();
+    if (!r.ok) throw new Error(e.error || 'HTTP ' + r.status);
+  } catch (err) {
+    if (seq === _envSeq && document.body.contains(body)) { body.innerHTML = `<div class="err">Environmental screen unavailable: ${esc(err.message)}</div>`; meta.textContent = 'unavailable'; }
+    return;
+  }
+  if (seq !== _envSeq || !document.body.contains(body)) return; // user moved on to another report
+  body.innerHTML = envHtml(e);
+  const n = (e.findings || []).filter(f => f.level !== 'info').length;
+  meta.innerHTML = `<span style="font-weight:700;color:${e.risk === 'high' ? 'var(--iron)' : e.risk === 'moderate' ? 'var(--ochre)' : 'var(--teal, #0d9488)'}">${e.risk.toUpperCase()} RISK</span>${n ? ' · ' + n + ' flagged' : ''}`;
+}
+function envHtml(e) {
+  const dist = m => m == null ? '—' : m < 1000 ? m + ' m' : (m / 1609.34).toFixed(1) + ' mi';
+  const sevOf = l => l === 'high' ? 'critical' : l === 'moderate' ? 'warning' : 'info';
+  const findings = (e.findings || []).length
+    ? e.findings.map(f => `<div class="flag ${sevOf(f.level)}"><span class="sev">${f.level === 'info' ? 'note' : f.level}</span>
+        <div><div class="t">${esc(f.title)}</div><div class="d">${esc(f.detail)}</div></div></div>`).join('')
+    : `<div class="clear">Nothing flagged: outside the 100-year floodplain, no E-designation, no remediation case or spill record at or near this address.</div>`;
+
+  // Flood
+  const fz = z => z ? `<strong>${esc(z.zone)}</strong>${z.bfe_ft ? ` · BFE ${z.bfe_ft} ft` : ''}<br><span class="hint" style="margin:0">${esc(z.label)}</span>` : '—';
+  const fl = e.flood;
+  const floodHtml = fl ? `<div class="envgrid">
+      <div class="cell"><span class="k">FEMA flood zone (effective)</span><span class="v">${fz(fl.effective)}</span></div>
+      <div class="cell"><span class="k">Preliminary map${e.region === 'nyc' ? ' (2015 PFIRM)' : ''}</span><span class="v">${fl.preliminary ? fz(fl.preliminary) : '<span class="hint" style="margin:0">no preliminary study here</span>'}</span></div>
+      <div class="cell"><span class="k">Flood insurance</span><span class="v">${[fl.effective, fl.preliminary].some(z => z && z.sfha) ? '<span class="neg" style="font-weight:700">Required with a federally backed loan</span>' : 'Not required'}</span></div>
+    </div>
+    <p class="hint" style="margin:0 0 10px"><a href="https://msc.fema.gov/portal/search?AddressQuery=${encodeURIComponent(e.point.join(','))}" target="_blank" rel="noopener">FEMA Flood Map Service Center →</a>${e.region === 'nyc' ? ' · <a href="https://www.nyc.gov/site/floodmaps/index.page" target="_blank" rel="noopener">NYC flood maps →</a> · NYC building code (Appendix G) uses the stricter of the two maps.' : ''}</p>` : '';
+
+  // E-designations (NYC)
+  const ed = e.edesignations || [];
+  const edHtml = e.region === 'nyc' ? (ed.length ? `<h3 class="subh">E-designations on this lot</h3>
+      <table class="stack"><thead><tr><th>E-number</th><th>Type</th><th>Requirement</th><th>Effective</th><th>CEQR</th></tr></thead><tbody>
+      ${ed.map(x => `<tr><td>${esc(x.number)}</td><td>${[x.hazmat && '<span class="neg" style="font-weight:700">Hazardous materials</span>', x.air && 'Air quality', x.noise && 'Noise'].filter(Boolean).join(', ') || '—'}</td>
+        <td>${esc(x.description || '—')}</td><td>${esc(x.effective || '—')}</td><td>${esc(x.ceqr || '—')}</td></tr>`).join('')}
+      </tbody></table>` : `<p class="hint" style="margin:6px 0 10px">No E-designation on this lot (NYC DCP).</p>`) : '';
+
+  // Remediation / contamination sites
+  const sites = [
+    ...(e.oer || []).map(s => ({ ...s, src: 'NYC OER', prog: s.program, st: s.status })),
+    ...(e.remediation || []).map(s => ({ ...s, src: 'NYS DEC', prog: s.program, st: s.class })),
+    ...(e.nj_sites || []).map(s => ({ ...s, src: 'NJDEP', prog: s.controls && s.controls.length ? s.controls.join('; ') : 'Known contaminated site', st: s.status })),
+  ].sort((a, b) => (b.on_lot - a.on_lot) || ((a.distance_m ?? 9e9) - (b.distance_m ?? 9e9)));
+  const siteRows = sites.slice(0, 15).map(s => `<tr${s.on_lot ? ' style="background:rgba(220,38,38,.08)"' : ''}>
+      <td>${s.url ? `<a class="doclink" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.name || '—')}</a>` : esc(s.name || '—')}${s.address && s.address !== s.name ? `<br><span class="hint" style="margin:0">${esc(s.address)}</span>` : ''}</td>
+      <td>${esc(s.src)}</td><td>${esc(s.prog || '—')}</td><td>${esc(s.st || '—')}</td>
+      <td class="num">${s.on_lot ? '<strong class="neg">this lot</strong>' : dist(s.distance_m)}</td></tr>`).join('');
+  const sitesHtml = (e.oer || e.remediation || e.nj_sites) ? `<h3 class="subh">Contamination &amp; cleanup sites within ${e.radius_m} m</h3>${sites.length
+      ? `<table class="stack"><thead><tr><th>Site</th><th>Agency</th><th>Program / controls</th><th>Status</th><th class="num">Distance</th></tr></thead><tbody>${siteRows}</tbody></table>${sites.length > 15 ? `<p class="hint" style="margin:4px 0 0">Showing the 15 closest of ${sites.length}.</p>` : ''}`
+      : `<p class="hint" style="margin:6px 0 10px">None on record within ${e.radius_m} m.</p>`}` : '';
+
+  // Superfund
+  const sf = e.superfund || [];
+  const sfHtml = e.superfund ? `<h3 class="subh">EPA Superfund (National Priorities List) within 1 mile</h3>${sf.length
+      ? `<table class="stack"><tbody>${sf.map(s => `<tr><td>${s.url ? `<a class="doclink" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.name)}</a>` : esc(s.name)}</td><td>${esc(s.status || '')}${s.listed ? ' · listed ' + esc(s.listed) : ''}</td><td class="num">${dist(s.distance_m)}</td></tr>`).join('')}</tbody></table>`
+      : `<p class="hint" style="margin:6px 0 10px">No Superfund site within a mile.</p>`}` : '';
+
+  // Spills
+  const sp = e.spills;
+  const spHtml = sp ? `<h3 class="subh">NYS DEC spill records at this address</h3>${sp.items.length
+      ? `<table class="stack"><thead><tr><th>Date</th><th>Material</th><th>Qty</th><th>Cause</th><th>Status</th><th>Spill #</th></tr></thead><tbody>
+        ${sp.items.slice(0, 12).map(s => `<tr><td>${esc(s.date || '—')}</td><td>${esc(s.material || '—')}</td><td>${esc(s.quantity || '—')}</td><td>${esc(s.cause || '—')}</td>
+          <td>${s.closed ? 'Closed ' + esc(s.closed) : '<strong class="neg">OPEN</strong>'}</td><td style="font-family:var(--mono);font-size:11px">${esc(s.number)}</td></tr>`).join('')}</tbody></table>
+        ${sp.items.length > 12 ? `<p class="hint" style="margin:4px 0 0">Showing 12 of ${sp.items.length}.</p>` : ''}`
+      : `<p class="hint" style="margin:6px 0 10px">No spill reported at ${esc(sp.matched_on || 'this address')}.</p>`}` : '';
+
+  const failed = Object.keys(e.sources_failed || {});
+  return `${findings}${floodHtml}${edHtml}${sitesHtml}${sfHtml}${spHtml}
+    <p class="ownnote" style="margin-top:10px">Desktop screen only — not a Phase I Environmental Site Assessment. Sources: FEMA NFHL${e.region === 'nyc' ? ', NYC DCP E-designations, NYC OER' : ''}${e.region !== 'nj' ? ', NYS DEC remediation &amp; spill databases' : ', NJDEP Known Contaminated Sites'}, EPA Superfund.
+    Underground tanks, asbestos, lead paint and historical uses (gas stations, dry cleaners, manufacturing) need a Phase I.${failed.length ? ` <strong>Unavailable right now: ${esc(failed.join(', '))}.</strong>` : ''}</p>`;
+}
+
 // Same Street View panel as the NYC report (interactive panorama, static photo fallback).
 const svSectionHtml = () => `
     <section id="svsection" style="display:none">
@@ -954,6 +1049,7 @@ function renderNYS(d) {
         property: { address: p.address || '', city: (String(g.matched || '').split(',')[1] || p.municipality || '').trim(), state: 'NY', zip: p.zip || (String(g.matched || '').match(/\b\d{5}\b/) || [''])[0] },
         mailing: parseMailing(p.owner_mailing) })}
     </section>
+    ${envSectionHtml()}
     <p class="ownnote">Rest-of-state coverage: ${esc(d.source || '')}. NYC-only sections (violations, permits, zoning, ACRIS, liens) don't apply outside the five boroughs; upstate distress records are kept town by town.
       <a href="https://www.google.com/maps/search/${encodeURIComponent(g.matched || p.address || '')}" target="_blank" rel="noopener">Google Maps →</a></p>`;
 
@@ -974,6 +1070,7 @@ function renderNYS(d) {
   }
   const svAt = g.lat ? [g.lat, g.lon] : (d.geometry?.centroid || null);
   if (svAt) loadStreetView(svAt[0], svAt[1]);
+  loadEnvironment({ lat: svAt && svAt[0], lon: svAt && svAt[1], region: 'nys', address: p.address || '', county: p.county || '' });
 }
 
 /* ---------- New Jersey property card (NJ geocoder + statewide parcel/MOD-IV composite) ---------- */
@@ -1028,6 +1125,7 @@ function renderNJ(d) {
         property: { address: p.address || '', city: (String(g.matched || '').split(',')[1] || town || '').trim(), state: 'NJ', zip: (String(g.matched || '').match(/\b0[78]\d{3}\b/) || [''])[0] },
         mailing: parseMailing(p.owner_mailing) })}
     </section>
+    ${envSectionHtml()}
     <section>
       <div class="sec-head"><h2>Sheriff sales</h2><span class="src">17 NJ counties · updated daily</span></div>
       ${sheriffHtml}
@@ -1053,6 +1151,7 @@ function renderNJ(d) {
   }
   const svAt = g.lat ? [g.lat, g.lon] : (d.geometry?.centroid || null);
   if (svAt) loadStreetView(svAt[0], svAt[1]);
+  loadEnvironment({ lat: svAt && svAt[0], lon: svAt && svAt[1], region: 'nj', address: p.address || '', county: p.county || '' });
 }
 
 /* ---------- FAR section diagram (the signature) ----------
@@ -1494,6 +1593,8 @@ function render(d) {
       ${flagsHtml}
     </section>
 
+    ${envSectionHtml()}
+
     <section>
       <div class="sec-head"><h2>Title, ownership &amp; liens</h2>
         <span class="count">${T.available===false?"unavailable":"ACRIS · recorded record"}</span></div>
@@ -1792,6 +1893,7 @@ function render(d) {
   }
   lastReport = d; lastRenderer = render;
   if (hasGeo && window.L) initBlockMap(lat, lng, d.bbl);
+  loadEnvironment({ lat, lon: lng, region: 'nyc', bbl: d.bbl, address: id.address || '' });
 }
 
 let lastReport = null, lastRenderer = null, rzTimer, rzW = innerWidth;
