@@ -277,10 +277,11 @@ export async function buildEnvironment(inp: EnvInput) {
   const F: { level: string; title: string; detail: string }[] = [];
   const fl = out.flood;
   const eff = fl?.effective, pre = fl?.preliminary;
-  const worstFlood = [eff, pre].filter(Boolean).sort((a: any, b: any) => Number(b.sfha) - Number(a.sfha) || (b.bfe_ft || 0) - (a.bfe_ft || 0))[0];
+  const LV: Record<string, number> = { high: 2, moderate: 1, low: 0 };
+  const worstFlood = [eff, pre].filter(Boolean).sort((a: any, b: any) => Number(b.sfha) - Number(a.sfha) || LV[b.level] - LV[a.level] || (b.bfe_ft || 0) - (a.bfe_ft || 0))[0];
   if (worstFlood?.sfha) F.push({ level: "high", title: `Flood zone ${worstFlood.zone}${worstFlood.bfe_ft ? ` · base flood elevation ${worstFlood.bfe_ft} ft` : ""}`,
     detail: `${worstFlood.label}${pre && eff && pre.zone !== eff.zone ? ` (effective map: ${eff.zone}; preliminary map: ${pre.zone})` : ""}. Federally backed mortgages need flood insurance; new construction and substantial improvements must be built to flood-resistant standards above the design flood elevation.` });
-  else if (worstFlood && worstFlood.level === "moderate") F.push({ level: "moderate", title: "0.2% annual-chance (500-year) flood area", detail: "Outside the 100-year floodplain but inside the 500-year. Insurance is optional; critical systems should still sit high." });
+  else if (worstFlood && worstFlood.level === "moderate") F.push({ level: "moderate", title: `0.2% annual-chance (500-year) flood area${pre && worstFlood === pre && (!eff || eff.level !== "moderate") ? " on the preliminary map" : ""}`, detail: "Outside the 100-year floodplain but inside the 500-year. Insurance is optional; mechanicals and electrical should still sit high, and NYC applies some flood-resistant rules to critical facilities here." });
 
   const onLot = (arr: any[] | null | undefined) => (arr || []).filter((s: any) => s.on_lot);
   const ed = out.edesignations || [];
