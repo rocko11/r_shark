@@ -1,3 +1,4 @@
+import { NJ_MUNIS } from "./nj_munis.ts";
 // New Jersey property lookup.
 //  1. Geocode with the State of NJ composite locator (NJOGIS, free, rooftop-level).
 //  2. Find the tax parcel under that point in the statewide Parcels + MOD-IV composite.
@@ -119,17 +120,14 @@ export async function njSuggest(text: string) {
 }
 
 // ── municipality names (565) — cached; used to find the town in free text ──
-let muniCache: { at: number; names: string[] } | null = null;
 // "JERSEY CITY CITY" → "JERSEY CITY"; "SECAUCUS TOWN" → "SECAUCUS" (only the trailing type word)
 const muniBase = (m: string) => up(m).replace(/\s+(CITY|TOWN|TOWNSHIP|TWP|BOROUGH|BORO|VILLAGE)$/, "").trim();
 // Also accept the name without a trailing CITY/TOWN ("Ventnor" for "VENTNOR CITY CITY")
 const muniAlt = (m: string) => muniBase(m).replace(/\s+(CITY|TOWN|TOWNSHIP|TWP|BOROUGH|BORO|VILLAGE)$/, "").trim();
 async function njMunis(): Promise<string[]> {
-  if (muniCache && Date.now() - muniCache.at < 24 * 3600_000) return muniCache.names;
-  const j = await getJSON(`${NJ_PARCELS}?${new URLSearchParams({ where: "1=1", outFields: "MUN_NAME", returnDistinctValues: "true", returnGeometry: "false", resultRecordCount: "2000", f: "json" })}`, 9000);
-  const names = (j.features || []).map((f: any) => String(f.attributes.MUN_NAME || "")).filter(Boolean);
-  muniCache = { at: Date.now(), names };
-  return names;
+  // Static list: the live distinct-values query takes 8–14 s and usually timed out, which cost
+  // non-exact NJ lookups ~9 s and silently disabled the street-name fallback search.
+  return NJ_MUNIS;
 }
 // Town part of the input = text after the first comma, or after the first street-type word.
 async function njTownsIn(address: string, geocodedCity?: string): Promise<string[]> {
@@ -163,7 +161,7 @@ async function njParcelByText(addr: string, towns: string[]) {
   const core = streetCore(want.street);
   if (!towns.length || !core || core.length < 2) return { feature: null, suggestions: [] as string[] };
   const where = `MUN_NAME IN (${towns.map(t => `'${t.replace(/'/g, "''")}'`).join(",")}) AND PROP_LOC LIKE '%${core.replace(/'/g, "''")}%'`;
-  const j = await getJSON(`${NJ_PARCELS}?${new URLSearchParams({ where, outFields: PARCEL_FIELDS, returnGeometry: "true", outSR: "4326", geometryPrecision: "6", resultRecordCount: "2000", f: "json" })}`, 9000);
+  const j = await getJSON(`${NJ_PARCELS}?${new URLSearchParams({ where, outFields: PARCEL_FIELDS, returnGeometry: "true", outSR: "4326", geometryPrecision: "6", resultRecordCount: "2000", f: "json" })}`, 4500); // fallback only — LIKE scans can hang
   const onStreet = (j.features || []).filter((f: any) => sameStreet(splitAddr(f.attributes?.PROP_LOC || "").street, want.street));
   const hit = onStreet.find((f: any) => addrMatch(f.attributes.PROP_LOC, addr));
   if (hit) return { feature: hit, suggestions: [] };
@@ -212,12 +210,18 @@ function parseCSV(text: string): Record<string, string>[] {
   const [head, ...body] = rows;
   return body.filter(r => r.length > 1).map(r => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""])));
 }
-async function njssRows() {
-  if (njssCache && Date.now() - njssCache.at < 6 * 3600_000) return njssCache.rows;
-  const r = await fetch(NJSS_CSV, { signal: AbortSignal.timeout(7000) });
-  if (!r.ok) throw new Error(`njss HTTP ${r.status}`);
-  njssCache = { at: Date.now(), rows: parseCSV(await r.text()) };
-  return njssCache.rows;
+let njssInflight: Promise<any[]> | null = null;
+function njssRows(): Promise<any[]> {
+  if (njssCache && Date.now() - njssCache.at < 6 * 3600_000) return Promise.resolve(njssCache.rows);
+  // One shared download, started as early as possible (buildNJReport kicks it off up front).
+  return njssInflight ||= (async () => {
+    try {
+      const r = await fetch(NJSS_CSV, { signal: AbortSignal.timeout(7000) });
+      if (!r.ok) throw new Error(`njss HTTP ${r.status}`);
+      njssCache = { at: Date.now(), rows: parseCSV(await r.text()) };
+      return njssCache.rows;
+    } finally { njssInflight = null; }
+  })();
 }
 async function njSheriffSales(addrs: string[], muni: string, zip?: string) {
   try {
@@ -259,6 +263,7 @@ export async function buildNJReportAt(lat: number, lon: number) {
 }
 
 export async function buildNJReport(address: string, at?: { lat: number; lon: number }) {
+  njssRows().catch(() => null); // start the sheriff-sale download now, in parallel with the parcel search
   const variants = at ? [] : inputVariants(address);
   let top: any = null, feature: any = null, exact = false, via = at ? "map" : "geocoder";
   let suggestions: string[] = [];
