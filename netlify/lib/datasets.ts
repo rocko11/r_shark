@@ -55,7 +55,8 @@ export const DATASETS: Record<string, Dataset> = {
     verified: true, canaryField: "job__", binField: "bin__", orderBy: "latest_action_date DESC",
     notes: "Legacy BIS. Fields carry trailing double underscores: job__, bin__." },
   dob_bis_permits: { slug: "dob_bis_permits", socrataId: "by8u-8ck5", key: "bin",
-    verified: true, canaryField: "job__", binField: "bin__", orderBy: "issuance_date DESC" },
+    verified: true, canaryField: "job__", binField: "bin__",
+    notes: "Only counted (permits_issued). issuance_date was dropped from this set ~2026; latest_action_date / fully_permitted are MM/DD/YYYY text, so no server-side order." },
 
   // DOB violations (three datasets)
   dob_violations: { slug: "dob_violations", socrataId: "3h2n-5cm9", key: "bin",
@@ -77,7 +78,8 @@ export const DATASETS: Record<string, Dataset> = {
     verified: true, canaryField: "violationid", bblField: "bbl", orderBy: "inspectiondate DESC",
     notes: "Housing Maintenance Code Violations. Class A/B/C/I." },
   hpd_registrations: { slug: "hpd_registrations", socrataId: "tesw-yqqr", key: "bbl",
-    verified: false, canaryField: "registrationid", bblField: "bbl" },
+    verified: false, canaryField: "registrationid",
+    notes: "No bbl column — owner.ts queries boroid/block/lot." },
   hpd_contacts: { slug: "hpd_contacts", socrataId: "feu5-w2e2", key: "registrationid",
     verified: false, canaryField: "registrationid", bblField: null,
     notes: "Registration Contacts. type=HeadOfficer/IndividualOwner/CorporateOwner/Agent, firstname, lastname, corporationname, business address. Join on registrationid." },
