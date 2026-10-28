@@ -4,6 +4,7 @@ import { analyzeTitle } from "./title.ts";
 import { ownerPortfolio, ownerContacts } from "./owner.ts";
 import { assessRentStabilization } from "./rentstab.ts";
 import { estimatePropertyTax, fetchActualTax, fetchAssessment } from "./tax.ts";
+import { fetchZoningLot, fetchPointZoning, buildZoning } from "./zoning.ts";
 import { checkArrears } from "./arrears.ts";
 import { developmentRights, redFlags } from "./derive.ts";
 
@@ -165,6 +166,7 @@ export async function buildReport(bbl: string, bin: string | null = null) {
   const arrearsP = checkArrears(bbl).catch(() => ({ available: false, on_lien_sale_list: false, caveat: "Arrears check unavailable." }));
   const assessP = fetchAssessment(bbl).catch(() => null);
   const actualTaxP = fetchActualTax(bbl).catch(() => null);
+  const zoningLotP = fetchZoningLot(bbl).catch(() => null);
 
   const tasks: Record<string, Promise<any>> = {};
   const binWhere = (slug: string) => {
@@ -205,7 +207,11 @@ export async function buildReport(bbl: string, bin: string | null = null) {
   // The owner portfolio is the only lookup that needs PLUTO (the owner's name).
   const portfolioP = ownerPortfolio(pluto.ownername, bbl, Number(block), Number(lot)).catch(() => ({ available: false, count: 0, lots: [] }));
 
-  const [{ data, errors }, portfolio, contacts, arrears] = await Promise.all([gatherP, portfolioP, contactsP, arrearsP]);
+  const plat = Number(pluto.latitude), plon = Number(pluto.longitude);
+  const pointZoningP = plat && plon ? fetchPointZoning(plat, plon).catch(() => null) : Promise.resolve(null);
+
+  const [{ data, errors }, portfolio, contacts, arrears, zoningLot, pointZoning] =
+    await Promise.all([gatherP, portfolioP, contactsP, arrearsP, zoningLotP, pointZoningP]);
 
   const derived = developmentRights(pluto);
   const acrisData = data.acris || { documents: [] };
@@ -288,6 +294,19 @@ export async function buildReport(bbl: string, bin: string | null = null) {
       ownership_type: ownershipType,
     },
     development: derived,
+    zoning: (() => {
+      // DCP's Zoning Tax Lot Database is updated more often than PLUTO — prefer it.
+      const fromZtl = !!(zoningLot && zoningLot.districts.length);
+      const norm = (v: any) => String(v ?? "").trim();
+      const z = fromZtl ? zoningLot! : {
+        districts: [1, 2, 3, 4].map(i => norm(pluto[`zonedist${i}`])).filter(Boolean),
+        overlays: [1, 2].map(i => norm(pluto[`overlay${i}`])).filter(Boolean),
+        specials: [1, 2, 3].map(i => norm(pluto[`spdist${i}`])).filter(Boolean),
+        limited_height: norm(pluto.ltdheight) || null, map_number: norm(pluto.zonemap) || null,
+      };
+      return buildZoning({ ...z, point: pointZoning, lotArea: Number(pluto.lotarea) || null, bbl,
+        source: fromZtl ? "DCP Zoning Tax Lot Database" : "PLUTO", pluto });
+    })(),
     owner_intel: { ownership_type: ownershipType, portfolio, contacts },
     rent_stabilization: assessRentStabilization(pluto, bbl),
     property_tax: await (async () => {

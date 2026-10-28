@@ -2,9 +2,8 @@
 // assumptions, never a single confident number.
 
 import { DHCR_BBLS } from "./dhcr_data.ts";
+import { residentialFar, residentialEquivalent } from "./zoning.ts";
 
-const UAP_ELIGIBLE = ["R6", "R7", "R8", "R9", "R10", "R11", "R12"];
-const UAP_MAX_BONUS = 0.20;
 
 export interface Scenario {
   name: string; far: number; buildable_sf: number; unused_sf: number; assumptions: string[];
@@ -67,18 +66,24 @@ export function developmentRights(pluto: any): Derived {
   add("Commercial (as-of-right)", commFar, []);
   add("Community facility (as-of-right)", facilFar, []);
 
-  const fam = districts.length ? family(districts[0]) : "";
-  if (residFar && UAP_ELIGIBLE.includes(fam)) {
-    add("Residential + UAP (City of Yes)", residFar * (1 + UAP_MAX_BONUS), [
-      `Assumes maximum ${UAP_MAX_BONUS * 100}% UAP bonus; actual bonus varies by district.`,
-      "Requires permanently affordable housing averaging 60% AMI.",
-      "Projects over 10,000 SF must set 20% of affordable units at 40% AMI (Council modification).",
-      "Affordable floor area is bonused 1:1.",
-      "Model alongside 485-x — the affordability tiers were designed together.",
-    ]);
-    caveats.push(
-      "UAP eligibility inferred from the primary zoning district only. Confirm the " +
-      "site is not in a Mandatory Inclusionary Housing area, where different rules apply.");
+  // Bonus residential FAR from the City of Yes tables (ZR §23-21 / §23-22) — not a flat +20%.
+  const resDistrict = districts.find((d) => /^R/.test(d)) || (districts[0] && residentialEquivalent(districts[0])) || "";
+  const tf = resDistrict ? residentialFar(resDistrict) : null;
+  if (residFar && tf && tf.bonus > tf.std) {
+    if (tf.low) {
+      add("Residential — qualifying residential site (City of Yes)", tf.bonus, [
+        `${resDistrict}: ${tf.std} FAR standard, ${tf.bonus} on a "qualifying residential site" (ZR §23-21).`,
+        "Qualifying sites: e.g. 5,000+ sf lots in the Greater Transit Zone on a wide street or short end of a block (not R1/R2), lots with existing community-facility space, or senior housing in certain districts.",
+      ]);
+    } else {
+      add("Residential + UAP (City of Yes)", tf.bonus, [
+        `${resDistrict}: ${tf.std} FAR standard → ${tf.bonus} with qualifying affordable or senior housing (ZR §23-22)${tf.wideStd ? `; within 100 ft of a wide street ${tf.wideStd} → ${tf.wideBonus}` : ""}.`,
+        "Outside MIH areas via UAP: the extra floor area must be permanently affordable, averaging 60% AMI.",
+        "Projects over 10,000 SF must set 20% of affordable units at 40% AMI (Council modification).",
+        "In Mandatory Inclusionary Housing areas the higher FAR comes through MIH instead.",
+        "Model alongside 485-x — the affordability tiers were designed together.",
+      ]);
+    }
   }
 
   if (districts.length > 1) {

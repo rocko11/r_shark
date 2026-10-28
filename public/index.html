@@ -195,6 +195,13 @@ body{
 .tb-head .boro{font-family:var(--mono);font-size:12px;letter-spacing:.12em;
                text-transform:uppercase;color:var(--ink-2);margin-top:6px}
 .tb-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr))}
+/* zoning section */
+.zdist{border:1px solid var(--rule);background:var(--paper-2);padding:12px 14px;margin:10px 0}
+.zhead{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.zcode{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--shark)}
+.zname{font-size:13px;color:var(--ink-2)}
+.zdesc{margin:6px 0 2px;font-size:13.5px}
+table.zt td{padding:4px 8px 4px 0;vertical-align:top} table.zt td.num{white-space:nowrap}
 /* environmental screen */
 .envgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));border:1px solid var(--rule);border-bottom:none;margin:12px 0 6px}
 .envgrid .cell .v{font-size:13px}
@@ -793,6 +800,42 @@ async function run() {
 
 
 
+
+/* ---------- Zoning: what each district on the lot means (NYC) ---------- */
+function zoningHtml(z) {
+  if (!z || !(z.districts || []).length) return '';
+  const kv = (k, v) => v ? `<div class="cell"><span class="k">${k}</span><span class="v">${v}</span></div>` : '';
+  const lines = rows => rows.length ? `<table class="stack zt"><tbody>${rows.map(r => `<tr><td>${esc(r.label)}</td><td class="num"><strong>${esc(r.value)}</strong></td><td class="hint" style="margin:0">${esc(r.note || '')}</td></tr>`).join('')}</tbody></table>` : '';
+  const districtBlock = d => `
+    <div class="zdist">
+      <div class="zhead"><span class="zcode">${esc(d.code)}</span><span class="zname">${esc(d.name)}${d.residential_equivalent && d.kind === 'commercial' ? ` · residential equivalent <strong>${esc(d.residential_equivalent)}</strong>` : ''}</span></div>
+      <p class="zdesc">${esc(d.description)}</p>
+      ${d.far.length ? `<h3 class="subh">Floor area</h3>${lines(d.far)}` : ''}
+      ${d.heights.length ? `<h3 class="subh">Height</h3>${lines(d.heights)}` : ''}
+      ${d.coverage ? `<p class="hint" style="margin:6px 0 0">Max lot coverage: ${esc(d.coverage)}</p>` : ''}
+      ${(d.notes || []).map(n => `<p class="hint" style="margin:6px 0 0">${esc(n)}</p>`).join('')}
+      ${(d.zr || []).length ? `<p class="hint" style="margin:6px 0 0">Zoning Resolution: ${d.zr.map(r => `<a class="doclink" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.label)}</a>`).join(' · ')}</p>` : ''}
+    </div>`;
+  const ovl = (z.overlays || []).map(o => `<div class="zdist"><div class="zhead"><span class="zcode">${esc(o.code)}</span><span class="zname">commercial overlay${o.host_district ? ' in ' + esc(o.host_district) : ''}${o.commercial_far ? ` · commercial FAR <strong>${esc(o.commercial_far)}</strong>` : ''}</span></div>
+      <p class="zdesc">${esc(o.description)}</p><p class="hint" style="margin:4px 0 0">${esc(o.note)} <a class="doclink" href="${esc(o.zr.url)}" target="_blank" rel="noopener">${esc(o.zr.label)}</a></p></div>`).join('');
+  const sp = (z.special_districts || []).length ? `<div class="zdist"><div class="zhead"><span class="zcode">${z.special_districts.map(s => esc(s.code)).join(' · ')}</span><span class="zname">${z.special_districts.map(s => esc(s.name)).join('; ')}</span></div>
+      <p class="zdesc">Special purpose districts add their own rules on top of the base zoning — use, bulk, height, ground-floor and sometimes affordable-housing requirements. The base-district numbers above may be modified.${(z.subdistricts || []).length ? ` Subdistrict: <strong>${z.subdistricts.map(esc).join('; ')}</strong>.` : ''}</p></div>` : '';
+  const pf = z.pluto_far;
+  return `
+    <section>
+      <div class="sec-head"><h2>Zoning</h2><span class="count">${esc((z.districts || []).map(d => d.code).concat((z.overlays || []).map(o => o.code)).join(' · '))}${z.map_number ? ' · map ' + esc(z.map_number) : ''}</span></div>
+      <div class="tb-grid" style="border:1px solid var(--rule);border-bottom:none;margin-bottom:10px">
+        ${kv('Parking (City of Yes)', z.parking ? esc(z.parking) : z.transit_zone ? esc(z.transit_zone) : '—')}
+        ${kv('Mandatory Inclusionary Housing', z.mih ? (z.mih.in_area ? `<span style="color:var(--ochre);font-weight:700">Yes</span> — ${esc(z.mih.project || '')}${z.mih.options ? ' (' + esc(z.mih.options) + ')' : ''}` : 'No — UAP applies') : '—')}
+        ${pf ? kv('DCP lot FAR (PLUTO)', [pf.residential != null && 'res ' + pf.residential, pf.commercial && 'comm ' + pf.commercial, pf.community_facility && 'CF ' + pf.community_facility].filter(Boolean).join(' · ') || '—') : ''}
+        ${z.limited_height ? kv('Limited height district', esc(z.limited_height)) : ''}
+      </div>
+      ${(z.notes || []).map(n => `<p class="hint" style="margin:0 0 6px">${esc(n)}</p>`).join('')}
+      ${(z.districts || []).map(districtBlock).join('')}${ovl}${sp}
+      <p class="ownnote" style="margin-top:10px">Summary of the NYC Zoning Resolution as amended by City of Yes (Dec 2024), from ${esc(z.source || 'DCP')} — screening only; confirm with the Zoning Resolution and a zoning professional before underwriting.
+        <a href="${esc(z.links.zola)}" target="_blank" rel="noopener" style="color:var(--shark)">Open this lot in ZoLa →</a></p>
+    </section>`;
+}
 
 /* ---------- Environmental screen (all regions) ----------
    Placeholder renders with the report; /api/environment fills it in afterwards so a slow
@@ -1685,6 +1728,8 @@ function render(d) {
         <p class="ownnote" style="margin-bottom:0">${esc(ar.caveat||"")}</p>
       </div>
     </section>`;})()}
+
+    ${zoningHtml(d.zoning)}
 
     <section>
       <div class="sec-head"><h2>Development rights</h2>
