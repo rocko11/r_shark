@@ -707,6 +707,7 @@ function setReportTitle() {
   if (t && !/^Start with/.test(t)) document.title = `${t} — R Shark`;
 }
 
+const REPORT_V = 2; // 2 = zoning section
 async function run() {
   const v = q.value.trim();
   if (!v) return;
@@ -718,7 +719,8 @@ async function run() {
     : `<p class="loading">Pulling PLUTO, DOB, ECB, HPD, ACRIS…</p>`;
   try {
     const isBBL = /^\d{10}$/.test(v);
-    const url = isBBL ? `/api/report?bbl=${v}` : `/api/report?address=${encodeURIComponent(v)}`;
+    // REPORT_V: bump when the report's contents change, so CDN-cached copies of the old shape aren't served.
+    const url = (isBBL ? `/api/report?bbl=${v}` : `/api/report?address=${encodeURIComponent(v)}`) + `&v=${REPORT_V}`;
     const r = await fetch(url);
     const body = await r.text();
     let d;
