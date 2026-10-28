@@ -5,10 +5,19 @@ import { detectRegion, townTail } from "../lib/region.ts";
 import { buildNJReport, buildNJReportAt } from "../lib/nj.ts";
 import { buildNYSReport, buildNYSReportAt, nysWhere } from "../lib/nys.ts";
 
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status, headers: { "content-type": "application/json" },
+// Successful reports are cached on Netlify's CDN (keyed by the full query string) for 6 h and
+// served stale for up to a day while a fresh copy is fetched in the background, so re-opening
+// a property or a shared link is instant. Errors / not-found are never cached.
+const json = (body: any, status = 200) => {
+  const ok = status === 200 && body && body.found !== false && !body.error;
+  return new Response(JSON.stringify(body), {
+    status, headers: {
+      "content-type": "application/json",
+      "cache-control": ok ? "public, max-age=300" : "no-store",
+      ...(ok ? { "netlify-cdn-cache-control": "public, durable, s-maxage=21600, stale-while-revalidate=86400" } : {}),
+    },
   });
+};
 
 // GET /api/report?address=...   or   /api/report?bbl=1234567890
 export default async (req: Request, _ctx: Context) => {

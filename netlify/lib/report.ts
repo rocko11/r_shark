@@ -157,13 +157,14 @@ export async function buildReport(bbl: string, bin: string | null = null) {
   const [borough, block, lot] = splitBBL(bbl);
   const acrisOk = ACRIS_BOROUGHS.has(borough);
 
-  const plutoRows = await sq.query("pluto", { where: sq.buildWhere({ bbl }), limit: 1 });
-  if (!plutoRows.length) {
-    return { bbl, found: false,
-      error: "No PLUTO record for this BBL. It may be a condo unit BBL (use the billing BBL), " +
-        "a very recent subdivision, or invalid." };
-  }
-  const pluto = plutoRows[0];
+  // Everything that only needs the BBL (and BIN) starts NOW, in parallel with PLUTO. It used
+  // to run in five sequential waves — PLUTO → datasets → ACRIS documents → owner → arrears/tax —
+  // and NYC Open Data answers each query in 0.3–5 s, so reports took 15–18 s.
+  const plutoP = sq.query("pluto", { where: sq.buildWhere({ bbl }), limit: 1 });
+  const contactsP = ownerContacts(bbl).catch(() => ({ available: false, contacts: [] }));
+  const arrearsP = checkArrears(bbl).catch(() => ({ available: false, on_lien_sale_list: false, caveat: "Arrears check unavailable." }));
+  const assessP = fetchAssessment(bbl).catch(() => null);
+  const actualTaxP = fetchActualTax(bbl).catch(() => null);
 
   const tasks: Record<string, Promise<any>> = {};
   const binWhere = (slug: string) => {
@@ -188,14 +189,23 @@ export async function buildReport(bbl: string, bin: string | null = null) {
   tasks["hpd_hwo_charges"] = sq.query("hpd_hwo_charges", { where: sq.buildWhere({ bbl }), limit: 100 });
   tasks["nyc_311"] = sq.query("nyc_311", { where: sq.buildWhere({ bbl }), limit: 200 });
   if (acrisOk) tasks["acris"] = acris(borough, block, lot);
-  // E-designations key on borough/block/lot (like ACRIS legals), all boroughs.
-  tasks["e_designations"] = sq.query("e_designations", {
-    where: sq.buildWhere({ borough, block, lot }), limit: 50,
-  });
+  // E-designations (DCP, hxm3-23vy) — keyed by BBL.
+  tasks["e_designations"] = sq.query("e_designations", { where: sq.buildWhere({ bbl }), limit: 50 });
   // LPC landmarks: keyed by bbl. Returns rows only if lot is individually designated.
   tasks["lpc_landmarks"] = sq.query("lpc_landmarks", { where: sq.buildWhere({ bbl }), limit: 5 });
+  const gatherP = sq.gather(tasks);
 
-  const { data, errors } = await sq.gather(tasks);
+  const plutoRows = await plutoP;
+  if (!plutoRows.length) {
+    return { bbl, found: false,
+      error: "No PLUTO record for this BBL. It may be a condo unit BBL (use the billing BBL), " +
+        "a very recent subdivision, or invalid." };
+  }
+  const pluto = plutoRows[0];
+  // The owner portfolio is the only lookup that needs PLUTO (the owner's name).
+  const portfolioP = ownerPortfolio(pluto.ownername, bbl, Number(block), Number(lot)).catch(() => ({ available: false, count: 0, lots: [] }));
+
+  const [{ data, errors }, portfolio, contacts, arrears] = await Promise.all([gatherP, portfolioP, contactsP, arrearsP]);
 
   const derived = developmentRights(pluto);
   const acrisData = data.acris || { documents: [] };
@@ -203,15 +213,6 @@ export async function buildReport(bbl: string, bin: string | null = null) {
   // Public vs. private ownership, from PLUTO's ownertype code, cross-checked
   // against the owner name (the code occasionally lags a recent transfer).
   const ownershipType = classifyOwnership(pluto.ownertype, pluto.ownername);
-
-  // Owner intelligence: portfolio (other lots same owner holds) + HPD contact.
-  // Run in parallel; both degrade gracefully to {available:false}.
-  const [portfolio, contacts] = await Promise.all([
-    ownerPortfolio(pluto.ownername, bbl, Number(block), Number(lot)).catch(() => ({ available: false, count: 0, lots: [] })),
-    ownerContacts(bbl).catch(() => ({ available: false, contacts: [] })),
-  ]);
-
-  const arrears = await checkArrears(bbl).catch(() => ({ available: false, on_lien_sale_list: false, caveat: "Arrears check unavailable." }));
 
   // LPC landmark status: summarize any designations on this lot.
   const lpcRows = (data.lpc_landmarks || []) as any[];
@@ -226,9 +227,12 @@ export async function buildReport(bbl: string, bin: string | null = null) {
   // Title / ownership / liens / easements / foreclosure analysis from ACRIS docs.
   const title = analyzeTitle(acrisData.documents || [], acrisOk);
   // Attach E-designations (normalize the type field across dataset vintages).
+  const yes = (v: any) => v === true || v === "true";
   const eDesigs = (data.e_designations || []).map((e: any) => ({
-    enumber: e.enumber || e.e_number, ceqr_number: e.ceqr_number || e.ceqr,
-    type: e.e_designatio || e.edesignation || e.type || "Environmental (E)",
+    enumber: e.enumber || e.e_number, ceqr_number: e.ceqr_num || e.ceqr_number || e.ceqr,
+    type: [yes(e.hazmat_code) && "Hazardous materials", yes(e.air_code) && "Air quality", yes(e.noise_code) && "Noise"].filter(Boolean).join(" / ")
+      || e.e_designatio || e.edesignation || e.type || "Environmental (E)",
+    description: e.description || null,
   }));
   if (title.available) title.e_designations = eDesigs;
 
@@ -287,10 +291,7 @@ export async function buildReport(bbl: string, bin: string | null = null) {
     owner_intel: { ownership_type: ownershipType, portfolio, contacts },
     rent_stabilization: assessRentStabilization(pluto, bbl),
     property_tax: await (async () => {
-      const [assess, actual] = await Promise.all([
-        fetchAssessment(bbl).catch(() => null),
-        fetchActualTax(bbl).catch(() => null),
-      ]);
+      const [assess, actual] = await Promise.all([assessP, actualTaxP]);
       const estimate = estimatePropertyTax(pluto, assess);
       if (actual) {
         return {

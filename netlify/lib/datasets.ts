@@ -42,9 +42,9 @@ export const DATASETS: Record<string, Dataset> = {
 
   // E-designations: CEQR environmental requirements (hazmat / air / noise) on a
   // tax lot. Keyed borough/block/lot like ACRIS legals. A real cost line.
-  e_designations: { slug: "e_designations", socrataId: "jsrs-ggnx", key: "bbl_parts",
-    verified: false, canaryField: "enumber",
-    notes: "Fields: enumber, ceqr_number, borough, block, lot, e_designatio (type: Hazmat/Air/Noise)." },
+  e_designations: { slug: "e_designations", socrataId: "hxm3-23vy", key: "bbl",
+    verified: true, canaryField: "enumber", bblField: "bbl",
+    notes: "DCP E-Designations (was jsrs-ggnx, whose borough column was dropped). Fields: enumber, bbl, hazmat_code, air_code, noise_code, description, ceqr_num, effective_date." },
 
   // DOB filings
   dob_now_jobs: { slug: "dob_now_jobs", socrataId: "w9ak-ipjd", key: "bin",
