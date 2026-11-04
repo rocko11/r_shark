@@ -1,4 +1,5 @@
 import type { Config, Context } from "@netlify/functions";
+import { gate } from "../lib/access.ts";
 
 // GET /api/landmark-search?borough=Brooklyn&zip=11222
 // Returns:
@@ -39,6 +40,7 @@ function chunk<T>(xs: T[], n = 100): T[][] {
 }
 
 export default async (req: Request, _ctx: Context) => {
+  const __ent = await gate(req, "basic"); if (__ent instanceof Response) return __ent;
   const u = new URL(req.url);
   const boroughRaw = (u.searchParams.get("borough") || "Brooklyn").trim();
   const zip = (u.searchParams.get("zip") || "").replace(/\D/g, "");

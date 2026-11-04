@@ -1,4 +1,5 @@
 import type { Config } from "@netlify/functions";
+import { gate } from "../lib/access.ts";
 
 // ── R Shark: Daily Motivated Seller Report — per ZIP ────────────────────────
 // Runs 7 AM ET daily. One email per ZIP. Scores every distressed property on
@@ -335,7 +336,9 @@ function auctionInfo(cycle: string, latestMonth: string): { label: string; urgen
   return { label: cycle, urgency: "watch" };
 }
 
-export default async function handler() {
+export default async function handler(req?: Request) {
+  // Sends the owner's daily email — only the site owner may trigger it over HTTP.
+  if (req) { const __ent = await gate(req, "pacer"); if (__ent instanceof Response) return __ent; }
   if (!process.env.RESEND_API_KEY) { console.log("RESEND_API_KEY not set"); return; }
   if (!process.env.REPORT_EMAIL_TO) { console.log("REPORT_EMAIL_TO not set"); return; }
   console.log(`R Shark daily scan — ZIPs: ${ZIPS.join(", ")}`);

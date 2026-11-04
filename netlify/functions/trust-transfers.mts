@@ -1,14 +1,16 @@
 import type { Config, Context } from "@netlify/functions";
+import { gate } from "../lib/access.ts";
 import { getStore } from "@netlify/blobs";
 import { KIND_LABEL, isSelfTransfer, trustKind } from "../lib/trusts.ts";
 
 // GET /api/trust-transfers?months=3&boro=3&kind=irrevocable&self=1&paid=0&q=smith
 // NYC properties deeded into family / living / irrevocable trusts (ACRIS), newest first.
 // Data is pre-built by trust-build-background (daily, via trust-transfers-cron). If nothing is built yet, this kicks it off.
-const json = (b: unknown, s = 200, cache = "public, max-age=900") =>
+const json = (b: unknown, s = 200, cache = "private, max-age=900") =>
   new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json", "cache-control": cache } });
 
 export default async (req: Request, _ctx: Context) => {
+  const __ent = await gate(req, "lists"); if (__ent instanceof Response) return __ent;
   const u = new URL(req.url).searchParams;
   const store = getStore("trust-transfers");
   const idx: any = await store.get("index", { type: "json" }).catch(() => null);

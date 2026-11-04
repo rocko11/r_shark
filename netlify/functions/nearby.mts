@@ -1,4 +1,5 @@
 import type { Config, Context } from "@netlify/functions";
+import { gate } from "../lib/access.ts";
 import * as sq from "../lib/socrata.ts";
 
 // GET /api/nearby?lat=..&lng=..&radius=250   (radius in meters, default ~2 blocks)
@@ -6,6 +7,7 @@ import * as sq from "../lib/socrata.ts";
 // headline fields so the map can label them and colour them by signal. Clicking
 // a pin then calls /api/report?bbl=... for the full picture.
 export default async (req: Request, _ctx: Context) => {
+  const __ent = await gate(req, "basic"); if (__ent instanceof Response) return __ent;
   const json = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json" } });
   try {

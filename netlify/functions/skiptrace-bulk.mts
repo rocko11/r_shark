@@ -1,4 +1,5 @@
 import type { Config, Context } from "@netlify/functions";
+import { gate } from "../lib/access.ts";
 
 // POST /api/skiptrace-bulk
 // Body: { addresses: [{ address, city, state, zip, bbl }] }
@@ -72,6 +73,7 @@ export default async (req: Request, _ctx: Context) => {
     Array.isArray(body.addresses) ? body.addresses.slice(0, 50) : [];
 
   if (!addresses.length) return json({ error: "addresses array required" }, 400);
+  const __ent = await gate(req, "skiptrace", { credits: addresses.length }); if (__ent instanceof Response) return __ent;
 
   const results: Record<string, any> = {};
   let total_cost = 0;

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R Shark Pricing</title>
+<meta name="description" content="R Shark finds motivated sellers and off-market deals across NYC, New Jersey and New York State — property reports, zoning, taxes, liens, trusts and pre-foreclosures.">
+<style>
+:root{--bg:#0A0E14;--card:#111824;--ink:#E6EDF3;--ink2:#9FB0C3;--line:#223044;--shark:#0ABAB5;--warm:#F2B84B}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--bg:#F4F7FB;--card:#FFFFFF;--ink:#0D1520;--ink2:#4A5A6E;--line:#D9E2EC;--shark:#078F8B;--warm:#B7791F}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:0 16px}
+header{display:flex;justify-content:space-between;align-items:center;padding:20px 0}
+.logo{font-weight:800;letter-spacing:.14em;font-size:18px;text-decoration:none;color:var(--ink)}
+.logo b{color:var(--shark)}
+.btn{display:inline-block;padding:11px 18px;border-radius:9px;background:var(--shark);color:#04141a;font-weight:700;text-decoration:none;border:none;cursor:pointer;font-size:15px}
+.btn.ghost{background:none;color:var(--ink);border:1px solid var(--line)}
+.hero{padding:48px 0 28px;text-align:center}
+.hero h1{font-size:clamp(30px,5vw,50px);line-height:1.08;margin:0 0 14px;letter-spacing:-.01em}
+.hero p{color:var(--ink2);max-width:680px;margin:0 auto 22px;font-size:18px}
+.toggle{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;margin:6px 0 22px}
+.toggle button{background:none;border:none;color:var(--ink);padding:8px 16px;cursor:pointer;font-size:14px}
+.toggle .on{background:var(--shark);color:#04141a;font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.plan{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:12px}
+.plan.best{border-color:var(--shark);box-shadow:0 0 0 1px var(--shark)}
+.plan h2{margin:0;font-size:15px;letter-spacing:.12em;text-transform:uppercase}
+.tag{font-size:11px;color:var(--shark);letter-spacing:.06em;text-transform:uppercase}
+.price{font-size:40px;font-weight:800}.price small{font-size:14px;font-weight:400;color:var(--ink2)}
+.plan ul{margin:0;padding-left:20px;color:var(--ink2);font-size:14.5px}
+.plan li{margin:4px 0}.plan .btn{margin-top:auto;text-align:center}
+section{padding:46px 0}
+h3.sec{font-size:24px;margin:0 0 18px;text-align:center}
+.feats{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.feat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.feat b{display:block;margin-bottom:4px}.feat span{color:var(--ink2);font-size:14px}
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:8px 0}
+summary{cursor:pointer;font-weight:600}
+details p{color:var(--ink2);margin:8px 0 0}
+footer{color:var(--ink2);font-size:13px;padding:30px 0 50px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><a class="logo" href="/">R <b>SHARK</b></a><a class="btn ghost" href="/">Sign in</a></header>
+
+  <div class="hero">
+    <h1>Find the deal before it hits the market.</h1>
+    <p>R Shark turns any address in NYC, New Jersey or New York State into a full underwriting picture in seconds — and hunts the city for motivated sellers: owners moving property into trusts, tax liens, pre-foreclosures and auctions.</p>
+    <div class="toggle"><button class="on" data-i="m" onclick="setI('m')">Monthly</button><button data-i="y" onclick="setI('y')">Yearly · 2 months free</button></div>
+  </div>
+
+  <div class="grid">
+    <div class="plan">
+      <h2>Starter</h2>
+      <div class="price" data-m="49" data-y="490">$49<small>/mo</small></div>
+      <ul>
+        <li>25 property reports a month</li>
+        <li>NYC, New Jersey &amp; rest of NY State</li>
+        <li>Zoning, taxes, environmental, Street View</li>
+        <li>Hunt by owner, ZIP, block or lot size</li>
+        <li>PDF reports</li>
+      </ul>
+      <a class="btn ghost" href="/">Start Starter</a>
+    </div>
+    <div class="plan best">
+      <h2>Pro <span class="tag">· most popular</span></h2>
+      <div class="price" data-m="149" data-y="1490">$149<small>/mo</small></div>
+      <ul>
+        <li><strong>Unlimited</strong> property reports</li>
+        <li>Every Hunt list: deeds into trusts, tax &amp; water liens, pre-foreclosure, auctions</li>
+        <li>CSV export for mail and call campaigns</li>
+        <li>50 owner phone &amp; email lookups a month</li>
+        <li>Everything in Starter</li>
+      </ul>
+      <a class="btn" href="/">Start Pro</a>
+    </div>
+    <div class="plan">
+      <h2>Team</h2>
+      <div class="price" data-m="399" data-y="3990">$399<small>/mo</small></div>
+      <ul>
+        <li>Everything in Pro for up to 5 users</li>
+        <li>250 owner lookups a month, shared</li>
+        <li>One bill — add or remove seats anytime</li>
+      </ul>
+      <a class="btn ghost" href="/">Start Team</a>
+    </div>
+  </div>
+
+  <section>
+    <h3 class="sec">What's in every report</h3>
+    <div class="feats">
+      <div class="feat"><b>Zoning, decoded</b><span>FAR, heights and City of Yes bonuses for the exact district, MIH, parking zone and special districts.</span></div>
+      <div class="feat"><b>Title &amp; liens</b><span>Owner, deed history, mortgages, liens and lis pendens from ACRIS — plus whether it's held in a trust.</span></div>
+      <div class="feat"><b>Taxes that match the bill</b><span>Actual DOF bills, installments, taxable value and abatement checks.</span></div>
+      <div class="feat"><b>Development rights</b><span>Buildable floor area today and with affordable housing, against what's built.</span></div>
+      <div class="feat"><b>Environmental screen</b><span>FEMA flood zones, E-designations, contamination and cleanup sites, Superfund and spills.</span></div>
+      <div class="feat"><b>Violations &amp; filings</b><span>DOB, ECB, HPD, 311 and permits in one place, with Street View and a parcel map.</span></div>
+    </div>
+  </section>
+
+  <section style="padding-top:0">
+    <h3 class="sec">Questions</h3>
+    <details><summary>Can I cancel anytime?</summary><p>Yes. Cancel from your account page in one click; you keep access until the end of the period you paid for.</p></details>
+    <details><summary>Where does the data come from?</summary><p>Public government records — NYC Open Data (PLUTO, ACRIS, DOB, HPD, DOF), NYC Planning, NY State and New Jersey parcel and assessment records, FEMA, EPA and NYS / NJ environmental agencies — refreshed live or daily.</p></details>
+    <details><summary>Is this legal or investment advice?</summary><p>No. R Shark is a research and screening tool. Confirm zoning, title and environmental findings with professionals before you buy.</p></details>
+    <details><summary>Can I switch plans?</summary><p>Yes — upgrade or downgrade from your account page; Stripe prorates the difference automatically.</p></details>
+  </section>
+
+  <footer>© R Shark · Payments by Stripe · <a href="/" style="color:inherit">Sign in</a></footer>
+</div>
+<script>
+function setI(i){
+  document.querySelectorAll('.toggle button').forEach(b=>b.classList.toggle('on',b.dataset.i===i));
+  document.querySelectorAll('.price').forEach(p=>{
+    const y=i==='y', v=y?Math.round(Number(p.dataset.y)/12):Number(p.dataset.m);
+    p.innerHTML='$'+v+'<small>/mo'+(y?' · $'+Number(p.dataset.y).toLocaleString()+' billed yearly':'')+'</small>';
+  });
+}
+</script>
+</body>
+</html>

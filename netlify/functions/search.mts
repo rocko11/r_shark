@@ -1,4 +1,5 @@
 import type { Config, Context } from "@netlify/functions";
+import { gate } from "../lib/access.ts";
 
 // GET /api/search?mode=<owner|zip|block|filter>&...  -> up to 60 matching lots
 //
@@ -15,6 +16,9 @@ const APP_TOKEN = process.env.SOCRATA_APP_TOKEN;
 const esc = (s: string) => String(s).replace(/'/g, "''"); // SoQL string escaping
 
 export default async (req: Request, _ctx: Context) => {
+  const __m = (new URL(req.url).searchParams.get("mode") || "").toLowerCase();
+  const __ent = await gate(req, /^pacer/.test(__m) ? "pacer" : ["distress", "foreclosure", "auctions"].includes(__m) ? "lists" : "hunt");
+  if (__ent instanceof Response) return __ent;
   const json = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json" } });
 

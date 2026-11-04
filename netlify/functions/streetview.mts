@@ -1,4 +1,5 @@
 import type { Config, Context } from "@netlify/functions";
+import { gate } from "../lib/access.ts";
 
 // GET /api/streetview?lat=..&lng=..            -> JSON {available, captured, ...} (metadata only)
 // GET /api/streetview?lat=..&lng=..&img=1      -> the actual JPEG bytes, proxied server-side
@@ -14,6 +15,7 @@ import type { Config, Context } from "@netlify/functions";
 const BASE = "https://maps.googleapis.com/maps/api/streetview";
 
 export default async (req: Request, _ctx: Context) => {
+  const __ent = await gate(req, "basic"); if (__ent instanceof Response) return __ent;
   const json = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json" } });
 
@@ -25,7 +27,7 @@ export default async (req: Request, _ctx: Context) => {
   // The server key above is never sent to the browser.
   if (u.get("config")) {
     return new Response(JSON.stringify({ browser_key: process.env.GOOGLE_MAPS_BROWSER_KEY || null }), {
-      status: 200, headers: { "content-type": "application/json", "cache-control": "public, max-age=3600" },
+      status: 200, headers: { "content-type": "application/json", "cache-control": "private, max-age=3600" },
     });
   }
 
@@ -52,7 +54,7 @@ export default async (req: Request, _ctx: Context) => {
         status: 200,
         headers: {
           "content-type": r.headers.get("content-type") || "image/jpeg",
-          "cache-control": "public, max-age=86400",
+          "cache-control": "private, max-age=86400",
         },
       });
     } catch (e) {

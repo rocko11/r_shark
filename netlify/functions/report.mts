@@ -1,4 +1,5 @@
 import type { Config, Context } from "@netlify/functions";
+import { gate, recordReport } from "../lib/access.ts";
 import { buildReport } from "../lib/report.ts";
 import { resolve, nycPlaceMatches } from "../lib/geocode.ts";
 import { detectRegion, townTail } from "../lib/region.ts";
@@ -14,14 +15,28 @@ const json = (body: any, status = 200) => {
   return new Response(JSON.stringify(body), {
     status, headers: {
       "content-type": "application/json",
-      "cache-control": ok ? "public, max-age=300" : "no-store",
-      ...(ok ? { "netlify-cdn-cache-control": "public, durable, s-maxage=21600, stale-while-revalidate=86400" } : {}),
+      // private: never cache on the CDN — every request must pass the subscription gate.
+      "cache-control": ok ? "private, max-age=300" : "no-store",
     },
   });
 };
 
 // GET /api/report?address=...   or   /api/report?bbl=1234567890
-export default async (req: Request, _ctx: Context) => {
+// Subscription gate + usage metering wrap the real handler below.
+export default async (req: Request, ctx: Context) => {
+  const u = new URL(req.url).searchParams;
+  const key = (u.get("bbl") || u.get("address") || u.get("nj_at") || u.get("nys_at") || "").trim().toUpperCase().replace(/\s+/g, " ");
+  const ent = await gate(req, "report", { reportKey: key });
+  if (ent instanceof Response) return ent;
+  const res = await handle(req, ctx);
+  if (res.status === 200) {
+    const body = await res.clone().json().catch(() => null);
+    if (body && body.found !== false && !body.error) await recordReport(ent, String(body.bbl || body.parcel?.pams_pin || body.parcel?.print_key || key));
+  }
+  return res;
+};
+
+async function handle(req: Request, _ctx: Context) {
   try {
     const url = new URL(req.url);
     const bin = url.searchParams.get("bin");

@@ -1,12 +1,14 @@
 import type { Config, Context } from "@netlify/functions";
+import { gate } from "../lib/access.ts";
 import { buildEnvironment } from "../lib/environment.ts";
 
 // GET /api/environment?lat=..&lon=..&region=nyc|nys|nj[&bbl=..][&address=..][&county=..]
 // Environmental screen for one property (flood zone, contamination, E-designations, spills).
 // Loaded by the report page after the main report renders, so it never slows the report.
 export default async (req: Request, _ctx: Context) => {
+  const __ent = await gate(req, "basic"); if (__ent instanceof Response) return __ent;
   const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), {
-    status: s, headers: { "content-type": "application/json", "cache-control": s === 200 ? "public, max-age=3600" : "no-store" } });
+    status: s, headers: { "content-type": "application/json", "cache-control": s === 200 ? "private, max-age=3600" : "no-store" } });
   const u = new URL(req.url).searchParams;
   const lat = Number(u.get("lat")), lon = Number(u.get("lon") ?? u.get("lng"));
   const region = (u.get("region") || "nyc").toLowerCase();
@@ -20,7 +22,7 @@ export default async (req: Request, _ctx: Context) => {
     // Don't let a CDN cache a half-failed screen for an hour.
     const partial = Object.keys((env as any).sources_failed || {}).length > 0;
     return new Response(JSON.stringify(env), { status: 200, headers: { "content-type": "application/json",
-      "cache-control": partial ? "no-store" : "public, max-age=3600" } });
+      "cache-control": partial ? "no-store" : "private, max-age=3600" } });
   } catch (e: any) {
     return json({ error: String(e?.message || e) }, 502);
   }

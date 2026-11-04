@@ -1,4 +1,5 @@
 import type { Config, Context } from "@netlify/functions";
+import { gate } from "../lib/access.ts";
 import { skipTraceOwner } from "../lib/skiptrace.ts";
 
 // POST /api/skiptrace  { address, city?, state?, zip? }
@@ -10,6 +11,7 @@ export default async (req: Request, _ctx: Context) => {
     new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json" } });
 
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
+  const __ent = await gate(req, "skiptrace", { credits: 1 }); if (__ent instanceof Response) return __ent;
 
   let body: any = {};
   try { body = await req.json(); } catch { /* allow query fallback */ }

@@ -1,4 +1,5 @@
 import type { Config, Context } from "@netlify/functions";
+import { gate } from "../lib/access.ts";
 
 // GET /api/lot-signals?bbls=3011330064,3011330065,...&points=1
 //
@@ -38,10 +39,11 @@ async function soda(base: string, params: Record<string, string>): Promise<any[]
 }
 
 export default async (req: Request, _ctx: Context) => {
+  const __ent = await gate(req, "basic"); if (__ent instanceof Response) return __ent;
   const json = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), {
       status: s,
-      headers: { "content-type": "application/json", "cache-control": "public, max-age=1800" },
+      headers: { "content-type": "application/json", "cache-control": "private, max-age=1800" },
     });
 
   const u = new URL(req.url).searchParams;

@@ -494,6 +494,21 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
     radial-gradient(1200px 600px at 80% -10%, rgba(47,224,198,.10), transparent 60%),
     radial-gradient(900px 500px at 0% 100%, rgba(47,224,198,.05), transparent 55%);}
 #auth-gate.hidden{display:none}
+#auth-gate.plans .gate-card{max-width:980px}
+.plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px;text-align:left}
+.plan{border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--steel,rgba(255,255,255,.03));display:flex;flex-direction:column;gap:8px}
+.plan.best{border-color:var(--shark);box-shadow:0 0 0 1px var(--shark)}
+.plan h3{margin:0;font-size:16px;letter-spacing:.06em;text-transform:uppercase}
+.plan .price{font-size:30px;font-weight:700}.plan .price small{font-size:13px;font-weight:400;opacity:.7}
+.plan ul{margin:0;padding-left:18px;font-size:13px;line-height:1.55}
+.plan button{margin-top:auto;padding:11px;border-radius:8px;border:none;background:var(--shark);color:#04141a;font-weight:700;cursor:pointer;font-size:14px}
+.plan button:disabled{opacity:.6;cursor:wait}
+.bill-toggle{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;margin-top:6px}
+.bill-toggle button{background:none;border:none;padding:6px 14px;font-size:12px;cursor:pointer;color:inherit}
+.bill-toggle .bt-on{background:var(--shark);color:#04141a;font-weight:700}
+#acct-modal{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:60px 16px;overflow:auto}
+#acct-modal .box{background:var(--paper,#0d1117);color:var(--ink,#e6edf3);border:1px solid var(--line);border-radius:14px;max-width:760px;width:100%;padding:20px 22px}
+.meter{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin:4px 0 10px}.meter i{display:block;height:100%;background:var(--shark)}
 .gate-card{text-align:center;max-width:360px;padding:0 24px}
 .gate-fin{width:110px;height:84px;margin:0 auto 24px;filter:drop-shadow(0 0 32px rgba(47,224,198,.5));color:white}
 .gate-title{font-family:var(--display);font-weight:700;font-size:52px;letter-spacing:-.02em;
@@ -541,13 +556,13 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
         Continue with Google
       </button>
     </div>
-    <!-- Pending approval (shown when logged in but not yet confirmed) -->
+    <!-- Signed in but no active subscription: choose a plan -->
     <div id="gate-pending" style="display:none">
-      <div class="gate-pending">
-        <strong>You're in line.</strong><br>
-        Your account is pending approval. You'll get access as soon as the R Shark team confirms you.
-      </div>
-      <button class="gate-signout" onclick="netlifyIdentity.logout()">Sign out</button>
+      <p class="gate-pending" id="gate-msg">Choose a plan to start using R Shark.</p>
+      <div class="bill-toggle"><button class="bt-on" data-i="month" onclick="setInterval_('month')">Monthly</button><button data-i="year" onclick="setInterval_('year')">Yearly · 2 months free</button></div>
+      <div id="gate-plans" class="plan-grid"></div>
+      <p class="hint" style="margin:10px 0 0">Secure checkout by Stripe · cancel anytime · <a href="/pricing.html" style="color:var(--shark)">compare plans</a></p>
+      <button class="gate-signout" id="gate-signout">Sign out <span id="gate-email"></span></button>
     </div>
   </div>
 </div>
@@ -584,7 +599,8 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
     </div>
     <div class="mast-meta" style="display:flex;align-items:center;gap:14px">
       <span>Address in. Deal out.</span>
-      <button class="run-report-btn no-print" onclick="triggerDailyReport()" title="Run your daily motivated seller report now">⚡ Run Report</button>
+      <button class="run-report-btn no-print owner-only" style="display:none" onclick="triggerDailyReport()" title="Run your daily motivated seller report now">⚡ Run Report</button>
+      <button id="acct-btn" class="no-print" onclick="openAccount()" title="Your plan and billing" style="background:none;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;padding:5px 10px;font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--fog)">ACCOUNT</button>
       <button id="theme-toggle" onclick="toggleTheme()" title="Switch light/dark mode" style="background:none;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;padding:5px 8px;font-size:14px;line-height:1;color:var(--fog);transition:color .15s,border-color .15s" onmouseenter="this.style.borderColor='var(--shark)'" onmouseleave="this.style.borderColor='var(--line)'">🌙</button>
     </div>
   </header>
@@ -2607,7 +2623,15 @@ async function runTrustSearch() {
     <p class="ownnote">ACRIS on NYC Open Data is current through ${esc(d.data_through || '?')} (it lags about a month). List rebuilt daily${d.updated_at ? ' · last ' + esc(String(d.updated_at).slice(0, 10)) : ''}. Click a row to open the full property report.</p>`;
   window.__trustRows = d.rows || [];
 }
+// CSV export is a Pro / Team feature.
+function csvAllowed() {
+  const f = ME && ME.limits && ME.limits.features;
+  if (f && f.csv) return true;
+  showUpgrade('CSV export (for mail and call campaigns) is part of the Pro plan.', 'pro');
+  return false;
+}
 function downloadTrustCsv() {
+  if (!csvAllowed()) return;
   const rows = window.__trustRows || [];
   const cell = s => `"${String(s ?? '').replace(/"/g, '""')}"`;
   const lines = [['recorded', 'bbl', 'borough', 'address', 'unit', 'property_type', 'trust_type', 'trust', 'from', 'own_to_own_trust', 'price', 'trustee_address', 'acris_doc'].join(',')]
@@ -3324,6 +3348,7 @@ async function bulkSkipTrace() {
 // No dependencies —
 // builds the file in-browser and triggers a download.
 function downloadSearchCsv() {
+  if (!csvAllowed()) return;
   const rows = window.__searchResults || [];
   if (!rows.length) return;
   const hasContact = rows.some(r => r._contact && r._contact.hit);
@@ -3640,6 +3665,7 @@ async function runLandmarkSearch() {
 }
 
 function downloadLandmarkCsv() {
+  if (!csvAllowed()) return;
   const rows = window.__lmResults || [];
   if (!rows.length) return;
   const q = s => '"' + String(s||'').replace(/"/g,'""') + '"';
@@ -3912,6 +3938,7 @@ async function runAuctions() {
 
 // ── Auction CSV export ─────────────────────────────────────────────────────
 function downloadAuctionCsv() {
+  if (!csvAllowed()) return;
   if (!window._auctionData || !window._auctionData.length) return;
   const cols = ['date','time','status','address','case_title','index_no','location','attorney','attorney_phone','attorney_email'];
   const headers = ['Date','Time','Status','Property Address','Case Title','Index No','Auction Location','Attorney','Attorney Phone','Attorney Email'];
@@ -3974,93 +4001,225 @@ loadFromUrl();
 </script>
 
 <script>
-// ---------- Auth gate — direct Netlify Identity OAuth ----------
-// No widget, no library. Netlify Identity exposes a standard OAuth redirect:
-//   /.netlify/identity/authorize?provider=google&redirect_to=<return_url>
-// After Google auth, Netlify redirects back with #access_token=... in the hash.
-// We grab that token, verify the user object, and store it locally.
-
-const IDENTITY = 'https://rshark.netlify.app/.netlify/identity';
+// ---------- Auth + subscription gate ----------
+// Google sign-in through Netlify Identity (GoTrue). The access token (1 h) is refreshed with the
+// refresh token and mirrored into the `rs_token` cookie so every /api request — fetch, <img>,
+// downloads — carries it. The server checks the subscription on every call (netlify/lib/access.ts);
+// this script only decides what to show: sign-in, plans, or the app.
+const IDENTITY = 'https://rshark.netlify.app/.netlify/identity'; // unchanged: the proven Google OAuth path
 const gate     = document.getElementById('auth-gate');
 const gSignin  = document.getElementById('gate-signin');
 const gPending = document.getElementById('gate-pending');
 const STORE_KEY = 'rshark_user';
+const OWNER_EMAIL = 'roeipaz@gmail.com';
+let ME = null, billInterval = 'month';
 
-function applyAuthState(user) {
-  if (!user) {
-    gate.classList.remove('hidden');
-    gSignin.style.display  = '';
-    gPending.style.display = 'none';
-    return;
+const jwtExp = t => { try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp * 1000; } catch (e) { return 0; } };
+function saveUser(u) { try { localStorage.setItem(STORE_KEY, JSON.stringify(u)); } catch (e) {} setCookie(u && u._token); }
+function setCookie(token) {
+  document.cookie = token ? `rs_token=${encodeURIComponent(token)}; path=/; max-age=3600; SameSite=Lax; Secure` : 'rs_token=; path=/; max-age=0; SameSite=Lax; Secure';
+}
+function getStoredUser() {
+  try { const u = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); return u && u.email ? u : null; } catch (e) { return null; }
+}
+// Fresh access token (refreshing it when it's within 5 minutes of expiry).
+async function freshToken() {
+  const u = getStoredUser(); if (!u || !u._token) return null;
+  if (jwtExp(u._token) - Date.now() > 5 * 60_000) { setCookie(u._token); return u._token; }
+  if (!u._refresh) return null;
+  try {
+    const r = await fetch(IDENTITY + '/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(u._refresh) });
+    if (!r.ok) return null;
+    const t = await r.json();
+    u._token = t.access_token; u._refresh = t.refresh_token || u._refresh; saveUser(u);
+    return u._token;
+  } catch (e) { return null; }
+}
+setInterval(() => { if (getStoredUser()) freshToken(); }, 10 * 60_000);
+
+// Every same-origin /api call: make sure the token is fresh first; react to 401 / 402.
+const _fetch = window.fetch.bind(window);
+window.fetch = async function (input, init) {
+  const url = typeof input === 'string' ? input : (input && input.url) || '';
+  const isApi = /^\/api\//.test(url) || url.startsWith(location.origin + '/api/');
+  if (isApi) await freshToken();
+  const res = await _fetch(input, init);
+  if (isApi && (res.status === 401 || res.status === 402) && !/\/api\/(me|billing)\b/.test(url)) {
+    res.clone().json().then(j => handleDenied(res.status, j)).catch(() => {});
   }
-  // Show PACER tab only for the app owner
-  const pacerTab = document.getElementById('tab-pacer');
-  if (pacerTab) {
-    pacerTab.style.display = (user && user.email === 'roeipaz@gmail.com') ? '' : 'none';
-  }
-  if (user.confirmed_at) {
-    gate.classList.add('hidden');
-  } else {
-    gate.classList.remove('hidden');
-    gSignin.style.display  = 'none';
-    gPending.style.display = '';
-  }
+  return res;
+};
+function handleDenied(status, j) {
+  if (status === 401) { applyAuthState(null); return; }
+  if (j && j.code === 'subscription_required') { refreshMe().then(showGate); return; }
+  showUpgrade(j && j.error || 'Upgrade to use this.', j && j.needs);
 }
 
 function signInWithGoogle() {
-  // Redirect to Netlify Identity's Google OAuth. After login, Google redirects
-  // back to this page with #access_token=... in the URL hash.
-  const returnTo = encodeURIComponent(location.origin + location.pathname);
+  const returnTo = encodeURIComponent(location.origin + location.pathname + location.search);
   location.href = IDENTITY + '/authorize?provider=google&redirect_to=' + returnTo;
 }
-
 async function handleOAuthCallback() {
-  // Parse the access_token from the URL hash that Netlify Identity adds after login.
   if (!location.hash.includes('access_token')) return null;
   const params = {};
-  location.hash.slice(1).split('&').forEach(p => {
-    const [k, v] = p.split('=');
-    params[decodeURIComponent(k)] = decodeURIComponent(v || '');
-  });
+  location.hash.slice(1).split('&').forEach(p => { const [k, v] = p.split('='); params[decodeURIComponent(k)] = decodeURIComponent(v || ''); });
   if (!params.access_token) return null;
-  // Exchange the token for the user object via the Netlify Identity API.
   try {
-    const r = await fetch(IDENTITY + '/user', {
-      headers: { Authorization: 'Bearer ' + params.access_token }
-    });
+    const r = await _fetch(IDENTITY + '/user', { headers: { Authorization: 'Bearer ' + params.access_token } });
     if (!r.ok) return null;
     const user = await r.json();
-    user._token = params.access_token;
-    // Persist so the user stays logged in on next visit.
-    localStorage.setItem(STORE_KEY, JSON.stringify(user));
-    // Clean the hash from the URL.
+    user._token = params.access_token; user._refresh = params.refresh_token || null;
+    saveUser(user);
     history.replaceState(null, '', location.pathname + location.search);
     return user;
-  } catch(e) { return null; }
+  } catch (e) { return null; }
+}
+async function refreshMe() {
+  try { ME = await (await fetch('/api/me', { cache: 'no-store' })).json(); } catch (e) { ME = null; }
+  return ME;
 }
 
-function getStoredUser() {
-  try {
-    const raw = localStorage.getItem(STORE_KEY);
-    if (!raw) return null;
-    const user = JSON.parse(raw);
-    // Basic check that the stored object looks valid.
-    return (user && user.email) ? user : null;
-  } catch(e) { return null; }
+const PLAN_COPY = {
+  starter: ['25 property reports / month', 'NYC, New Jersey & rest of NY State', 'Zoning, taxes, environmental, Street View', 'Hunt search by owner, ZIP, block, lot size', 'PDF reports'],
+  pro: ['Unlimited property reports', 'Every Hunt list: deeds into trusts, tax liens, pre-foreclosure & auctions', 'CSV export for mailing / calling', '50 owner phone & email lookups / month', 'Everything in Starter'],
+  team: ['Everything in Pro for up to 5 users', '250 owner lookups / month, shared', 'One bill, add or remove seats anytime'],
+};
+function setInterval_(i) {
+  billInterval = i;
+  document.querySelectorAll('.bill-toggle button').forEach(b => b.classList.toggle('bt-on', b.dataset.i === i));
+  renderPlans();
 }
+function renderPlans(target = 'gate-plans') {
+  const el = document.getElementById(target); if (!el || !ME) return;
+  const plans = ME.plans || {};
+  el.innerHTML = ['starter', 'pro', 'team'].filter(k => plans[k]).map(k => {
+    const p = plans[k], y = billInterval === 'year';
+    const cur = ME.plan === k;
+    return `<div class="plan${k === 'pro' ? ' best' : ''}">
+      <h3>${esc(p.name)}${k === 'pro' ? ' <span style="font-size:10px;color:var(--shark)">· most popular</span>' : ''}</h3>
+      <div class="price">$${y ? Math.round(p.price_y / 12) : p.price_m}<small>/mo${y ? ` · $${p.price_y.toLocaleString()} billed yearly` : ''}</small></div>
+      <ul>${PLAN_COPY[k].map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+      <button ${cur ? 'disabled' : ''} onclick="startCheckout('${k}', this)">${cur ? 'Current plan' : ME.active ? 'Switch to ' + esc(p.name) : 'Start ' + esc(p.name)}</button>
+    </div>`;
+  }).join('');
+}
+async function startCheckout(plan, btn) {
+  if (ME && ME.active && ME.plan !== 'owner') return openPortal(btn); // plan changes go through the Stripe portal
+  if (btn) { btn.disabled = true; btn.textContent = 'Opening checkout…'; }
+  try {
+    const r = await fetch('/api/billing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'checkout', plan, interval: billInterval }) });
+    const j = await r.json();
+    if (j.url) { location.href = j.url; return; }
+    alertBox(j.error || 'Checkout is not available yet.');
+  } catch (e) { alertBox(e.message); }
+  if (btn) { btn.disabled = false; btn.textContent = 'Try again'; }
+}
+async function openPortal(btn) {
+  if (btn) { btn.disabled = true; }
+  const r = await fetch('/api/billing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'portal' }) });
+  const j = await r.json().catch(() => ({}));
+  if (j.url) { location.href = j.url; return; }
+  alertBox(j.error || 'Billing portal unavailable.'); if (btn) btn.disabled = false;
+}
+function alertBox(msg) {
+  const m = document.getElementById('gate-msg');
+  if (m && !gate.classList.contains('hidden')) { m.innerHTML = `<span style="color:var(--iron)">${esc(msg)}</span>`; return; }
+  showUpgrade(msg);
+}
+
+function showGate() {
+  const signedIn = ME && ME.signed_in;
+  gate.classList.remove('hidden');
+  gSignin.style.display = signedIn ? 'none' : '';
+  gPending.style.display = signedIn ? '' : 'none';
+  gate.classList.toggle('plans', !!signedIn);
+  const em = document.getElementById('gate-email'); if (em) em.textContent = signedIn ? `(${ME.email})` : '';
+  const msg = document.getElementById('gate-msg');
+  if (msg && signedIn) msg.innerHTML = ME.status === 'canceled' ? 'Your subscription has ended. Choose a plan to continue.'
+    : ME.status === 'unpaid' || ME.status === 'incomplete_expired' ? 'Your last payment didn\'t go through. Choose a plan to restart.'
+    : `Welcome${ME.email ? ', ' + esc(ME.email) : ''}. Choose a plan to start using R Shark.`;
+  renderPlans();
+}
+function applyAuthState(user) {
+  if (!user) { setCookie(null); ME = { signed_in: false }; gate.classList.remove('hidden', 'plans'); gSignin.style.display = ''; gPending.style.display = 'none'; return; }
+  document.querySelectorAll('.owner-only').forEach(el => el.style.display = user.email === OWNER_EMAIL ? '' : 'none');
+  const pacerTab = document.getElementById('tab-pacer'); if (pacerTab) pacerTab.style.display = user.email === OWNER_EMAIL ? '' : 'none';
+  refreshMe().then(me => {
+    if (!me || !me.signed_in) { applyAuthState(null); return; }
+    if (me.active) gate.classList.add('hidden'); else showGate();
+  });
+}
+
+/* ---------- account modal + upgrade prompt ---------- */
+function closeModal() { document.getElementById('acct-modal')?.remove(); }
+function modal(html) {
+  closeModal();
+  const d = document.createElement('div'); d.id = 'acct-modal';
+  d.innerHTML = `<div class="box">${html}<p style="text-align:right;margin:14px 0 0"><button class="link" onclick="closeModal()">Close</button></p></div>`;
+  d.addEventListener('click', e => { if (e.target === d) closeModal(); });
+  document.body.appendChild(d);
+}
+function showUpgrade(message, needs) {
+  modal(`<h2 style="margin:0 0 6px">Upgrade your plan</h2><p>${esc(message)}</p>
+    <div class="bill-toggle"><button class="${billInterval === 'month' ? 'bt-on' : ''}" data-i="month" onclick="setInterval_('month');renderPlans('up-plans')">Monthly</button><button class="${billInterval === 'year' ? 'bt-on' : ''}" data-i="year" onclick="setInterval_('year');renderPlans('up-plans')">Yearly · 2 months free</button></div>
+    <div id="up-plans" class="plan-grid"></div>`);
+  renderPlans('up-plans');
+}
+async function openAccount() {
+  await refreshMe();
+  if (!ME || !ME.signed_in) { applyAuthState(null); return; }
+  const L = ME.limits || {}, U = ME.usage || {};
+  const meter = (used, lim, label) => lim == null ? `<p class="hint" style="margin:6px 0">${label}: <strong>${used}</strong> this month · unlimited</p>`
+    : `<p class="hint" style="margin:6px 0 0">${label}: <strong>${used}</strong> of ${lim} this month</p><div class="meter"><i style="width:${Math.min(100, lim ? used / lim * 100 : 100)}%"></i></div>`;
+  const team = ME.plan === 'team' && ME.members ? `<h3 class="subh">Team seats (${ME.members.length + 1} of ${L.seats})</h3>
+      <ul style="margin:0 0 8px;padding-left:18px">${['<li>' + esc(ME.email) + ' (you)</li>'].concat(ME.members.map(m => `<li>${esc(m)} <button class="link" onclick="teamEdit('team-remove','${esc(m)}')">remove</button></li>`)).join('')}</ul>
+      <div style="display:flex;gap:8px"><input id="team-email" placeholder="teammate@email.com" style="flex:1"><button class="sgo" onclick="teamEdit('team-add', document.getElementById('team-email').value)">Add</button></div>
+      <p class="hint" style="margin:6px 0 0">Teammates sign in with Google using that email.</p>` : '';
+  const owner = ME.is_owner ? `<h3 class="subh">Owner — Stripe (${esc(ME.stripe)} mode)</h3>
+      ${ME.stripe === 'missing' ? '<p class="hint">Add <code>STRIPE_SECRET_KEY</code> in Netlify → Site configuration → Environment variables, redeploy, then come back here.</p>' : ''}
+      <button class="sgo" onclick="setupStripe(this)" ${ME.stripe === 'missing' ? 'disabled' : ''}>Set up Stripe products, webhook &amp; portal</button>
+      <pre id="setup-log" class="hint" style="white-space:pre-wrap;margin:8px 0 0"></pre>` : '';
+  modal(`<h2 style="margin:0 0 4px">Your account</h2><p class="hint" style="margin:0 0 12px">${esc(ME.email)}</p>
+    ${ME.active ? `<p style="margin:0 0 8px"><strong>${esc(ME.plan_name || ME.plan)}</strong>${ME.interval ? ' · billed ' + (ME.interval === 'year' ? 'yearly' : 'monthly') : ''}${ME.renews ? ` · ${ME.cancel_at_period_end ? 'ends' : 'renews'} ${esc(String(ME.renews).slice(0, 10))}` : ''}${ME.status === 'past_due' ? ' · <span style="color:var(--iron)">payment past due</span>' : ''}${ME.member_of ? ` · member of ${esc(ME.member_of)}'s team` : ''}</p>
+      ${meter(U.reports || 0, L.reports, 'Property reports')}${L.skiptrace ? meter(U.skiptrace || 0, ME.plan === 'owner' ? null : L.skiptrace, 'Owner lookups') : ''}
+      ${ME.plan !== 'owner' && !ME.member_of ? '<button class="sgo" onclick="openPortal(this)">Manage billing, change plan or cancel →</button>' : ''}` : '<p>No active plan.</p>'}
+    ${ME.plan === 'starter' ? '<p class="hint">Need unlimited reports and the trust / lien / foreclosure lists? <button class="link" onclick="showUpgrade(\'Upgrade to Pro for unlimited reports and every Hunt list.\')">See Pro →</button></p>' : ''}
+    ${team}${owner}
+    <p style="margin:16px 0 0"><button class="link" onclick="signOut()">Sign out</button></p>`);
+}
+async function teamEdit(action, email) {
+  const r = await fetch('/api/billing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, email }) });
+  const j = await r.json().catch(() => ({}));
+  if (j.error) alert(j.error); else openAccount();
+}
+async function setupStripe(btn) {
+  btn.disabled = true; btn.textContent = 'Setting up…';
+  const r = await fetch('/api/billing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'setup' }) });
+  const j = await r.json().catch(() => ({}));
+  document.getElementById('setup-log').textContent = j.error ? 'Error: ' + j.error : `Done (${j.mode} mode):\n` + (j.log || []).join('\n');
+  btn.disabled = false; btn.textContent = 'Run setup again';
+}
+function signOut() { try { localStorage.removeItem(STORE_KEY); } catch (e) {} closeModal(); applyAuthState(null); }
 
 document.getElementById('gate-google-btn').onclick = signInWithGoogle;
 const signOutBtn = document.getElementById('gate-signout');
-if (signOutBtn) signOutBtn.onclick = () => {
-  localStorage.removeItem(STORE_KEY);
-  applyAuthState(null);
-};
+if (signOutBtn) signOutBtn.onclick = signOut;
 
-// On load: handle OAuth callback first, then check stored session.
+// On load: OAuth callback → stored session → subscription check. After Stripe checkout the webhook
+// can take a few seconds, so wait for the plan to show up.
 (async () => {
   const callbackUser = await handleOAuthCallback();
-  if (callbackUser) { applyAuthState(callbackUser); return; }
-  applyAuthState(getStoredUser());
+  const user = callbackUser || getStoredUser();
+  if (user) await freshToken();
+  applyAuthState(user);
+  const b = new URLSearchParams(location.search).get('billing');
+  if (b === 'success' && user) {
+    gate.classList.remove('hidden'); gSignin.style.display = 'none'; gPending.style.display = '';
+    const msg = document.getElementById('gate-msg'); if (msg) msg.textContent = 'Payment received — activating your plan…';
+    for (let i = 0; i < 15; i++) { await new Promise(r => setTimeout(r, 2000)); const me = await refreshMe(); if (me && me.active) { gate.classList.add('hidden'); break; } }
+  }
+  if (b) history.replaceState(null, '', location.pathname);
 })();
 </script>
 

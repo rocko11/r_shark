@@ -1,4 +1,5 @@
 import type { Config, Context } from "@netlify/functions";
+import { gate } from "../lib/access.ts";
 
 // GET /api/lots?bbl=1010740014                  -> just the property's own block
 // GET /api/lots?bbl=..&lat=..&lng=..&blocks=5   -> all lots within ~N blocks of the property
@@ -15,10 +16,11 @@ const BLOCK_LAT = 0.0009;
 const BLOCK_LNG = 0.0012;
 
 export default async (req: Request, _ctx: Context) => {
+  const __ent = await gate(req, "basic"); if (__ent instanceof Response) return __ent;
   const json = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), {
       status: s,
-      headers: { "content-type": "application/json", "cache-control": "public, max-age=86400" },
+      headers: { "content-type": "application/json", "cache-control": "private, max-age=86400" },
     });
 
   const u = new URL(req.url).searchParams;
