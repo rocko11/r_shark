@@ -1,6 +1,7 @@
 import type { Config } from "@netlify/functions";
 import { getUser, entitlement, getUsage, PLANS, OWNER_EMAILS } from "../lib/access.ts";
 import { stripeMode } from "../lib/stripe.ts";
+import { recordConsent, TERMS_VERSION } from "../lib/consent.ts";
 
 // GET /api/me — who am I, what plan, how much have I used, what can I buy.
 export default async (req: Request) => {
@@ -8,6 +9,8 @@ export default async (req: Request) => {
   const user = await getUser(req);
   const plans = Object.fromEntries(Object.entries(PLANS).map(([k, d]) => [k, { name: d.name, price_m: d.price_m, price_y: d.price_y, reports: d.reports, skiptrace: d.skiptrace, seats: d.seats, features: d.features }]));
   if (!user) return json({ signed_in: false, plans, stripe: stripeMode() });
+  // Sign-in screen says "By continuing you agree to the Terms" — log that assent once per version.
+  await recordConsent(req, user.email, "signin").catch(() => {});
   const ent = await entitlement(user.email);
   const usage = await getUsage(ent.account);
   return json({
@@ -18,7 +21,7 @@ export default async (req: Request) => {
     renews: ent.sub?.current_period_end || null, cancel_at_period_end: !!ent.sub?.cancel_at_period_end,
     interval: ent.sub?.interval || null, member_of: ent.member_of || null,
     members: ent.plan === "team" && !ent.member_of ? (ent.sub?.members || []) : undefined,
-    plans, stripe: stripeMode(),
+    plans, stripe: stripeMode(), terms_version: TERMS_VERSION,
   });
 };
 export const config: Config = { path: "/api/me" };

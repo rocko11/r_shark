@@ -1,6 +1,7 @@
 import type { Config } from "@netlify/functions";
 import { getUser, entitlement, billing, PLANS, OWNER_EMAILS } from "../lib/access.ts";
 import { stripe, priceFor, setupStripe, stripeMode } from "../lib/stripe.ts";
+import { recordConsent, TERMS_VERSION } from "../lib/consent.ts";
 
 // POST /api/billing  { action: "checkout", plan, interval } | { action: "portal" } | { action: "setup" }
 //                    | { action: "team-add" | "team-remove", email }
@@ -18,11 +19,21 @@ export default async (req: Request) => {
       if (!OWNER_EMAILS.has(user.email)) return json({ error: "Only the site owner can set up Stripe." }, 403);
       return json(await setupStripe(origin));
     }
+    if (body.action === "ack-outreach") {
+      if (body.agree !== TERMS_VERSION) return json({ error: "Consent required." }, 400);
+      await recordConsent(req, user.email, "outreach", { text: "FCRA permissible-use and TCPA/DNC outreach acknowledgment" });
+      return json({ ok: true });
+    }
     if (body.action === "checkout") {
       const plan = String(body.plan || ""), interval = body.interval === "year" ? "year" : "month";
       if (!(plan in PLANS)) return json({ error: "Unknown plan." }, 400);
       const price = await priceFor(plan, interval);
       if (!price) return json({ error: "Plans aren't set up in Stripe yet." , code: "stripe_not_setup" }, 503);
+      // Affirmative consent to the Terms and to automatic renewal is required before any charge
+      // (NY GBL 527-a, Cal. Bus. & Prof. 17602) — the checkbox next to the plan buttons sends it.
+      if (body.agree !== TERMS_VERSION) return json({ error: "Please tick the box to agree to the Terms and automatic renewal.", code: "consent_required", terms_version: TERMS_VERSION }, 400);
+      const amount = interval === "year" ? PLANS[plan as keyof typeof PLANS].price_y : PLANS[plan as keyof typeof PLANS].price_m;
+      await recordConsent(req, user.email, "checkout", { plan, interval, amount, price: price.id, disclosure: body.disclosure ? String(body.disclosure).slice(0, 400) : undefined });
       const sub: any = await store.get(`sub:${user.email}`, { type: "json" }).catch(() => null);
       const trial = Number(process.env.STRIPE_TRIAL_DAYS || 0);
       const session = await stripe("POST", "/checkout/sessions", {
@@ -30,8 +41,10 @@ export default async (req: Request) => {
         line_items: [{ price: price.id, quantity: 1 }],
         ...(sub?.customer ? { customer: sub.customer } : { customer_email: user.email }),
         client_reference_id: user.email,
-        subscription_data: { metadata: { email: user.email, rshark_plan: plan }, ...(trial > 0 && !sub ? { trial_period_days: trial } : {}) },
-        metadata: { email: user.email, rshark_plan: plan },
+        subscription_data: { metadata: { email: user.email, rshark_plan: plan, terms_version: TERMS_VERSION }, ...(trial > 0 && !sub ? { trial_period_days: trial } : {}) },
+        metadata: { email: user.email, rshark_plan: plan, terms_version: TERMS_VERSION, terms_accepted_at: new Date().toISOString() },
+        // Repeat the renewal terms right above Stripe's Subscribe button.
+        custom_text: { submit: { message: `Your R Shark ${PLANS[plan as keyof typeof PLANS].name} plan renews automatically every ${interval} at $${amount.toLocaleString()} plus any tax until you cancel. Cancel anytime from your R Shark account page; access continues to the end of the paid period. By subscribing you agree to the R Shark Terms of Service (rshark.net/terms.html), including the arbitration clause.` } },
         allow_promotion_codes: "true",
         billing_address_collection: "auto",
         ...(process.env.STRIPE_AUTOMATIC_TAX === "1" ? { automatic_tax: { enabled: "true" } } : {}),

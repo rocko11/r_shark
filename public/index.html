@@ -2,9 +2,21 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-NT5F1JG04W"></script>
-<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-NT5F1JG04W');</script>
+<!-- Google Analytics loads only after the visitor accepts analytics cookies, and never when the
+     browser sends Global Privacy Control. Nothing is sent to Google before that choice. -->
+<script>
+window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
+window.rsConsent={
+  get(){try{return localStorage.getItem('rs_cookie_consent')}catch(e){return null}},
+  set(v){try{localStorage.setItem('rs_cookie_consent',v)}catch(e){} if(v==='granted')this.load(); document.getElementById('cookiebar')?.remove();},
+  gpc(){return navigator.globalPrivacyControl===true},
+  load(){ if(this.loaded||this.gpc())return; this.loaded=true;
+    gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',analytics_storage:'granted'});
+    gtag('js',new Date());gtag('config','G-NT5F1JG04W',{allow_google_signals:false,allow_ad_personalization_signals:false});
+    const s=document.createElement('script');s.async=true;s.src='https://www.googletagmanager.com/gtag/js?id=G-NT5F1JG04W';document.head.appendChild(s);}
+};
+if(rsConsent.get()==='granted')rsConsent.load();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R Shark — NYC Property Intelligence</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -530,6 +542,11 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
   transition:opacity .15s}
 .gate-btn:hover{opacity:.88}
 .gate-btn svg{width:20px;height:20px;flex:none}
+.plan .renews{font-size:11.5px;color:var(--fog);margin:6px 0 0;text-align:center}
+.agree{grid-column:1/-1;display:flex;gap:10px;align-items:flex-start;text-align:left;font-size:12.5px;line-height:1.5;color:var(--fog);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:4px;cursor:pointer}
+.agree input{margin-top:3px;accent-color:var(--shark);width:16px;height:16px;flex:none}
+.agree a{color:var(--shark)}
+.agree.need{border-color:#FF4B3E;color:var(--chrome,#EAF0F6)}
 .gate-pending{margin-top:28px;font-family:var(--mono);font-size:12px;color:var(--fog);
   padding:14px 18px;border:1px solid var(--line);border-radius:10px;line-height:1.6}
 .gate-pending strong{color:var(--shark)}
@@ -2666,9 +2683,36 @@ async function runTrustSearch() {
 // CSV export is a Pro / Team feature.
 function csvAllowed() {
   const f = ME && ME.limits && ME.limits.features;
-  if (f && f.csv) return true;
+  if (f && f.csv) return outreachOk();
   showUpgrade('CSV export (for mail and call campaigns) is part of the Pro plan.', 'pro');
   return false;
+}
+// One-time acknowledgment before owner contact data or lead lists leave the app (FCRA / TCPA / DNC).
+function outreachOk() {
+  try { if (localStorage.getItem('rs_outreach_ack') === (ME && ME.terms_version)) return true; } catch (e) {}
+  modal(`<h2 style="margin:0 0 6px">Before you contact owners</h2>
+    <p>Owner names, phones and emails come from public records and a third-party data provider. They may be wrong or outdated.</p>
+    <ul style="color:var(--fog);font-size:14px;line-height:1.55;padding-left:18px">
+      <li>I won't use this data to decide anyone's eligibility for credit, insurance, employment, housing or tenancy. It is not a consumer report.</li>
+      <li>Before calling or texting, I'll check numbers against the National Do Not Call Registry and my own do-not-call list, follow TCPA rules (no autodialed or prerecorded calls or texts to cell phones without prior express written consent), call only between 8am and 9pm local time, and honor every opt-out.</li>
+      <li>I'll follow CAN-SPAM for email, state solicitation laws, and any local "cease and desist" or no-solicitation zones.</li>
+    </ul>
+    <label class="agree" style="margin:12px 0"><input type="checkbox" id="oack"><span>I agree, as set out in section 7 of the <a href="/terms.html#t-contact" target="_blank">Terms of Service</a>.</span></label>
+    <button id="oack-btn" class="gate-btn" style="width:auto;padding:10px 18px" disabled>Continue</button>`);
+  const cb = document.getElementById('oack'), b = document.getElementById('oack-btn');
+  cb.onchange = () => { b.disabled = !cb.checked; };
+  b.onclick = async () => {
+    b.disabled = true; b.textContent = 'Saving…';
+    const r = await fetch('/api/billing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ack-outreach', agree: ME && ME.terms_version }) }).catch(() => null);
+    if (r && r.ok) { try { localStorage.setItem('rs_outreach_ack', ME.terms_version); } catch (e) {} closeModal(); alertToast('Thanks. Click the button again to continue.'); }
+    else { b.disabled = false; b.textContent = 'Try again'; }
+  };
+  return false;
+}
+function alertToast(msg) {
+  const t = document.createElement('div'); t.setAttribute('role', 'status'); t.textContent = msg;
+  t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#141B26;color:#EAF0F6;border:1px solid #2FE0C6;border-radius:10px;padding:10px 16px;z-index:10000;font-size:14px';
+  document.body.appendChild(t); setTimeout(() => t.remove(), 4000);
 }
 function downloadTrustCsv() {
   if (!csvAllowed()) return;
@@ -3320,6 +3364,7 @@ function toggleNysRow(id, ev) {
 async function bulkSkipTrace() {
   const rows = window.__searchResults || [];
   if (!rows.length) return;
+  if (!outreachOk()) return;
   const btn = document.getElementById('bulk-skip-btn');
   if (!btn || btn.disabled) return;
   btn.disabled = true;
@@ -3557,6 +3602,7 @@ function skipTraceForm() {
 async function skipTrace(address, opts) {
   const box = document.getElementById("stbox");
   if (!box) return;
+  if (!outreachOk()) return;
   box.innerHTML = '<p class="ownnote" style="margin:8px 0 0">Looking up owner contact… (paid lookup in progress)</p>';
   // DataSkip matches far better with full city/state/zip — from the form, else from the loaded NYC report.
   const rid = (lastReport && lastReport.identity) || {};
@@ -4143,15 +4189,25 @@ function renderPlans(target = 'gate-plans') {
       <div class="price">$${y ? Math.round(p.price_y / 12) : p.price_m}<small>/mo${y ? ` · $${p.price_y.toLocaleString()} billed yearly` : ''}</small></div>
       <ul>${PLAN_COPY[k].map(x => `<li>${esc(x)}</li>`).join('')}</ul>
       <button ${cur ? 'disabled' : ''} onclick="startCheckout('${k}', this)">${cur ? 'Current plan' : ME.active ? 'Switch to ' + esc(p.name) : 'Start ' + esc(p.name)}</button>
+      <p class="renews">Renews every ${y ? 'year at $' + p.price_y.toLocaleString() : 'month at $' + p.price_m} plus tax until you cancel.</p>
     </div>`;
-  }).join('');
+  }).join('') + (ME.active && ME.plan !== 'owner' ? '' : `<label class="agree"><input type="checkbox" class="agree-box" ${termsAgreed ? 'checked' : ''} onchange="termsAgreed=this.checked;document.querySelectorAll('.agree-box').forEach(b=>b.checked=termsAgreed);document.querySelectorAll('.agree').forEach(l=>l.classList.remove('need'))">
+    <span>I agree to the <a href="/terms.html" target="_blank">Terms of Service</a>, including automatic renewal and the <a href="/terms.html#t-arbitration" target="_blank">arbitration and class-action waiver</a>, and the <a href="/terms.html#privacy" target="_blank">Privacy Policy</a>. My plan renews automatically at the price shown until I cancel, which I can do anytime from my account.</span></label>`);
 }
+let termsAgreed = false;
 async function startCheckout(plan, btn) {
   if (!ME || !ME.signed_in) { signInWithGoogle(); return; }
   if (ME && ME.active && ME.plan !== 'owner') return openPortal(btn); // plan changes go through the Stripe portal
+  if (!termsAgreed) {
+    document.querySelectorAll('.agree').forEach(l => { l.classList.add('need'); });
+    btn?.closest('.plan-grid')?.querySelector('.agree')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    return;
+  }
+  const p = (ME.plans || {})[plan] || {}, y = billInterval === 'year';
+  const disclosure = `${p.name} renews every ${y ? 'year' : 'month'} at $${y ? p.price_y : p.price_m} plus tax until cancelled`;
   if (btn) { btn.disabled = true; btn.textContent = 'Opening checkout…'; }
   try {
-    const r = await fetch('/api/billing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'checkout', plan, interval: billInterval }) });
+    const r = await fetch('/api/billing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'checkout', plan, interval: billInterval, agree: ME.terms_version, disclosure }) });
     const j = await r.json();
     if (j.url) { location.href = j.url; return; }
     alertBox(j.error || 'Checkout is not available yet.');
@@ -4405,5 +4461,18 @@ if (signOutBtn) signOutBtn.onclick = signOut;
   </button>
 </nav>
 
+<div id="cookiebar" role="region" aria-label="Cookie choice" hidden>
+  <p>We use one essential cookie to keep you signed in. With your OK we'd also use Google Analytics to see how R Shark is used. <a href="/terms.html#p-cookies" target="_blank">Details</a></p>
+  <div><button type="button" onclick="rsConsent.set('denied')">Essential only</button><button type="button" class="ok" onclick="rsConsent.set('granted')">Allow analytics</button></div>
+</div>
+<style>
+#cookiebar{position:fixed;left:16px;right:16px;bottom:16px;z-index:9999;max-width:720px;margin:0 auto;display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:#141B26;color:#EAF0F6;border:1px solid #28323F;border-radius:12px;padding:12px 16px;font:13.5px/1.5 system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.45)}
+#cookiebar p{margin:0;flex:1 1 320px}#cookiebar a{color:#2FE0C6}
+#cookiebar div{display:flex;gap:8px}
+#cookiebar button{font:600 13px system-ui,sans-serif;border-radius:8px;padding:8px 12px;cursor:pointer;border:1px solid #28323F;background:none;color:#EAF0F6}
+#cookiebar button.ok{background:#2FE0C6;border-color:#2FE0C6;color:#04141a}
+@media print{#cookiebar{display:none}}
+</style>
+<script>if(!rsConsent.get()&&!rsConsent.gpc())document.getElementById('cookiebar').hidden=false;</script>
 </body>
 </html>

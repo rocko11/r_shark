@@ -63,7 +63,7 @@ export async function setupStripe(origin: string) {
   }
   // Webhook
   const url = `${origin}/api/stripe-webhook`;
-  const events = ["checkout.session.completed", "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted", "invoice.payment_failed", "invoice.paid"];
+  const events = ["checkout.session.completed", "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted", "invoice.payment_failed", "invoice.paid", "invoice.upcoming"];
   const hooks = (await stripe("GET", "/webhook_endpoints", { limit: 100 })).data || [];
   const store = billing();
   const saved: any = await store.get(`stripe:webhook:${stripeMode()}`, { type: "json" }).catch(() => null);
@@ -73,6 +73,9 @@ export async function setupStripe(origin: string) {
     hook = await stripe("POST", "/webhook_endpoints", { url, enabled_events: events, description: "R Shark subscriptions", api_version: "2024-06-20" });
     await store.setJSON(`stripe:webhook:${stripeMode()}`, { id: hook.id, secret: hook.secret, url });
     log.push(`webhook → ${url}`);
+  } else if (events.some(e => !(hook.enabled_events || []).includes(e) && !(hook.enabled_events || []).includes("*"))) {
+    await stripe("POST", `/webhook_endpoints/${hook.id}`, { enabled_events: events });
+    log.push("webhook events updated");
   }
   // Customer portal (cancel, change plan, update card, invoices)
   const prices: any[] = [];
@@ -81,7 +84,8 @@ export async function setupStripe(origin: string) {
   prices.forEach(p => (byProduct[p.product] ||= []).push(p.id));
   const cfgs = (await stripe("GET", "/billing_portal/configurations", { limit: 10, is_default: "true" })).data || [];
   const portal = {
-    business_profile: { headline: "Manage your R Shark subscription" },
+    business_profile: { headline: "Manage your R Shark subscription",
+      terms_of_service_url: `${origin}/terms.html`, privacy_policy_url: `${origin}/terms.html#privacy` },
     features: {
       customer_update: { enabled: "true", allowed_updates: ["email", "address"] },
       invoice_history: { enabled: "true" }, payment_method_update: { enabled: "true" },

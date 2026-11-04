@@ -81,6 +81,7 @@ h2{font:700 clamp(30px,3.6vw,46px)/1.05 var(--display);letter-spacing:-.02em;mar
 .intro{color:#C6D1DE;max-width:40em;margin:0 0 40px;font-size:18px}
 
 /* ledger: city sites → R Shark */
+.ledger [role=row]{display:contents}
 .ledger{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);border:1px solid var(--line);border-radius:18px;overflow:hidden}
 .ledger > div{padding:18px 22px;border-top:1px solid var(--line)}
 .ledger > div:nth-child(-n+2){border-top:none}
@@ -213,19 +214,31 @@ footer a{color:var(--fog)}
     <h2>A dozen city websites, one report.</h2>
     <p class="intro">Underwriting one Brooklyn lot usually means ZoLa, ACRIS, the Department of Finance, DOB, HPD, FEMA's flood maps and a handful of state databases, each with its own search and its own way of numbering the lot. R Shark pulls them together the moment you type the address.</p>
     <div class="ledger" role="table" aria-label="Where the data comes from and what R Shark does with it">
-      <div class="head" role="columnheader">Where you'd otherwise look</div><div class="head r" role="columnheader">What R Shark shows you</div>
+      <div role="row"><div class="head" role="columnheader">Where you'd otherwise look</div><div class="head r" role="columnheader">What R Shark shows you</div></div>
+      <div role="row">
       <div class="src" role="cell"><strong>ACRIS</strong>City Register deeds &amp; mortgages</div>
       <div class="what" role="cell">Who owns it, what they paid, every mortgage, lien and lis pendens — and whether the owner just moved it into a trust.</div>
+      </div>
+      <div role="row">
       <div class="src" role="cell"><strong>ZoLa &amp; the Zoning Resolution</strong>City Planning</div>
       <div class="what" role="cell">Each district on the lot explained under City of Yes: FAR standard and with affordable housing, heights, MIH, parking zone, special districts.</div>
+      </div>
+      <div role="row">
       <div class="src" role="cell"><strong>Department of Finance</strong>Tax bills, assessments, lien sale list</div>
       <div class="what" role="cell">The tax actually billed this year and when it's due, the taxable value behind it, and any tax or water arrears.</div>
+      </div>
+      <div role="row">
       <div class="src" role="cell"><strong>PLUTO</strong>Lot area, built floor area</div>
       <div class="what" role="cell">How much more you can build, as-of-right and with the affordability bonus, against what's already standing.</div>
+      </div>
+      <div role="row">
       <div class="src" role="cell"><strong>DOB, ECB, HPD &amp; 311</strong>Permits, violations, complaints</div>
       <div class="what" role="cell">Open violations and penalties, stop-work orders, permits and filings, housing complaints — the building's real condition.</div>
+      </div>
+      <div role="row">
       <div class="src" role="cell"><strong>FEMA, NYS DEC, NJDEP, EPA</strong>Flood maps and contamination records</div>
       <div class="what" role="cell">Flood zone on today's and the preliminary map, E-designations, cleanup sites nearby, Superfund and spills — before you order a Phase I.</div>
+      </div>
     </div>
   </div>
 </section>
