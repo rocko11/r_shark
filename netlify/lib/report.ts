@@ -60,10 +60,13 @@ async function acris(borough: number, block: number, lot: number) {
 
   const tasks: Record<string, Promise<any>> = {};
   chunk(docIds).forEach((c, i) => {
-    tasks[`m${i}`] = sq.query("acris_master", { where: sq.buildIn("document_id", c), limit: 1000 });
-    tasks[`p${i}`] = sq.query("acris_parties", { where: sq.buildIn("document_id", c), limit: 2000 });
+    // The parties set answers this in 0.5–10 s; one retry rescues most timeouts.
+    tasks[`m${i}`] = sq.query("acris_master", { where: sq.buildIn("document_id", c), limit: 1000, retries: 1 });
+    tasks[`p${i}`] = sq.query("acris_parties", { where: sq.buildIn("document_id", c), limit: 2000, retries: 1 });
   });
-  const { data } = await sq.gather(tasks);
+  const { data, errors } = await sq.gather(tasks);
+  const partiesFailed = Object.keys(errors).some(k => k.startsWith("p"));
+  const mastersFailed = Object.keys(errors).some(k => k.startsWith("m"));
 
   const masters = Object.entries(data).filter(([k]) => k.startsWith("m")).flatMap(([, v]) => v || []);
   const parties = Object.entries(data).filter(([k]) => k.startsWith("p")).flatMap(([, v]) => v || []);
@@ -82,7 +85,8 @@ async function acris(borough: number, block: number, lot: number) {
     };
   });
   docs.sort((a, b) => (b.document_date || "").localeCompare(a.document_date || ""));
-  return { documents: docs, document_count: docs.length };
+  return { documents: docs, document_count: docs.length,
+    ...(partiesFailed || mastersFailed ? { partial: { parties: partiesFailed, master: mastersFailed } } : {}) };
 }
 
 // BIS + DOB NOW filings unioned and deduped. Dedup key is filing number, which
@@ -435,7 +439,11 @@ export async function buildReport(bbl: string, bin: string | null = null) {
     title,
     trust,
     landmark,
-    provenance: { sources_queried: Object.keys(tasks).sort(), sources_failed: errors },
+    provenance: { sources_queried: Object.keys(tasks).sort(), sources_failed: {
+      ...errors,
+      ...(acrisData.partial?.parties ? { acris_parties: "ACRIS party names (buyers / sellers) timed out — owner, trust and lien parties may be missing" } : {}),
+      ...(acrisData.partial?.master ? { acris_master: "ACRIS document details timed out — some recorded documents may be missing" } : {}),
+    } },
     disclaimer: "Informational only. Not a zoning analysis. Confirm all figures with a licensed " +
       "architect or land use counsel before acting.",
   };

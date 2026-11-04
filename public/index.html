@@ -708,7 +708,7 @@ function setReportTitle() {
   if (t && !/^Start with/.test(t)) document.title = `${t} — R Shark`;
 }
 
-const REPORT_V = 3; // 2 = zoning section, 3 = trust flag
+const REPORT_V = 4; // 2 = zoning section, 3 = trust flag, 4 = ACRIS parties retry
 async function run() {
   const v = q.value.trim();
   if (!v) return;

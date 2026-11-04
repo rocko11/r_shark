@@ -9,7 +9,8 @@ import { buildNYSReport, buildNYSReportAt, nysWhere } from "../lib/nys.ts";
 // served stale for up to a day while a fresh copy is fetched in the background, so re-opening
 // a property or a shared link is instant. Errors / not-found are never cached.
 const json = (body: any, status = 200) => {
-  const ok = status === 200 && body && body.found !== false && !body.error;
+  // Don't cache a report where any source failed — the next view should retry it.
+  const ok = status === 200 && body && body.found !== false && !body.error && !Object.keys(body.provenance?.sources_failed || {}).length;
   return new Response(JSON.stringify(body), {
     status, headers: {
       "content-type": "application/json",
