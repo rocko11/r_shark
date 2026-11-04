@@ -565,13 +565,14 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
         </svg>
         Continue with Google
       </button>
+      <p class="hint" style="margin:14px 0 0;font-size:12px">By continuing you agree to the <a href="/terms.html" target="_blank" style="color:var(--shark)">Terms</a> and <a href="/terms.html#privacy" target="_blank" style="color:var(--shark)">Privacy Policy</a>.</p>
     </div>
     <!-- Signed in but no active subscription: choose a plan -->
     <div id="gate-pending" style="display:none">
       <p class="gate-pending" id="gate-msg">Choose a plan to start using R Shark.</p>
       <div class="bill-toggle"><button class="bt-on" data-i="month" onclick="setInterval_('month')">Monthly</button><button data-i="year" onclick="setInterval_('year')">Yearly · 2 months free</button></div>
       <div id="gate-plans" class="plan-grid"></div>
-      <p class="hint" style="margin:10px 0 0">Secure checkout by Stripe · cancel anytime · <a href="/pricing.html" style="color:var(--shark)">compare plans</a></p>
+      <p class="hint" style="margin:10px 0 0">Secure checkout by Stripe · renews automatically, cancel anytime · <a href="/pricing.html" style="color:var(--shark)">compare plans</a> · <a href="/terms.html#t-plans" target="_blank" style="color:var(--shark)">billing terms</a></p>
       <button class="gate-signout" id="gate-signout">Sign out <span id="gate-email"></span></button>
     </div>
   </div>

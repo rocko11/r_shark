@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R Shark Terms and Privacy</title>
+<meta name="description" content="R Shark Terms of Service and Privacy Policy.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --abyss:#0A0E14; --steel:#141B26; --line:#243042; --chrome:#EAF0F6; --fog:#93A1B3; --shark:#2FE0C6;
+  --display:"Space Grotesk",system-ui,sans-serif; --body:"Archivo",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--abyss);color:var(--chrome);font:400 16.5px/1.7 var(--body);-webkit-font-smoothing:antialiased}
+a{color:var(--shark)}
+:focus-visible{outline:2px solid var(--shark);outline-offset:3px;border-radius:4px}
+.wrap{max-width:1120px;margin:0 auto;padding:0 16px}
+header{display:flex;justify-content:space-between;align-items:center;padding:22px 0;gap:16px}
+.logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--chrome);font:700 19px/1 var(--display);letter-spacing:.02em}
+.logo svg{width:40px;height:31px}
+.btn{color:var(--chrome);text-decoration:none;border:1px solid var(--line);border-radius:10px;padding:9px 14px;font-size:15px}
+.layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:56px;padding:40px 0 80px}
+nav.toc{position:sticky;top:24px;align-self:start;font-size:14px}
+nav.toc p{color:var(--fog);margin:0 0 8px;font-weight:600}
+nav.toc ol{list-style:none;margin:0 0 22px;padding:0}
+nav.toc li{margin:3px 0}
+nav.toc a{color:var(--fog);text-decoration:none}
+nav.toc a:hover{color:var(--chrome)}
+article{max-width:70ch}
+h1{font:700 clamp(32px,4vw,46px)/1.05 var(--display);letter-spacing:-.02em;margin:0 0 12px}
+.eff{color:var(--fog);margin:0 0 28px}
+.summary{background:var(--steel);border:1px solid var(--line);border-radius:14px;padding:18px 22px;margin:0 0 44px}
+.summary h2{font-size:18px;margin:0 0 6px}
+.summary ul{margin:0;padding-left:20px}
+h2.part{font:700 30px/1.1 var(--display);margin:56px 0 8px;padding-top:28px;border-top:1px solid var(--line)}
+h3{font:600 19px/1.3 var(--display);margin:34px 0 6px}
+p,li{color:#C9D3DE}
+strong{color:var(--chrome)}
+table{border-collapse:collapse;width:100%;font-size:15px;margin:10px 0}
+th,td{text-align:left;vertical-align:top;padding:9px 10px;border-bottom:1px solid var(--line)}
+th{color:var(--fog);font-weight:600}
+.caps{font-size:14.5px}
+footer{border-top:1px solid var(--line);padding:26px 0 46px;color:var(--fog);font-size:14px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+footer a{color:var(--fog)}
+@media (max-width:860px){.layout{grid-template-columns:1fr;gap:8px;padding-top:16px}nav.toc{position:static}nav.toc ol{display:grid;grid-template-columns:1fr 1fr;column-gap:16px}}
+@media print{body{background:#fff;color:#000}p,li,strong{color:#000}nav.toc,header .btn{display:none}.layout{display:block}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="logo" href="/home.html" aria-label="R Shark home">
+      <svg viewBox="0 0 110 84" aria-hidden="true">
+        <path d="M72 52 C 56 50, 44 42, 41 14 C 30 30, 22 42, 16 52 C 30 52, 52 52, 72 52 Z" fill="#2FE0C6"/>
+        <path d="M6 60 C 22 56, 44 56, 60 59 C 74 62, 86 60, 102 57" fill="none" stroke="#2FE0C6" stroke-width="3" stroke-linecap="round" opacity=".45"/>
+        <path d="M 14 6 C 12 20, 13 38, 12 62" fill="none" stroke="currentColor" stroke-width="8.5" stroke-linecap="round"/>
+        <path d="M 14 6 C 26 1, 58 4, 68 20 C 78 36, 66 52, 14 52" fill="none" stroke="currentColor" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M 36 52 C 58 56, 80 60, 98 64" fill="none" stroke="currentColor" stroke-width="7.5" stroke-linecap="round"/>
+        <path d="M 98 64 C 103 60, 104 54, 100 50" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"/>
+      </svg>
+      SHARK
+    </a>
+    <a class="btn" href="/?signin=1">Sign in</a>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="On this page">
+      <p>Terms of Service</p>
+      <ol>
+        <li><a href="#t-who">Who we are</a></li>
+        <li><a href="#t-account">Your account</a></li>
+        <li><a href="#t-plans">Plans and billing</a></li>
+        <li><a href="#t-preview">Free preview</a></li>
+        <li><a href="#t-data">The data</a></li>
+        <li><a href="#t-use">Acceptable use</a></li>
+        <li><a href="#t-contact">Owner contact data</a></li>
+        <li><a href="#t-ip">Ownership</a></li>
+        <li><a href="#t-end">Ending service</a></li>
+        <li><a href="#t-warranty">Disclaimers</a></li>
+        <li><a href="#t-liability">Liability</a></li>
+        <li><a href="#t-law">Disputes</a></li>
+        <li><a href="#t-changes">Changes</a></li>
+      </ol>
+      <p>Privacy Policy</p>
+      <ol>
+        <li><a href="#p-collect">What we collect</a></li>
+        <li><a href="#p-use">How we use it</a></li>
+        <li><a href="#p-share">Who we share it with</a></li>
+        <li><a href="#p-cookies">Cookies</a></li>
+        <li><a href="#p-owners">Property owners</a></li>
+        <li><a href="#p-keep">Retention and security</a></li>
+        <li><a href="#p-rights">Your choices</a></li>
+      </ol>
+    </nav>
+
+    <article>
+      <h1>Terms of Service and Privacy Policy</h1>
+      <p class="eff">Effective November 4, 2026</p>
+
+      <div class="summary">
+        <h2>The short version</h2>
+        <ul>
+          <li>R Shark organizes public property records. It's a research tool, not legal, tax, environmental or investment advice. Verify before you buy.</li>
+          <li>Subscriptions renew automatically until you cancel. You can cancel anytime from your account, and you keep access until the end of the period you paid for.</li>
+          <li>Owner phone numbers and emails can't be used for credit, employment, tenant screening or insurance decisions. If you call, text or mail owners, you're responsible for following telemarketing and do-not-call laws.</li>
+          <li>We don't sell your personal information. Payments are handled by Stripe, and we never see your full card number.</li>
+        </ul>
+      </div>
+
+      <h2 class="part" id="terms">Terms of Service</h2>
+
+      <h3 id="t-who">1. Who we are</h3>
+      <p>R Shark (rshark.net, "the Service") is operated by P National Group LLC, 1 Northside Piers, Brooklyn, NY 11249 ("we", "us"). These terms are an agreement between you and us. By creating an account or using the Service, you agree to them. If you use R Shark for a company, you agree to them on that company's behalf.</p>
+
+      <h3 id="t-account">2. Your account</h3>
+      <p>You sign in with a Google account, and you must be at least 18. Keep your Google account secure: you're responsible for everything done through your R Shark account. Each account belongs to one person. Don't share sign-ins. On the Team plan, the account owner can add and remove seats for other people, and each person uses their own sign-in.</p>
+
+      <h3 id="t-plans">3. Plans, billing and cancellation</h3>
+      <p>Paid plans are billed in advance, monthly or yearly, through Stripe. Current prices and plan limits are on the <a href="/pricing.html">pricing page</a>. Prices don't include sales tax, which may be added where it applies.</p>
+      <ul>
+        <li><strong>Automatic renewal.</strong> Your subscription renews at the end of each billing period at the current price, charged to your payment method on file, until you cancel.</li>
+        <li><strong>Cancel anytime.</strong> Use "Manage billing" on your account page. Cancellation takes effect at the end of the current period, and you keep access until then.</li>
+        <li><strong>Refunds.</strong> Payments are non-refundable, and we don't refund partial periods, except where the law requires it. If you were charged by mistake, email us within 30 days and we'll make it right.</li>
+        <li><strong>Plan changes.</strong> Upgrades take effect right away, and Stripe prorates the difference. Downgrades take effect at the next renewal.</li>
+        <li><strong>Usage limits.</strong> Monthly report and owner-lookup allowances reset each calendar month and don't carry over. Re-opening a property you already viewed that month doesn't count again.</li>
+        <li><strong>Failed payments.</strong> If a payment fails, Stripe will retry it. If it still can't be collected, your plan ends.</li>
+        <li><strong>Price changes.</strong> We'll email you at least 30 days before a price change applies to your renewal.</li>
+      </ul>
+
+      <h3 id="t-preview">4. Free preview</h3>
+      <p>Signed-in users without a plan can run addresses and see the layout of a full report, with the facts blurred and scrambled. The preview is limited in volume and may change or end at any time. Don't try to remove the blur or recover the hidden data. That's a breach of these terms.</p>
+
+      <h3 id="t-data">5. The data and its limits</h3>
+      <p>R Shark compiles public records and government data, including NYC Open Data (ACRIS, PLUTO, DOF, DOB, HPD and others), NYC Planning, New York State and New Jersey parcel, assessment and court records, FEMA, EPA and state environmental agencies. It then adds its own calculations, such as estimated taxes, buildable floor area and deal signals.</p>
+      <p>Those sources can be incomplete, out of date or wrong. Some records lag by weeks, and agencies change their datasets without notice. Our calculations are estimates based on our reading of the rules. <strong>Nothing in R Shark is legal, tax, title, zoning, environmental, engineering, appraisal or investment advice.</strong> It doesn't replace a title search, a zoning opinion, a Phase I environmental assessment, a survey or advice from your own professionals. Confirm anything you rely on before you sign, lend or build.</p>
+
+      <h3 id="t-use">6. Acceptable use</h3>
+      <p>You may use R Shark for your own real estate research and deal-finding, and share individual reports with your partners, lenders and advisors. You may not:</p>
+      <ul>
+        <li>resell, sublicense or republish the Service or its data in bulk, or build a competing database from it;</li>
+        <li>scrape, crawl or pull data automatically, or go around usage limits, blur or access controls;</li>
+        <li>use R Shark to harass, stalk, intimidate or discriminate against anyone, including on any basis protected by fair housing laws;</li>
+        <li>use it for anything illegal, including deceptive approaches to owners or foreclosure-rescue schemes that violate New York or New Jersey law;</li>
+        <li>interfere with the Service, probe it for vulnerabilities, or upload malicious code.</li>
+      </ul>
+
+      <h3 id="t-contact">7. Owner contact information</h3>
+      <p>Owner phone and email lookups come from a third-party data provider and may be wrong or outdated.</p>
+      <ul>
+        <li><strong>Not a consumer report.</strong> R Shark is not a consumer reporting agency. You may not use any R Shark data to decide anyone's eligibility for credit, insurance, employment, housing or tenancy, or for any other purpose covered by the Fair Credit Reporting Act.</li>
+        <li><strong>Outreach rules are yours to follow.</strong> If you call, text, email or mail owners, you're responsible for complying with the Telephone Consumer Protection Act, the National Do Not Call Registry, state telemarketing and solicitation rules, CAN-SPAM, and any local "cease and desist" or no-solicitation zones. Check numbers against do-not-call lists before you dial, and honor opt-out requests.</li>
+      </ul>
+
+      <h3 id="t-ip">8. Ownership</h3>
+      <p>The public records themselves belong to no one. The R Shark software, design, report formats, scoring and the way the data is compiled belong to us. Subject to these terms, we give you a limited, non-transferable right to use the Service while your account is in good standing. Reports and exports you download are yours to keep and use under section 6. If you send us ideas or feedback, we may use them without owing you anything.</p>
+
+      <h3 id="t-end">9. Suspension and termination</h3>
+      <p>You can stop using R Shark and cancel at any time. We may suspend or close an account that breaks these terms, puts the Service or others at risk, or is used fraudulently. When possible we'll tell you first. If we close a paid account without cause, we'll refund the unused part of your current period.</p>
+
+      <h3 id="t-warranty">10. Disclaimers</h3>
+      <p class="caps">THE SERVICE AND ALL DATA ARE PROVIDED "AS IS" AND "AS AVAILABLE." TO THE FULLEST EXTENT THE LAW ALLOWS, WE DISCLAIM ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, ACCURACY, AND NON-INFRINGEMENT. WE DON'T PROMISE THE SERVICE WILL BE UNINTERRUPTED OR ERROR-FREE, OR THAT ANY PROPERTY, OWNER OR LEAD WILL RESULT IN A DEAL.</p>
+
+      <h3 id="t-liability">11. Limitation of liability</h3>
+      <p class="caps">TO THE FULLEST EXTENT THE LAW ALLOWS, WE WON'T BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL OR PUNITIVE DAMAGES, OR FOR LOST PROFITS, LOST DEALS, OR DECISIONS MADE IN RELIANCE ON THE DATA. OUR TOTAL LIABILITY FOR ANY CLAIM RELATING TO THE SERVICE IS LIMITED TO THE AMOUNT YOU PAID US IN THE 12 MONTHS BEFORE THE CLAIM, OR $100 IF YOU HAVEN'T PAID US.</p>
+      <p>You agree to defend and indemnify us against third-party claims that come from your misuse of the Service or the data, including outreach to owners that breaks the law.</p>
+
+      <h3 id="t-law">12. Governing law and disputes</h3>
+      <p>These terms are governed by the laws of the State of New York, without regard to its conflict-of-law rules. Any dispute will be heard only in the state or federal courts located in Kings County or New York County, New York, and you and we consent to those courts. Before filing anything, please email us so we can try to resolve it informally within 30 days.</p>
+
+      <h3 id="t-changes">13. Changes to these terms</h3>
+      <p>We may update these terms as the Service changes. If a change is material, we'll email you or show a notice in the app at least 14 days before it takes effect. Continuing to use R Shark after that means you accept the new terms. If you don't, cancel before the change takes effect.</p>
+
+      <h2 class="part" id="privacy">Privacy Policy</h2>
+      <p>This policy explains what personal information R Shark collects from people who use it, and how it treats information about property owners that appears in public records.</p>
+
+      <h3 id="p-collect">What we collect</h3>
+      <table>
+        <thead><tr><th scope="col">Information</th><th scope="col">Where it comes from</th></tr></thead>
+        <tbody>
+          <tr><td>Name, email address and Google account ID</td><td>Google, when you sign in</td></tr>
+          <tr><td>Plan, billing status, Stripe customer ID, billing country and the last four digits of your card</td><td>Stripe, when you subscribe. We never receive or store your full card number.</td></tr>
+          <tr><td>Addresses and lots you search, reports you open, lists you run, and monthly usage counts</td><td>Your use of the Service</td></tr>
+          <tr><td>Team seats: the email addresses you add to your team</td><td>You</td></tr>
+          <tr><td>Device and log data: IP address, browser, pages visited, errors</td><td>Your browser, our hosting provider and Google Analytics</td></tr>
+          <tr><td>Messages you send us</td><td>You</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="p-use">How we use it</h3>
+      <ul>
+        <li>To sign you in, run the reports you ask for, and apply your plan's features and limits.</li>
+        <li>To bill you, prevent fraud and handle support.</li>
+        <li>To send you service emails, such as receipts, billing problems and changes to these terms. If we ever send marketing emails, every one will have an unsubscribe link.</li>
+        <li>To understand how R Shark is used, fix bugs and make it faster.</li>
+      </ul>
+      <p><strong>We don't sell your personal information or share it for cross-context behavioral advertising.</strong></p>
+
+      <h3 id="p-share">Who we share it with</h3>
+      <p>Only with service providers that run R Shark for us, under contracts that limit their use of it:</p>
+      <ul>
+        <li><strong>Netlify</strong>: hosting, sign-in (Netlify Identity) and data storage.</li>
+        <li><strong>Google</strong>: Google sign-in, Google Maps and Street View images, and Google Analytics.</li>
+        <li><strong>Stripe</strong>: payments, invoices and the billing portal.</li>
+        <li><strong>DataSkip</strong>: owner phone and email lookups. We send the owner's name and property address, never yours.</li>
+        <li><strong>Resend</strong>: sending emails.</li>
+      </ul>
+      <p>We also share information if the law requires it, to protect our rights or someone's safety, or as part of a merger or sale of the business, in which case this policy continues to apply. Property searches go to the government data services listed in section 5. Those requests contain the address or lot, not your identity.</p>
+
+      <h3 id="p-cookies">Cookies and browser storage</h3>
+      <ul>
+        <li><strong>rs_token</strong> keeps you signed in. It's essential, and the Service doesn't work without it.</li>
+        <li>Browser local storage remembers small settings, such as whether you've seen the welcome page and your sign-in session.</li>
+        <li>Google Analytics sets cookies to measure visits. You can block it with your browser settings or Google's <a href="https://tools.google.com/dlpage/gaoptout" rel="noopener">opt-out add-on</a>, and R Shark still works.</li>
+      </ul>
+
+      <h3 id="p-owners">Information about property owners</h3>
+      <p>Reports show owner names, mailing addresses, deeds, mortgages, liens and court filings taken from public records that government agencies publish. Owner phone numbers and emails come from a licensed data provider and are shown only to paid subscribers who request them. If you're a property owner and want your phone number or email removed from R Shark lookups, email <a href="mailto:info@p-national.com?subject=R%20Shark%20removal%20request">info@p-national.com</a> with the property address. We'll suppress it within 30 days. Records published by government agencies have to be corrected at the source agency, but we'll tell you which agency that is.</p>
+
+      <h3 id="p-keep">Retention and security</h3>
+      <p>We keep account and billing records while your account is open, and for as long afterwards as tax and accounting law requires, which is usually seven years for billing records. Usage logs are kept for up to 24 months. All traffic is encrypted in transit, data is stored with our hosting provider, and access is restricted to the people who run R Shark. No system is perfectly secure. If a breach affects your personal information, we'll notify you as the law requires.</p>
+
+      <h3 id="p-rights">Your choices and rights</h3>
+      <p>You can ask us to show you, correct, export or delete the personal information we hold about you. Email us from the address you sign in with. We'll answer within 30 days. Deleting your account ends any subscription, and we'll keep only what the law requires. Depending on where you live, for example California, you may have further rights under state privacy law. We'll honor them, and we won't treat you differently for using them.</p>
+      <p>R Shark is not meant for anyone under 18, and we don't knowingly collect information from children.</p>
+      <p>We store and process data in the United States.</p>
+
+      <h3 id="contact">Contact</h3>
+      <p>P National Group LLC · 1 Northside Piers, Brooklyn, NY 11249 · <a href="mailto:info@p-national.com">info@p-national.com</a></p>
+    </article>
+  </div>
+
+  <footer>
+    <span>© 2026 P National Group LLC</span>
+    <span><a href="/home.html">Home</a> · <a href="/pricing.html">Pricing</a> · <a href="#terms">Terms</a> · <a href="#privacy">Privacy</a></span>
+  </footer>
+</div>
+</body>
+</html>
