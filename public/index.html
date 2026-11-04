@@ -4144,6 +4144,7 @@ function renderPlans(target = 'gate-plans') {
   }).join('');
 }
 async function startCheckout(plan, btn) {
+  if (!ME || !ME.signed_in) { signInWithGoogle(); return; }
   if (ME && ME.active && ME.plan !== 'owner') return openPortal(btn); // plan changes go through the Stripe portal
   if (btn) { btn.disabled = true; btn.textContent = 'Opening checkout…'; }
   try {
@@ -4206,7 +4207,7 @@ function showUpgrade(message, needs) {
   modal(`<h2 style="margin:0 0 6px">Upgrade your plan</h2><p>${esc(message)}</p>
     <div class="bill-toggle"><button class="${billInterval === 'month' ? 'bt-on' : ''}" data-i="month" onclick="setInterval_('month');renderPlans('up-plans')">Monthly</button><button class="${billInterval === 'year' ? 'bt-on' : ''}" data-i="year" onclick="setInterval_('year');renderPlans('up-plans')">Yearly · 2 months free</button></div>
     <div id="up-plans" class="plan-grid"></div>`);
-  renderPlans('up-plans');
+  if (ME && ME.plans) renderPlans('up-plans'); else refreshMe().then(() => renderPlans('up-plans'));
 }
 async function openAccount() {
   await refreshMe();
