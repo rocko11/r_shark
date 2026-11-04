@@ -1,10 +1,11 @@
-import type { Config } from "@netlify/functions";
 import { getStore } from "@netlify/blobs";
 import { trustDeedsBetween } from "../lib/trusts.ts";
 
 // Builds the "deeded into a trust" list, one blob per calendar month (trust-transfers/YYYY-MM).
 // Runs daily (ACRIS on Open Data updates roughly monthly and back-fills late recordings), and can
-// be kicked off on demand by /api/trust-transfers when the store is empty. Background function:
+// be kicked off on demand by /api/trust-transfers when the store is empty (POST to this function;
+// the daily trigger is trust-transfers-cron, because Netlify won't let a scheduled function be
+// called over HTTP). Background function:
 // up to 15 min, so the first full 12-month build (~20–30 s per month) fits.
 const B = "https://data.cityofnewyork.us/resource";
 const MONTHS = 12;
@@ -40,4 +41,3 @@ export default async () => {
   console.log("trust-transfers built", done.join(" "));
 };
 
-export const config: Config = { schedule: "20 9 * * *" };

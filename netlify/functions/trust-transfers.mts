@@ -4,7 +4,7 @@ import { KIND_LABEL } from "../lib/trusts.ts";
 
 // GET /api/trust-transfers?months=3&boro=3&kind=irrevocable&self=1&paid=0&q=smith
 // NYC properties deeded into family / living / irrevocable trusts (ACRIS), newest first.
-// Data is pre-built by trust-transfers-background (daily). If nothing is built yet, this kicks it off.
+// Data is pre-built by trust-build-background (daily, via trust-transfers-cron). If nothing is built yet, this kicks it off.
 const json = (b: unknown, s = 200, cache = "public, max-age=900") =>
   new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json", "cache-control": cache } });
 
@@ -17,7 +17,7 @@ export default async (req: Request, _ctx: Context) => {
     const lastKick = idx?.kicked_at ? Date.parse(idx.kicked_at) : 0;
     if (Date.now() - lastKick > 20 * 60_000) {
       await store.setJSON("index", { months: {}, kicked_at: new Date().toISOString() });
-      await fetch(new URL("/.netlify/functions/trust-transfers-background", req.url), { method: "POST" }).catch(() => {});
+      await fetch(new URL("/.netlify/functions/trust-build-background", req.url), { method: "POST" }).catch(() => {});
     }
     return json({ building: true, message: "Building the trust-transfer list from ACRIS for the first time — this takes a few minutes. Try again shortly." }, 202, "no-store");
   }
