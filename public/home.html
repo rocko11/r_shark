@@ -35,7 +35,7 @@ a{color:inherit}
 
 /* hero */
 .hero{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(0,1fr);gap:48px;align-items:center;padding:34px 0 70px}
-h1{font:700 clamp(40px,5.6vw,72px)/.98 var(--display);letter-spacing:-.025em;margin:0 0 22px;max-width:12ch}
+h1{font:700 clamp(38px,4.9vw,62px)/1 var(--display);letter-spacing:-.025em;margin:0 0 22px;max-width:14ch}
 .lede{font-size:19px;color:#C6D1DE;max-width:36em;margin:0 0 28px}
 .runbox{display:flex;gap:8px;max-width:520px;background:var(--steel);border:1px solid var(--line);border-radius:14px;padding:6px}
 .runbox input{flex:1;min-width:0;background:none;border:none;color:var(--chrome);font:500 16px var(--body);padding:12px 12px}
@@ -64,7 +64,7 @@ h1{font:700 clamp(40px,5.6vw,72px)/.98 var(--display);letter-spacing:-.025em;mar
 .ping{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--shark);box-shadow:0 0 0 0 rgba(47,224,198,.6);opacity:0;transform:scale(.4);transition:opacity .25s, transform .35s cubic-bezier(.3,1.6,.5,1)}
 .ping.on{opacity:1;transform:scale(1);animation:ring 1.4s ease-out 1}
 @keyframes ring{0%{box-shadow:0 0 0 0 rgba(47,224,198,.55)}100%{box-shadow:0 0 0 22px rgba(47,224,198,0)}}
-.tag{position:absolute;max-width:210px;background:rgba(10,14,20,.92);border:1px solid var(--line);border-left:3px solid var(--shark);border-radius:10px;padding:9px 11px;font-size:13px;line-height:1.35;opacity:0;translate:0 6px;transition:opacity .35s, translate .35s;backdrop-filter:blur(4px)}
+.tag{position:absolute;width:41%;background:rgba(10,14,20,.92);border:1px solid var(--line);border-left:3px solid var(--shark);border-radius:10px;padding:9px 11px;font-size:13px;line-height:1.35;opacity:0;translate:0 6px;transition:opacity .35s, translate .35s;backdrop-filter:blur(4px)}
 .tag.on{opacity:1;translate:0 0}
 .tag b{display:block;font:600 14px var(--display);margin-bottom:2px}
 .tag span{color:var(--fog)}
@@ -153,7 +153,7 @@ footer a{color:var(--fog)}
   .anatomy{grid-template-columns:1fr}
   .runbox{flex-direction:column}
   section{padding:64px 0}
-  .tag{max-width:170px;font-size:12px}
+  .tag{font-size:11.5px;padding:7px 9px}.tag b{font-size:12.5px}
 }
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
@@ -191,7 +191,7 @@ footer a{color:var(--fog)}
       <p class="lede">Type an address and get the owner, deed history, liens, the actual tax bill, zoning and what you can build, environmental risk and violations — in one report, in seconds. Or sweep the city for owners showing signs they're about to sell.</p>
       <form class="runbox" id="runform" action="/" method="get">
         <label for="addr" class="sr" style="position:absolute;left:-9999px">Property address</label>
-        <input id="addr" name="q" autocomplete="street-address" placeholder="An address, e.g. 819 Bergen St, Brooklyn" required>
+        <input id="addr" name="q" autocomplete="street-address" placeholder="e.g. 819 Bergen St, Brooklyn" required>
         <button class="btn btn-primary" type="submit">Run this address free</button>
       </form>
       <p class="fineprint">Free preview with Google sign-in — you see the whole report, blurred, before you pay. <a href="#plans">Plans from $49 a month.</a></p>
@@ -339,9 +339,9 @@ for (const id of ['runform', 'runform2']) {
   const zoneFill = { r: '#E7C35A', c: '#E06C75', m: '#9D8CD9' };
   // Two blocks separated by a street; lots by frontage (px) and zone. Lot numbers are illustrative.
   const rows = [
-    { y: 40,  h: 170, lots: [[40,'r'],[34,'r'],[52,'c'],[34,'r'],[30,'r'],[60,'r'],[34,'r'],[40,'c'],[30,'r'],[56,'m']] },
-    { y: 230, h: 120, lots: [[44,'c'],[38,'c'],[60,'r'],[30,'r'],[30,'r'],[46,'r'],[34,'r'],[40,'r'],[52,'m'],[36,'m']] },
-    { y: 400, h: 90,  lots: [[56,'r'],[34,'r'],[34,'r'],[48,'r'],[40,'c'],[36,'r'],[60,'r'],[42,'r'],[60,'r']] },
+    { y: 44,  h: 156, lots: [[40,'r'],[34,'r'],[52,'c'],[34,'r'],[30,'r'],[60,'r'],[34,'r'],[40,'c'],[30,'r'],[56,'m']] },
+    { y: 224, h: 106, lots: [[44,'c'],[38,'c'],[60,'r'],[30,'r'],[30,'r'],[46,'r'],[34,'r'],[40,'r'],[52,'m'],[36,'m']] },
+    { y: 354, h: 92,  lots: [[56,'r'],[34,'r'],[34,'r'],[48,'r'],[40,'c'],[36,'r'],[60,'r'],[42,'r'],[60,'r']] },
   ];
   const lots = [];
   let n = 1;
@@ -357,14 +357,16 @@ for (const id of ['runform', 'runform2']) {
     });
   });
   const st = (x, y, s, rot) => { const t = el('text', { x, y, class: 'street', transform: rot ? `rotate(-90 ${x} ${y})` : '' }); t.textContent = s; svg.appendChild(t); };
-  st(34, 224, 'DEAN STREET'); st(34, 394, 'BERGEN STREET'); st(18, 300, 'VANDERBILT AVE', true);
+  st(34, 216, 'DEAN STREET'); st(34, 346, 'BERGEN STREET'); st(20, 300, 'VANDERBILT AVE', true);
 
   // Signals the sonar "finds": lot index, angle-based reveal delay (ms), tag text, tag class and side.
+  // Signals the sonar "finds": lot index, reveal delay (ms) in sweep order, text, colour and a
+  // fixed tag position (% of the card) — one per quarter so callouts never overlap.
   const hits = [
-    { i: 5,  d: 900,  t: 'Deeded into an irrevocable trust', s: 'Recorded last month · trustee mailing address on file', cls: '', side: 'below' },
-    { i: 12, d: 1700, t: 'On the tax lien sale list', s: '90-day notice · owner can still sell', cls: 'danger', side: 'below' },
-    { i: 22, d: 2400, t: 'Built 1.1 of 4.0 FAR', s: '9,400 sf of unused development rights', cls: 'warn', side: 'above' },
-    { i: 8,  d: 3000, t: 'Lis pendens filed', s: 'Foreclosure action in Kings County', cls: 'danger', side: 'below' },
+    { i: 1,  d: 700,  t: 'Deeded into an irrevocable trust', s: 'Recorded last month · trustee address on file', cls: '', at: [4, 29] },
+    { i: 8,  d: 1500, t: 'Lis pendens filed', s: 'Foreclosure action in Kings County', cls: 'danger', at: [55, 29] },
+    { i: 25, d: 2300, t: 'Built 1.1 of 4.0 FAR', s: '9,400 sf of unused development rights', cls: 'warn', at: [55, 55] },
+    { i: 12, d: 3000, t: 'On the tax lien sale list', s: '90-day notice · owner can still sell', cls: 'danger', at: [4, 68] },
   ];
   const card = document.getElementById('mapcard'), pins = document.getElementById('pins');
   const pct = (v, total) => (v / total * 100) + '%';
@@ -372,9 +374,7 @@ for (const id of ['runform', 'runform2']) {
     const L = lots[h.i];
     const p = document.createElement('div'); p.className = 'ping'; p.style.left = pct(L.cx, 500); p.style.top = pct(L.cy, 510);
     const tag = document.createElement('div'); tag.className = 'tag ' + h.cls; tag.innerHTML = `<b>${h.t}</b><span>${h.s}</span>`;
-    const left = Math.min(Math.max(L.cx / 500 * 100 - 18, 3), 52);
-    tag.style.left = left + '%';
-    if (h.side === 'below') tag.style.top = `calc(${pct(L.cy, 510)} + 16px)`; else tag.style.bottom = `calc(${100 - L.cy / 510 * 100}% + 16px)`;
+    tag.style.left = h.at[0] + '%'; tag.style.top = h.at[1] + '%';
     pins.append(p, tag);
     return { h, L, p, tag };
   });
