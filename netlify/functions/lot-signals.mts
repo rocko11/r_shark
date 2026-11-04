@@ -1,5 +1,6 @@
 import type { Config, Context } from "@netlify/functions";
 import { gate } from "../lib/access.ts";
+import { redactResponse } from "../lib/redact.ts";
 
 // GET /api/lot-signals?bbls=3011330064,3011330065,...&points=1
 //
@@ -38,8 +39,7 @@ async function soda(base: string, params: Record<string, string>): Promise<any[]
   }
 }
 
-export default async (req: Request, _ctx: Context) => {
-  const __ent = await gate(req, "basic"); if (__ent instanceof Response) return __ent;
+const __inner = async (req: Request, _ctx: Context) => {
   const json = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), {
       status: s,
@@ -159,6 +159,13 @@ export default async (req: Request, _ctx: Context) => {
   }
 
   return json({ count: Object.keys(signals).length, signals, points: wantPoints ? points : undefined, errors: errors.length ? errors : undefined });
+};
+
+// Subscription gate; free-preview users get the same data with the facts scrambled.
+export default async (req: Request, ctx: any) => {
+  const __ent = await gate(req, "basic", { preview: true }); if (__ent instanceof Response) return __ent;
+  const res = await (__inner as any)(req, ctx);
+  return __ent.teaser ? redactResponse(res) : res;
 };
 
 export const config: Config = { path: "/api/lot-signals" };

@@ -1,5 +1,6 @@
 import type { Config, Context } from "@netlify/functions";
 import { gate } from "../lib/access.ts";
+import { redactResponse } from "../lib/redact.ts";
 
 // GET /api/lots?bbl=1010740014                  -> just the property's own block
 // GET /api/lots?bbl=..&lat=..&lng=..&blocks=5   -> all lots within ~N blocks of the property
@@ -15,8 +16,7 @@ const MAPPLUTO =
 const BLOCK_LAT = 0.0009;
 const BLOCK_LNG = 0.0012;
 
-export default async (req: Request, _ctx: Context) => {
-  const __ent = await gate(req, "basic"); if (__ent instanceof Response) return __ent;
+const __inner = async (req: Request, _ctx: Context) => {
   const json = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), {
       status: s,
@@ -106,6 +106,13 @@ export default async (req: Request, _ctx: Context) => {
   }).filter((l: any) => l.geometry);
 
   return json({ bbl: self, count: lots.length, radius_blocks: useRadius ? blocks : 0, lots });
+};
+
+// Subscription gate; free-preview users get the same data with the facts scrambled.
+export default async (req: Request, ctx: any) => {
+  const __ent = await gate(req, "basic", { preview: true }); if (__ent instanceof Response) return __ent;
+  const res = await (__inner as any)(req, ctx);
+  return __ent.teaser ? redactResponse(res) : res;
 };
 
 export const config: Config = { path: "/api/lots" };

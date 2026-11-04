@@ -1,13 +1,13 @@
 import type { Config, Context } from "@netlify/functions";
 import { gate } from "../lib/access.ts";
+import { redactResponse } from "../lib/redact.ts";
 import * as sq from "../lib/socrata.ts";
 
 // GET /api/nearby?lat=..&lng=..&radius=250   (radius in meters, default ~2 blocks)
 // Returns lightweight lot pins around a point: bbl, address, lat/lng, and a few
 // headline fields so the map can label them and colour them by signal. Clicking
 // a pin then calls /api/report?bbl=... for the full picture.
-export default async (req: Request, _ctx: Context) => {
-  const __ent = await gate(req, "basic"); if (__ent instanceof Response) return __ent;
+const __inner = async (req: Request, _ctx: Context) => {
   const json = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json" } });
   try {
@@ -69,6 +69,13 @@ export default async (req: Request, _ctx: Context) => {
   } catch (e) {
     return json({ error: `${(e as Error).name}: ${(e as Error).message}`.slice(0, 300) }, 500);
   }
+};
+
+// Subscription gate; free-preview users get the same data with the facts scrambled.
+export default async (req: Request, ctx: any) => {
+  const __ent = await gate(req, "basic", { preview: true }); if (__ent instanceof Response) return __ent;
+  const res = await (__inner as any)(req, ctx);
+  return __ent.teaser ? redactResponse(res) : res;
 };
 
 export const config: Config = { path: "/api/nearby" };

@@ -15,7 +15,7 @@ import { gate } from "../lib/access.ts";
 const BASE = "https://maps.googleapis.com/maps/api/streetview";
 
 export default async (req: Request, _ctx: Context) => {
-  const __ent = await gate(req, "basic"); if (__ent instanceof Response) return __ent;
+  const __ent = await gate(req, "basic", { preview: true }); if (__ent instanceof Response) return __ent;
   const json = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json" } });
 

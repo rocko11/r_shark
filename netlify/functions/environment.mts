@@ -1,12 +1,12 @@
 import type { Config, Context } from "@netlify/functions";
 import { gate } from "../lib/access.ts";
+import { redactResponse } from "../lib/redact.ts";
 import { buildEnvironment } from "../lib/environment.ts";
 
 // GET /api/environment?lat=..&lon=..&region=nyc|nys|nj[&bbl=..][&address=..][&county=..]
 // Environmental screen for one property (flood zone, contamination, E-designations, spills).
 // Loaded by the report page after the main report renders, so it never slows the report.
-export default async (req: Request, _ctx: Context) => {
-  const __ent = await gate(req, "basic"); if (__ent instanceof Response) return __ent;
+const __inner = async (req: Request, _ctx: Context) => {
   const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), {
     status: s, headers: { "content-type": "application/json", "cache-control": s === 200 ? "private, max-age=3600" : "no-store" } });
   const u = new URL(req.url).searchParams;
@@ -26,6 +26,13 @@ export default async (req: Request, _ctx: Context) => {
   } catch (e: any) {
     return json({ error: String(e?.message || e) }, 502);
   }
+};
+
+// Subscription gate; free-preview users get the same data with the facts scrambled.
+export default async (req: Request, ctx: any) => {
+  const __ent = await gate(req, "basic", { preview: true }); if (__ent instanceof Response) return __ent;
+  const res = await (__inner as any)(req, ctx);
+  return __ent.teaser ? redactResponse(res) : res;
 };
 
 export const config: Config = { path: "/api/environment" };

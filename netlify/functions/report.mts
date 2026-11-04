@@ -1,5 +1,6 @@
 import type { Config, Context } from "@netlify/functions";
 import { gate, recordReport } from "../lib/access.ts";
+import { redactResponse } from "../lib/redact.ts";
 import { buildReport } from "../lib/report.ts";
 import { resolve, nycPlaceMatches } from "../lib/geocode.ts";
 import { detectRegion, townTail } from "../lib/region.ts";
@@ -26,14 +27,15 @@ const json = (body: any, status = 200) => {
 export default async (req: Request, ctx: Context) => {
   const u = new URL(req.url).searchParams;
   const key = (u.get("bbl") || u.get("address") || u.get("nj_at") || u.get("nys_at") || "").trim().toUpperCase().replace(/\s+/g, " ");
-  const ent = await gate(req, "report", { reportKey: key });
+  const ent = await gate(req, "report", { reportKey: key, preview: true });
   if (ent instanceof Response) return ent;
   const res = await handle(req, ctx);
   if (res.status === 200) {
     const body = await res.clone().json().catch(() => null);
     if (body && body.found !== false && !body.error) await recordReport(ent, String(body.bbl || body.parcel?.pams_pin || body.parcel?.print_key || key));
   }
-  return res;
+  // Free preview: same report, facts scrambled server-side (the page blurs it).
+  return ent.teaser ? redactResponse(res) : res;
 };
 
 async function handle(req: Request, _ctx: Context) {

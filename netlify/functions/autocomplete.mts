@@ -5,7 +5,7 @@ import { detectRegion } from "../lib/region.ts";
 import { njSuggest } from "../lib/nj.ts";
 
 export default async (req: Request, _ctx: Context) => {
-  const __ent = await gate(req, "basic"); if (__ent instanceof Response) return __ent;
+  const __ent = await gate(req, "basic", { preview: true }); if (__ent instanceof Response) return __ent;
   const q = new URL(req.url).searchParams.get("q") || "";
   try {
     const region = detectRegion(q);

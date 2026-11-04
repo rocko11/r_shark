@@ -70,6 +70,7 @@ export interface Entitlement {
   email: string; plan: Plan | null; status: string; active: boolean; def: PlanDef | null;
   account: string;           // whose subscription pays (team owner for members)
   sub?: any; member_of?: string | null;
+  teaser?: boolean;          // signed in, no plan: gets a scrambled, blurred preview
 }
 const ACTIVE = new Set(["active", "trialing", "past_due"]); // past_due: Stripe is retrying — keep access during dunning
 export async function entitlement(email: string): Promise<Entitlement> {
@@ -109,11 +110,23 @@ async function bump(account: string, field: "reports" | "skiptrace", n: number, 
 const json = (b: unknown, s: number) => new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 export type Feature = "basic" | "report" | "hunt" | "lists" | "csv" | "skiptrace" | "pacer";
 // Returns the entitlement, or a Response to send back (401 not signed in, 402 needs a plan / upgrade / limit hit).
-export async function gate(req: Request, feature: Feature, opts: { reportKey?: string; credits?: number } = {}): Promise<Entitlement | Response> {
+// Free preview allowance (signed in, no plan): generous, but stops anyone hammering the APIs.
+export const FREE_PREVIEW_REPORTS = 100;
+export async function gate(req: Request, feature: Feature, opts: { reportKey?: string; credits?: number; preview?: boolean } = {}): Promise<Entitlement | Response> {
   const user = await getUser(req);
   if (!user) return json({ error: "Sign in to use R Shark.", code: "auth_required" }, 401);
   const ent = await entitlement(user.email);
-  if (!ent.active || !ent.def) return json({ error: "An active R Shark subscription is required.", code: "subscription_required", plan: null }, 402);
+  if (!ent.active || !ent.def) {
+    if (opts.preview) {
+      if (feature === "report") {
+        const u = await getUsage(ent.email);
+        if (!(opts.reportKey && u.seen.includes(opts.reportKey)) && u.reports >= FREE_PREVIEW_REPORTS)
+          return json({ error: `You've previewed ${FREE_PREVIEW_REPORTS} properties this month. Subscribe to keep going — and unlock everything in them.`, code: "subscription_required" }, 402);
+      }
+      return { ...ent, teaser: true };
+    }
+    return json({ error: "An active R Shark subscription is required.", code: "subscription_required", plan: null }, 402);
+  }
   const f = ent.def.features;
   if (feature === "pacer" && !f.pacer) return json({ error: "Not available on your plan.", code: "upgrade_required" }, 402);
   if ((feature === "lists" && !f.lists) || (feature === "csv" && !f.csv))
@@ -134,6 +147,7 @@ export async function gate(req: Request, feature: Feature, opts: { reportKey?: s
 }
 // Call after a report was actually delivered (found), so failed lookups don't use up the allowance.
 export async function recordReport(ent: Entitlement, reportKey: string) {
+  if (ent.teaser) { await bump(ent.email, "reports", 1, reportKey).catch(() => {}); return; }
   if (!ent.def || ent.def.reports == null) return;
   await bump(ent.account, "reports", 1, reportKey).catch(() => {});
 }

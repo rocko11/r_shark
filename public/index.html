@@ -506,6 +506,16 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
 .bill-toggle{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;margin-top:6px}
 .bill-toggle button{background:none;border:none;padding:6px 14px;font-size:12px;cursor:pointer;color:inherit}
 .bill-toggle .bt-on{background:var(--shark);color:#04141a;font-weight:700}
+/* free preview (locked report) */
+.lockbar{position:sticky;top:8px;z-index:500;display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;
+  background:var(--paper-2,#111824);border:1.5px solid var(--shark);border-radius:12px;padding:12px 14px;margin:0 0 14px;box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:14px}
+.lockbar button{background:var(--shark);color:#04141a;border:none;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer;white-space:nowrap}
+#out.locked section:not(#svsection):not(.has-map) > *:not(.sec-head),
+#out.locked section.has-map > *:not(.sec-head):not(#blockmap):not(#njmap):not(#nysmap):not(#svsection):not(.mapwrap):not(.maplegend),
+#out.locked section .sec-head .count, #out.locked .titleblock > *:not(.tb-head), #out.locked .titleblock .tb-head > *:not(h2),
+#out.locked .leaflet-popup-content, #out.locked .ownnote, #out.locked > p
+  { filter: blur(6px); user-select: none; -webkit-user-select: none; cursor: pointer }
+#out.locked .pdf-btn, #out.locked .ownblock { display: none !important }
 #acct-modal{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:60px 16px;overflow:auto}
 #acct-modal .box{background:var(--paper,#0d1117);color:var(--ink,#e6edf3);border:1px solid var(--line);border-radius:14px;max-width:760px;width:100%;padding:20px 22px}
 .meter{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin:4px 0 10px}.meter i{display:block;height:100%;background:var(--shark)}
@@ -600,6 +610,7 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
     <div class="mast-meta" style="display:flex;align-items:center;gap:14px">
       <span>Address in. Deal out.</span>
       <button class="run-report-btn no-print owner-only" style="display:none" onclick="triggerDailyReport()" title="Run your daily motivated seller report now">⚡ Run Report</button>
+      <button id="preview-pill" class="no-print" onclick="showPlans()" style="display:none;background:var(--shark);color:#04141a;border:none;border-radius:999px;padding:5px 12px;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.05em;cursor:pointer">FREE PREVIEW · UNLOCK</button>
       <button id="acct-btn" class="no-print" onclick="openAccount()" title="Your plan and billing" style="background:none;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;padding:5px 10px;font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--fog)">ACCOUNT</button>
       <button id="theme-toggle" onclick="toggleTheme()" title="Switch light/dark mode" style="background:none;border:1.5px solid var(--line);border-radius:8px;cursor:pointer;padding:5px 8px;font-size:14px;line-height:1;color:var(--fog);transition:color .15s,border-color .15s" onmouseenter="this.style.borderColor='var(--shark)'" onmouseleave="this.style.borderColor='var(--line)'">🌙</button>
     </div>
@@ -724,7 +735,7 @@ function setReportTitle() {
   if (t && !/^Start with/.test(t)) document.title = `${t} — R Shark`;
 }
 
-const REPORT_V = 4; // 2 = zoning section, 3 = trust flag, 4 = ACRIS parties retry
+const REPORT_V = 5; // 5 = free preview; 2 = zoning section, 3 = trust flag, 4 = ACRIS parties retry
 async function run() {
   const v = q.value.trim();
   if (!v) return;
@@ -750,12 +761,12 @@ async function run() {
         <code>/api/canary</code> to find out which.</div>`;
       return;
     }
-    if (d.region === 'nys' && d.found !== false) { renderNYS(d); return; }
+    if (d.region === 'nys' && d.found !== false) { renderNYS(d); applyLock(d); return; }
     if (d.region && d.region !== 'nj' && d.region !== 'nys' && d.found === false) {
       out.innerHTML = `<div class="err"><strong>Outside R Shark's report coverage.</strong><br>${esc(d.error || '')}</div>`;
       return;
     }
-    if (d.region === 'nj' && d.found !== false) { renderNJ(d); return; }
+    if (d.region === 'nj' && d.found !== false) { renderNJ(d); applyLock(d); return; }
     if ((d.region === 'nj' || d.region === 'nys') && d.found === false) {
       const sug = (d.suggestions || []).map(s => `<button onclick="q.value=this.dataset.a;run()" data-a="${esc(s)}"
         style="background:var(--steel);border:1px solid var(--line);border-radius:6px;padding:5px 10px;color:var(--shark);cursor:pointer;font-size:12px;margin:6px 6px 0 0">${esc(s)} →</button>`).join('');
@@ -781,6 +792,7 @@ async function run() {
       return;
     }
     render(d);
+    applyLock(d);
     // If GeoSearch returned multiple candidates, show a disambiguation banner
     // so the user can confirm or pick a different match.
     if (d.resolution?.ambiguous && d.resolution?.other_candidates?.length) {
@@ -819,6 +831,32 @@ async function run() {
 
 
 
+
+/* ---------- Free preview: blur a locked (scrambled) report ----------
+   The server already scrambled every fact in a locked report (netlify/lib/redact.ts); this just
+   blurs it, keeps the address, map, Street View and section headings sharp, and sells the upgrade. */
+function applyLock(d) {
+  const locked = !!(d && d.locked);
+  out.classList.toggle('locked', locked);
+  document.getElementById('lockbar')?.remove();
+  if (!locked) return;
+  out.querySelectorAll('section').forEach(s => {
+    if (s.querySelector('#blockmap, #njmap, #nysmap')) s.classList.add('has-map');
+  });
+  const bar = document.createElement('div');
+  bar.id = 'lockbar'; bar.className = 'lockbar no-print';
+  bar.innerHTML = `<div><strong>🔒 Free preview.</strong> The full report for this property is ready — owner &amp; deed history, liens and foreclosure filings, actual tax bill, zoning and buildable area, environmental risks, violations and permits.</div>
+    <button onclick="showPlans()">Unlock this report →</button>`;
+  out.insertBefore(bar, out.firstChild);
+}
+function showPlans(msg) {
+  showUpgrade(msg || 'Subscribe to unlock every report in full — no blur, unlimited on Pro.');
+}
+document.addEventListener('click', e => {
+  if (!out.classList.contains('locked')) return;
+  if (e.target.closest('#lockbar, .leaflet-container, #svsection, .sec-head, #acct-modal, .titleblock h2')) return;
+  if (e.target.closest('#out section, #out .titleblock, #out .flag')) { e.preventDefault(); e.stopPropagation(); showPlans(); }
+}, true);
 
 /* ---------- Zoning: what each district on the lot means (NYC) ---------- */
 function zoningHtml(z) {
@@ -1059,6 +1097,7 @@ async function runAtHere(region, lat, lng) {
     if (d.found === false) { out.innerHTML = `<div class="err"><strong>No parcel found there.</strong><br>${esc(d.error || '')}</div>`; return; }
     q.value = (d.parcel?.address || '') + (d.parcel?.municipality ? ', ' + String(d.parcel.municipality).replace(/\s+(CITY|TOWN|TOWNSHIP|TWP|BOROUGH|BORO|VILLAGE)$/i, '') : '') + (region === 'nj' ? ', NJ' : ', NY');
     if (d.region === 'nj') renderNJ(d); else renderNYS(d);
+    applyLock(d);
     setReportTitle();
   } catch (e) {
     out.innerHTML = `<div class="err">Couldn't load that lot: ${esc(e.message)}</div>`;
@@ -4052,7 +4091,7 @@ window.fetch = async function (input, init) {
 };
 function handleDenied(status, j) {
   if (status === 401) { applyAuthState(null); return; }
-  if (j && j.code === 'subscription_required') { refreshMe().then(showGate); return; }
+  if (j && j.code === 'subscription_required') { showPlans(j.error); return; }
   showUpgrade(j && j.error || 'Upgrade to use this.', j && j.needs);
 }
 
@@ -4147,7 +4186,10 @@ function applyAuthState(user) {
   const pacerTab = document.getElementById('tab-pacer'); if (pacerTab) pacerTab.style.display = user.email === OWNER_EMAIL ? '' : 'none';
   refreshMe().then(me => {
     if (!me || !me.signed_in) { applyAuthState(null); return; }
-    if (me.active) gate.classList.add('hidden'); else showGate();
+    // Everyone signed in gets into the app; without a plan, reports come back as a blurred preview.
+    gate.classList.add('hidden');
+    const pill = document.getElementById('preview-pill');
+    if (pill) pill.style.display = me.active ? 'none' : '';
   });
 }
 
@@ -4169,6 +4211,7 @@ function showUpgrade(message, needs) {
 async function openAccount() {
   await refreshMe();
   if (!ME || !ME.signed_in) { applyAuthState(null); return; }
+  if (!ME.active && !ME.is_owner) { showPlans(`You're on the free preview (${esc(ME.email)}). Choose a plan to unlock every report.`); return; }
   const L = ME.limits || {}, U = ME.usage || {};
   const meter = (used, lim, label) => lim == null ? `<p class="hint" style="margin:6px 0">${label}: <strong>${used}</strong> this month · unlimited</p>`
     : `<p class="hint" style="margin:6px 0 0">${label}: <strong>${used}</strong> of ${lim} this month</p><div class="meter"><i style="width:${Math.min(100, lim ? used / lim * 100 : 100)}%"></i></div>`;
@@ -4217,7 +4260,7 @@ if (signOutBtn) signOutBtn.onclick = signOut;
   if (b === 'success' && user) {
     gate.classList.remove('hidden'); gSignin.style.display = 'none'; gPending.style.display = '';
     const msg = document.getElementById('gate-msg'); if (msg) msg.textContent = 'Payment received — activating your plan…';
-    for (let i = 0; i < 15; i++) { await new Promise(r => setTimeout(r, 2000)); const me = await refreshMe(); if (me && me.active) { gate.classList.add('hidden'); break; } }
+    for (let i = 0; i < 15; i++) { await new Promise(r => setTimeout(r, 2000)); const me = await refreshMe(); if (me && me.active) { gate.classList.add('hidden'); const pill = document.getElementById('preview-pill'); if (pill) pill.style.display = 'none'; if (q.value) run(); break; } }
   }
   if (b) history.replaceState(null, '', location.pathname);
 })();
