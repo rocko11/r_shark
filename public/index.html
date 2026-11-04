@@ -619,6 +619,7 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
       <button class="smode" data-m="block" onclick="setSMode('block')">By block</button>
       <button class="smode" data-m="distress" onclick="setSMode('distress')">Tax / water liens</button>
       <button class="smode" data-m="foreclosure" onclick="setSMode('foreclosure')">⚖️ Pre-foreclosure / Auction</button>
+      <button class="smode" data-m="trust" onclick="setSMode('trust')">🏛 Deeded into a trust</button>
       <button class="smode" data-m="lotsize" onclick="setSMode('lotsize')">By lot size</button>
       <button class="smode" data-m="filter" onclick="setSMode('filter')">By filters</button>
     </div>
@@ -707,7 +708,7 @@ function setReportTitle() {
   if (t && !/^Start with/.test(t)) document.title = `${t} — R Shark`;
 }
 
-const REPORT_V = 2; // 2 = zoning section
+const REPORT_V = 3; // 2 = zoning section, 3 = trust flag
 async function run() {
   const v = q.value.trim();
   if (!v) return;
@@ -1455,6 +1456,16 @@ function render(d) {
   const eases = T.easements || [];
   const money = (n) => n ? "$" + fmt(n) : "—";
 
+  // Held in / deeded into a family trust — an estate-planning signal (often an older owner).
+  const tr = d.trust || {};
+  const trustCallout = tr.in_trust || tr.transfers ? `
+    <div class="flag ${tr.kind === 'irrevocable' ? 'critical' : 'warning'}" style="margin-bottom:12px">
+      <span class="sev">trust</span>
+      <div><div class="t">${tr.in_trust ? 'Owner of record is a trust' : 'Was deeded into a trust'} — ${esc(tr.kind_label || 'trust')}</div>
+        <div class="d">${esc((tr.trust_names || []).join(' · '))}${tr.since ? ` · deeded ${esc(String(tr.since).slice(0, 10))}` : ''}${tr.from && tr.from.length ? ` from ${esc(tr.from.join(', '))}` : ''}${tr.self ? ' — the owner moved their own property into the trust' : ''}${tr.amount != null && tr.amount > 10 ? ` · $${Number(tr.amount).toLocaleString()}` : ''}.
+          ${tr.kind === 'irrevocable' ? 'Irrevocable / Medicaid / asset-protection trusts usually mean estate or long-term-care planning by an older owner; the trustee (often a family member) controls any sale.' : 'Revocable / living trusts are estate planning — the property usually passes to heirs without probate, and the successor trustee can sell.'}</div>
+        <div class="src">ACRIS deed history</div></div>
+    </div>` : '';
   const titleHtml = T.available === false ? `
     <div class="gap"><strong>No ACRIS coverage here.</strong> ${esc(T.reason || "Staten Island records sit with the Richmond County Clerk.")} Ownership and lien history can't be pulled for this lot.</div>`
     : `
@@ -1644,7 +1655,7 @@ function render(d) {
     <section>
       <div class="sec-head"><h2>Title, ownership &amp; liens</h2>
         <span class="count">${T.available===false?"unavailable":"ACRIS · recorded record"}</span></div>
-      ${titleHtml}
+      ${trustCallout}${titleHtml}
     </section>
 
     ${(()=>{const rs=d.rent_stabilization;if(!rs)return "";
@@ -2443,6 +2454,19 @@ function setSMode(m) {
   document.querySelectorAll('.smode').forEach(b => b.classList.toggle('smode-on', b.dataset.m === m));
   const f = document.getElementById('sform');
   const go = `<button class="sgo" onclick="runSearch()">Search →</button>`;
+  if (m === 'trust') {
+    f.innerHTML = `<div class="sfilters">
+      <div class="sfield"><label>Recorded in the last</label><select id="t_months"><option value="1">1 month</option><option value="3" selected>3 months</option><option value="6">6 months</option><option value="12">12 months</option></select></div>
+      <div class="sfield"><label>Borough</label><select id="t_boro"><option value="">All boroughs</option><option value="1">Manhattan</option><option value="2">Bronx</option><option value="3">Brooklyn</option><option value="4">Queens</option></select></div>
+      <div class="sfield"><label>Trust type</label><select id="t_kind"><option value="">All trust types</option><option value="irrevocable">Irrevocable / Medicaid / asset protection</option><option value="revocable">Revocable / living / family</option><option value="trustee">Trustee (type not stated)</option></select></div>
+      <div class="sfield"><label>Name or street contains</label><input id="t_q" placeholder="e.g. SMITH or CARLTON" onkeydown="if(event.key==='Enter')runSearch()"></div>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:6px 0 4px"><input type="checkbox" id="t_self" checked> Only owners moving their own property into a trust ($0 / estate planning)</label>
+      <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:0 0 10px"><input type="checkbox" id="t_paid"> Only purchases by a trust (paid deeds)</label>
+      ${go}
+      <p class="hint" style="margin-top:8px">Every NYC deed whose buyer is a family, living, revocable or irrevocable trust — banks and mortgage-securitization trusts are excluded. Irrevocable / Medicaid trusts usually mean an older owner doing long-term-care planning; the trustee (often a son or daughter) is who sells. From ACRIS, which runs about a month behind; Staten Island isn't in ACRIS.</p>`;
+    return;
+  }
   if (m === 'owner') {
     f.innerHTML = `<div class="sfield"><label>Owner name (company or person)</label><input id="s_q" placeholder="e.g. BELTO REALTY" onkeydown="if(event.key==='Enter')runSearch()"></div>${go}
       <p class="hint" style="margin-top:8px">Finds every lot in the city where the owner-of-record name matches. Great for mapping a portfolio.</p>`;
@@ -2549,7 +2573,52 @@ function setSMode(m) {
   document.getElementById('sresults').innerHTML = '';
 }
 
+async function runTrustSearch() {
+  const res = document.getElementById('sresults');
+  const v = id => document.getElementById(id);
+  const p = new URLSearchParams({ months: v('t_months').value, boro: v('t_boro').value, kind: v('t_kind').value, q: v('t_q').value.trim() });
+  if (v('t_self').checked) p.set('self', '1');
+  if (v('t_paid').checked) p.set('paid', '1');
+  res.innerHTML = '<p class="loading">Loading deeds into trusts…</p>';
+  let d;
+  try { const r = await fetch('/api/trust-transfers?' + p); d = await r.json(); }
+  catch (e) { res.innerHTML = `<div class="err">Couldn't load trust transfers: ${esc(e.message)}</div>`; return; }
+  if (d.building) { res.innerHTML = `<div class="err"><strong>Building the list…</strong><br>${esc(d.message)}</div>`; return; }
+  const kindTag = k => `<span class="owntag" style="color:${k === 'irrevocable' ? 'var(--iron)' : k === 'revocable' ? 'var(--ochre)' : 'var(--ink-2)'}">${esc(k === 'irrevocable' ? 'Irrevocable' : k === 'revocable' ? 'Revocable / living' : k === 'trustee' ? 'Trustee' : 'Trust')}</span>`;
+  const money = n => n > 10 ? '$' + Number(n).toLocaleString() : '$0';
+  const rows = (d.rows || []).map(r => {
+    const l = r.lots[0] || {};
+    const more = r.lots.length > 1 ? ` <span class="hint" style="margin:0">+${r.lots.length - 1} more lot${r.lots.length > 2 ? 's' : ''}</span>` : '';
+    return `<tr style="cursor:pointer" onclick="loadBBL('${esc(l.bbl)}')" title="Open property report">
+      <td style="white-space:nowrap">${esc(r.recorded)}</td>
+      <td><strong>${esc(l.address || l.bbl)}${l.unit ? ' #' + esc(l.unit) : ''}</strong>${more}<br><span class="hint" style="margin:0">${esc(l.borough || '')} · BBL ${esc(l.bbl || '')}${l.property_type ? ' · ' + esc(l.property_type) : ''}</span></td>
+      <td>${kindTag(r.kind)}<br>${esc(r.trust.slice(0, 2).join(' · '))}${r.trustee_address ? `<br><span class="hint" style="margin:0">Trustee address: ${esc(r.trustee_address)}</span>` : ''}</td>
+      <td>${esc(r.grantors.slice(0, 2).join(' · ') || '—')}${r.self ? '<br><span class="hint" style="margin:0;color:var(--moss)">own property → own trust</span>' : ''}</td>
+      <td class="num">${money(r.amount)}<br><a class="doclink" href="https://a836-acris.nyc.gov/DS/DocumentSearch/DocumentImageView?doc_id=${encodeURIComponent(r.doc)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">deed →</a></td></tr>`;
+  }).join('');
+  const c = d.counts || {};
+  res.innerHTML = `
+    <p style="font-family:var(--mono);font-size:12px;margin:10px 0">
+      <strong>${(d.count || 0).toLocaleString()}</strong> deeds into trusts recorded ${esc(d.period?.from || '')} – ${esc(d.data_through || '')}
+      · irrevocable ${c.irrevocable || 0} · revocable/living ${c.revocable || 0} · trustee ${c.trustee || 0}${d.truncated ? ' · showing the newest 1,500' : ''}
+      <button class="link no-print" style="margin-left:8px" onclick="downloadTrustCsv()">⭳ CSV</button></p>
+    ${rows ? `<div style="overflow-x:auto"><table class="stack"><thead><tr><th>Recorded</th><th>Property</th><th>Trust (buyer)</th><th>From (seller)</th><th class="num">Price</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : '<div class="clear">No deeds into trusts match these filters.</div>'}
+    <p class="ownnote">ACRIS on NYC Open Data is current through ${esc(d.data_through || '?')} (it lags about a month). List rebuilt daily${d.updated_at ? ' · last ' + esc(String(d.updated_at).slice(0, 10)) : ''}. Click a row to open the full property report.</p>`;
+  window.__trustRows = d.rows || [];
+}
+function downloadTrustCsv() {
+  const rows = window.__trustRows || [];
+  const cell = s => `"${String(s ?? '').replace(/"/g, '""')}"`;
+  const lines = [['recorded', 'bbl', 'borough', 'address', 'unit', 'property_type', 'trust_type', 'trust', 'from', 'own_to_own_trust', 'price', 'trustee_address', 'acris_doc'].join(',')]
+    .concat(rows.flatMap(r => r.lots.map(l => [r.recorded, l.bbl, l.borough, l.address, l.unit, l.property_type, r.kind, r.trust.join(' | '), r.grantors.join(' | '), r.self ? 'yes' : 'no', r.amount, r.trustee_address, r.doc].map(cell).join(','))));
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'R Shark - deeds into trusts.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
 async function runSearch() {
+  if (sMode === 'trust') return runTrustSearch();
   const res = document.getElementById('sresults');
   const val = id => (document.getElementById(id)?.value || '').trim();
   const p = new URLSearchParams({ mode: sMode });

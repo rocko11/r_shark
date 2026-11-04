@@ -5,6 +5,7 @@ import { ownerPortfolio, ownerContacts } from "./owner.ts";
 import { assessRentStabilization } from "./rentstab.ts";
 import { estimatePropertyTax, fetchActualTax, fetchAssessment } from "./tax.ts";
 import { fetchZoningLot, fetchPointZoning, buildZoning } from "./zoning.ts";
+import { trustStatus } from "./trusts.ts";
 import { checkArrears } from "./arrears.ts";
 import { developmentRights, redFlags } from "./derive.ts";
 
@@ -232,6 +233,7 @@ export async function buildReport(bbl: string, bin: string | null = null) {
 
   // Title / ownership / liens / easements / foreclosure analysis from ACRIS docs.
   const title = analyzeTitle(acrisData.documents || [], acrisOk);
+  const trust = title.available ? trustStatus(title) : { in_trust: false };
   // Attach E-designations (normalize the type field across dataset vintages).
   const yes = (v: any) => v === true || v === "true";
   const eDesigs = (data.e_designations || []).map((e: any) => ({
@@ -431,6 +433,7 @@ export async function buildReport(bbl: string, bin: string | null = null) {
     acris: acrisOk ? acrisData : { available: false,
       reason: "ACRIS excludes Staten Island. Use the Richmond County Clerk." },
     title,
+    trust,
     landmark,
     provenance: { sources_queried: Object.keys(tasks).sort(), sources_failed: errors },
     disclaimer: "Informational only. Not a zoning analysis. Confirm all figures with a licensed " +
