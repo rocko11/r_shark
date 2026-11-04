@@ -4036,7 +4036,9 @@ function loadFromUrl(state) {
 window.addEventListener('popstate', function(e) {
   if (!loadFromUrl(e.state) && !location.search) { q.value = ''; out.innerHTML = EMPTY_STATE; document.title = 'R Shark — NYC Property Intelligence'; }
 });
-loadFromUrl();
+// The report in the URL loads once sign-in has finished (the auth script calls this) — otherwise a
+// link opened straight after Google sign-in would hit the API before the session is saved.
+window.__loadFromUrlWhenReady = () => loadFromUrl();
 </script>
 
 <script>
@@ -4255,8 +4257,22 @@ if (signOutBtn) signOutBtn.onclick = signOut;
 (async () => {
   const callbackUser = await handleOAuthCallback();
   const user = callbackUser || getStoredUser();
-  if (user) await freshToken();
+  const qs = new URLSearchParams(location.search);
+  // First-time visitors (never signed in here) see the homepage; ?signin=1 comes from its buttons.
+  let seen = false; try { seen = !!localStorage.getItem('rshark_seen'); } catch (e) {}
+  if (!user && !seen && !qs.has('signin') && !qs.has('billing')) { location.replace('/home.html'); return; }
+  if (user) { try { localStorage.setItem('rshark_seen', '1'); } catch (e) {} await freshToken(); }
   applyAuthState(user);
+  if (user) {
+    window.__loadFromUrlWhenReady && window.__loadFromUrlWhenReady();
+    const want = qs.get('plan');
+    if (want) {
+      await refreshMe();
+      if (ME && ME.signed_in && !ME.active) startCheckout(want);
+      const clean = new URLSearchParams(location.search); clean.delete('plan'); clean.delete('signin');
+      history.replaceState(history.state, '', location.pathname + (clean.toString() ? '?' + clean : ''));
+    }
+  }
   const b = new URLSearchParams(location.search).get('billing');
   if (b === 'success' && user) {
     gate.classList.remove('hidden'); gSignin.style.display = 'none'; gPending.style.display = '';
