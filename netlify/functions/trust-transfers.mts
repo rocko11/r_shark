@@ -1,6 +1,6 @@
 import type { Config, Context } from "@netlify/functions";
 import { getStore } from "@netlify/blobs";
-import { KIND_LABEL } from "../lib/trusts.ts";
+import { KIND_LABEL, isSelfTransfer, trustKind } from "../lib/trusts.ts";
 
 // GET /api/trust-transfers?months=3&boro=3&kind=irrevocable&self=1&paid=0&q=smith
 // NYC properties deeded into family / living / irrevocable trusts (ACRIS), newest first.
@@ -27,11 +27,13 @@ export default async (req: Request, _ctx: Context) => {
   const self = u.get("self"), paid = u.get("paid");
   const text = (u.get("q") || "").trim().toUpperCase();
   const BOR = ["", "Manhattan", "Bronx", "Brooklyn", "Queens", "Staten Island"];
-  const rows: any[] = (await Promise.all(keys.slice(0, months).map(k => store.get(`month-${k}`, { type: "json" }).catch(() => [])))).flat();
+  const rows: any[] = (await Promise.all(keys.slice(0, months).map(k => store.get(`month-${k}`, { type: "json" }).catch(() => [])))).flat()
+    // re-derive classification at read time so older stored months pick up rule fixes
+    .map((r: any) => ({ ...r, kind: trustKind(r.trust), self: isSelfTransfer(r.grantors, r.trust, r.amount) }));
   const out = rows.filter(r =>
     (!boro || r.lots.some((l: any) => l.bbl[0] === boro || l.borough === BOR[Number(boro)])) &&
     (!kind || r.kind === kind) &&
-    (self !== "1" || r.self) && (paid !== "1" || r.amount > 10) &&
+    (self !== "1" || r.amount <= 10) && (paid !== "1" || r.amount > 10) &&
     (!text || [...r.trust, ...r.grantors, ...r.lots.map((l: any) => l.address)].some((s: string) => String(s).toUpperCase().includes(text))));
   const counts: Record<string, number> = {};
   for (const r of out) counts[r.kind] = (counts[r.kind] || 0) + 1;

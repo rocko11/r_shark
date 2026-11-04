@@ -2461,7 +2461,7 @@ function setSMode(m) {
       <div class="sfield"><label>Trust type</label><select id="t_kind"><option value="">All trust types</option><option value="irrevocable">Irrevocable / Medicaid / asset protection</option><option value="revocable">Revocable / living / family</option><option value="trustee">Trustee (type not stated)</option></select></div>
       <div class="sfield"><label>Name or street contains</label><input id="t_q" placeholder="e.g. SMITH or CARLTON" onkeydown="if(event.key==='Enter')runSearch()"></div>
       </div>
-      <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:6px 0 4px"><input type="checkbox" id="t_self" checked> Only owners moving their own property into a trust ($0 / estate planning)</label>
+      <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:6px 0 4px"><input type="checkbox" id="t_self" checked> Only $0 / non-sale transfers (owners putting property into a trust — estate planning)</label>
       <label style="display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;margin:0 0 10px"><input type="checkbox" id="t_paid"> Only purchases by a trust (paid deeds)</label>
       ${go}
       <p class="hint" style="margin-top:8px">Every NYC deed whose buyer is a family, living, revocable or irrevocable trust — banks and mortgage-securitization trusts are excluded. Irrevocable / Medicaid trusts usually mean an older owner doing long-term-care planning; the trustee (often a son or daughter) is who sells. From ACRIS, which runs about a month behind; Staten Island isn't in ACRIS.</p>`;

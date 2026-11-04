@@ -54,11 +54,17 @@ export const KIND_LABEL: Record<TrustKind, string> = {
   other: "Trust",
 };
 // The grantor's surname appears in the trust / trustee names → the owner moved their own property into a trust.
-export function isSelfTransfer(grantors: string[], trustees: string[]) {
+const NOT_SURNAME = new Set(["TRUST", "TRUSTEE", "TRUSTEES", "TTEE", "LLC", "INC", "CORP", "ESTATE", "FAMILY", "LIVING", "REVOCABLE", "IRREVOCABLE", "THE", "AS", "CO-TRUSTEE", "EXECUTOR", "EXECUTRIX", "ADMINISTRATOR", "JR", "SR", "II", "III"]);
+export function isSelfTransfer(grantors: string[], trustees: string[], amount = 0) {
+  if (amount > 10) return false; // a paid deed is a purchase, not an owner moving their own property
   const tt = trustees.join(" ").toUpperCase();
   return grantors.some(g => {
-    const sur = String(g || "").toUpperCase().split(",")[0].trim().split(/\s+/).pop() || "";
-    return sur.length >= 3 && new RegExp(`\\b${sur.replace(/[^A-Z]/g, "")}\\b`).test(tt);
+    const raw = String(g || "").toUpperCase();
+    if (/\b(LLC|INC|CORP|BANK|TRUST)\b/.test(raw) && !/,/.test(raw)) return false; // grantor is itself an entity / trust
+    // ACRIS writes people "SURNAME, GIVEN"; otherwise take the last real word.
+    const words = (raw.includes(",") ? raw.split(",")[0] : raw).replace(/[^A-Z\s-]/g, " ").split(/\s+/).filter(w => w && !NOT_SURNAME.has(w));
+    const sur = raw.includes(",") ? words[0] : words[words.length - 1];
+    return !!sur && sur.length >= 3 && new RegExp(`\\b${sur}\\b`).test(tt);
   });
 }
 
@@ -105,7 +111,7 @@ export async function trustDeedsBetween(fromISO: string, toISO: string): Promise
     const t0 = (T[m.document_id] || [])[0] || {};
     return {
       doc: m.document_id, recorded: String(m.recorded_datetime || "").slice(0, 10), doc_date: m.document_date ? String(m.document_date).slice(0, 10) : null,
-      doc_type: m.doc_type, amount: Number(m.document_amt) || 0, trust, grantors: gr, kind: trustKind(trust), self: isSelfTransfer(gr, trust),
+      doc_type: m.doc_type, amount: Number(m.document_amt) || 0, trust, grantors: gr, kind: trustKind(trust), self: isSelfTransfer(gr, trust, Number(m.document_amt) || 0),
       lots: (L[m.document_id] || []).map((l: any) => ({
         bbl: `${l.borough}${String(l.block).padStart(5, "0")}${String(l.lot).padStart(4, "0")}`, borough: BORO[Number(l.borough)] || String(l.borough),
         address: [l.street_number, l.street_name].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(), unit: l.unit || null, property_type: l.property_type || null,
@@ -127,7 +133,7 @@ export function trustStatus(title: any) {
   const kind = trustKind(names);
   return {
     in_trust: current, kind, kind_label: KIND_LABEL[kind], trust_names: names,
-    since: last?.date || null, from: last?.from || [], self: isSelfTransfer(last?.from || [], names),
+    since: last?.date || null, from: last?.from || [], self: isSelfTransfer(last?.from || [], names, Number(last?.price) || 0),
     amount: last?.price ?? null, transfers: into.length,
   };
 }
