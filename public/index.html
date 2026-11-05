@@ -547,6 +547,13 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
 .agree input{margin-top:3px;accent-color:var(--shark);width:16px;height:16px;flex:none}
 .agree a{color:var(--shark)}
 .agree.need{border-color:#FF4B3E;color:var(--chrome,#EAF0F6)}
+#esection a{color:var(--shark)}
+.ereq-head{font-weight:600;margin:0 0 12px}
+.ereq-des{margin-bottom:14px}
+.ereq-top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:6px 0 8px}
+.ereq-list{margin:6px 0 6px;padding-left:18px;font-size:13.5px;line-height:1.5}
+.ereq-h3{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--fog);margin:16px 0 6px}
+.ereq-steps{margin:0;padding-left:20px;font-size:14px;line-height:1.55}
 .aisum{border:1.5px solid var(--shark);border-radius:12px;padding:16px 18px 12px;margin-bottom:26px;background:linear-gradient(180deg,rgba(47,224,198,.07),transparent 70%)}
 .aisum .sec-head{margin-bottom:6px}
 .aisum .ai-head{font-size:17px;font-weight:600;line-height:1.45;margin:4px 0 12px}
@@ -763,7 +770,7 @@ function setReportTitle() {
   if (t && !/^Start with/.test(t)) document.title = `${t} — R Shark`;
 }
 
-const REPORT_V = 5; // 5 = free preview; 2 = zoning section, 3 = trust flag, 4 = ACRIS parties retry
+const REPORT_V = 6; // 5 = free preview; 2 = zoning section, 3 = trust flag, 4 = ACRIS parties retry
 async function run() {
   const v = q.value.trim();
   if (!v) return;
@@ -885,6 +892,44 @@ document.addEventListener('click', e => {
   if (e.target.closest('#lockbar, .leaflet-container, #svsection, .sec-head, #acct-modal, .titleblock h2')) return;
   if (e.target.closest('#out section, #out .titleblock, #out .flag')) { e.preventDefault(); e.stopPropagation(); showPlans(); }
 }, true);
+
+/* ---------- (E) designation requirements: everything OER will ask for (NYC) ---------- */
+function eReqHtml(E) {
+  if (!E) return '';
+  if (!E.has_e) return `<section id="esection"><div class="sec-head"><h2>(E) requirements</h2><span class="count">none</span></div>
+    <p class="hint" style="margin:0">No (E) designation on this lot, so no OER environmental sign-off is required for permits.${E.oer && E.oer.length ? ' OER does list a project here, see the Environmental section.' : ''}</p></section>`;
+  const cat = { 'Hazardous materials': 'critical', 'Air quality': 'warning', 'Noise': 'warning', 'Other': 'warning' };
+  const des = E.designations.map(d => `
+    <div class="ereq-des">
+      <div class="ereq-top"><span class="zcode">${esc(d.enumber)}</span>
+        <span class="hint" style="margin:0">effective ${esc(d.effective_date || 'n/a')}${d.ceqr_number ? ` · CEQR ${esc(d.ceqr_number)}` : ''}${d.ulurp_number ? ` · ULURP ${esc(d.ulurp_number)}` : ''}</span></div>
+      ${d.requirements.length ? d.requirements.map(r => `
+      <div class="flag ${cat[r.category] || 'warning'}">
+        <span class="sev">${esc(r.category)}</span>
+        <div><div class="t">${esc(r.title)}</div>
+          <div class="d">${esc(r.what)}</div>
+          <ul class="ereq-list">${r.deliverables.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+          <div class="d"><strong>Sign-off:</strong> ${esc(r.signoff)}</div>
+          <div class="d"><strong>Underwriting:</strong> ${esc(r.underwriting)}</div>
+          <div class="src">As listed on the (E): "${esc(r.source_text)}"</div></div>
+      </div>`).join('') : `<p class="hint">No specific requirement text is listed for this (E). Check the CEQR document.</p>`}
+    </div>`).join('');
+  const oer = (E.oer || []).length ? `<table class="stack"><thead><tr><th>OER project</th><th>Program</th><th>Status</th><th>Documents</th></tr></thead><tbody>
+      ${E.oer.map(p => `<tr><td data-l="OER project">${esc(p.name || '—')}<div class="hint" style="margin:0">${esc(p.numbers || '')}</div></td>
+        <td data-l="Program">${esc(p.program || '—')}${p.restrictive_declaration ? ' · <strong>restrictive declaration</strong>' : ''}</td>
+        <td data-l="Status">${esc([p.phase, p.class].filter(Boolean).join(' · ') || '—')}</td>
+        <td data-l="Documents">${p.documents ? `<a href="${esc(p.documents)}" target="_blank" rel="noopener">OER document library</a>` : '—'}</td></tr>`).join('')}</tbody></table>`
+    : `<p class="hint">${E.oer_failed ? 'OER project status could not be checked right now.' : 'No OER project is on file for this lot yet.'}</p>`;
+  const steps = `<ol class="ereq-steps">${(E.steps || []).map(s => `<li><strong>${esc(s.step)}.</strong> ${esc(s.detail)}</li>`).join('')}</ol>`;
+  return `<section id="esection">
+    <div class="sec-head"><h2>(E) requirements</h2><span class="count">${E.designations.length} designation${E.designations.length > 1 ? 's' : ''}</span></div>
+    <p class="ereq-head">${esc(E.headline)}</p>
+    ${des}
+    <h3 class="ereq-h3">OER status</h3>${oer}
+    <h3 class="ereq-h3">Path to permits and CO</h3>${steps}
+    <p class="hint">The exact noise level (dBA) and stack limits are set in the rezoning's CEQR document. Search the CEQR number in <a href="${E.links.ceqr_access}" target="_blank" rel="noopener">CEQR Access</a> or the ULURP number in <a href="${E.links.zap}" target="_blank" rel="noopener">ZAP</a>. Enroll and track the project in <a href="${E.links.epic}" target="_blank" rel="noopener">OER's EPIC portal</a>. Confirm scope with your environmental consultant before you close.</p>
+  </section>`;
+}
 
 /* ---------- Zoning: what each district on the lot means (NYC) ---------- */
 function zoningHtml(z) {
@@ -1863,6 +1908,7 @@ function render(d) {
     </section>`;})()}
 
     ${zoningHtml(d.zoning)}
+    ${eReqHtml(d.e_requirements)}
 
     <section>
       <div class="sec-head"><h2>Development rights</h2>

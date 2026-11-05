@@ -1,3 +1,4 @@
+import { buildERequirements, fetchOerProjects } from "./edesig.ts";
 import * as sq from "./socrata.ts";
 import { ACRIS_BOROUGHS, BOROUGH_NAME, DATASETS, splitBBL } from "./datasets.ts";
 import { analyzeTitle } from "./title.ts";
@@ -172,6 +173,8 @@ export async function buildReport(bbl: string, bin: string | null = null) {
   const assessP = fetchAssessment(bbl).catch(() => null);
   const actualTaxP = fetchActualTax(bbl).catch(() => null);
   const zoningLotP = fetchZoningLot(bbl).catch(() => null);
+  // OER projects on this lot — only matters if the lot has an (E), but it's cheap to start now.
+  const oerP = fetchOerProjects(bbl).then(v => ({ v }), (e: any) => ({ v: null, err: String(e?.message || e) }));
 
   const tasks: Record<string, Promise<any>> = {};
   const binWhere = (slug: string) => {
@@ -300,6 +303,10 @@ export async function buildReport(bbl: string, bin: string | null = null) {
       ownership_type: ownershipType,
     },
     development: derived,
+    e_requirements: await (async () => {
+      const o: any = await oerP;
+      return buildERequirements(data.e_designations || [], o.v, o.err);
+    })(),
     zoning: (() => {
       // DCP's Zoning Tax Lot Database is updated more often than PLUTO — prefer it.
       const fromZtl = !!(zoningLot && zoningLot.districts.length);
