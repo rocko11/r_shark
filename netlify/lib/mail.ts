@@ -6,7 +6,7 @@ export async function sendMail(to: string, subject: string, paragraphs: string[]
   if (!process.env.RESEND_API_KEY || !to) { console.log("mail skipped:", subject); return false; }
   const html = `<div style="font:15px/1.6 -apple-system,Segoe UI,Arial,sans-serif;color:#0D1520;max-width:560px">
     <p style="font-weight:800;letter-spacing:.08em">R SHARK</p>${paragraphs.map(p => `<p>${p}</p>`).join("")}
-    <p style="color:#6B7A8C;font-size:12px">P National Group LLC · 1 Northside Piers, Brooklyn, NY 11249 · <a href="https://rshark.net/terms.html">Terms</a> · <a href="https://rshark.net/terms.html#privacy">Privacy</a></p></div>`;
+    <p style="color:#6B7A8C;font-size:12px">P National Group LLC · info@p-national.com · <a href="https://rshark.net/terms.html">Terms</a> · <a href="https://rshark.net/terms.html#privacy">Privacy</a></p></div>`;
   const r = await fetch(RESEND, { method: "POST", signal: AbortSignal.timeout(8000),
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ from: process.env.BILLING_EMAIL_FROM || process.env.REPORT_EMAIL_FROM || "R Shark <reports@rshark.net>",
