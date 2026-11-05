@@ -206,7 +206,7 @@ footer a{color:var(--fog)}
 
     <div class="mapcard" id="mapcard" role="img" aria-label="Map of the real tax lots around 819 Bergen Street in Prospect Heights, Brooklyn, coloured the way the R Shark report shows them: the subject lot, lots with room to build, and existing buildings.">
       <div id="heromap"></div>
-      <span class="illus">819 Bergen St, Brooklyn · real lots from NYC MapPLUTO</span>
+      <span class="illus">819 Bergen St, Brooklyn · real tax lots</span>
       <div class="maplegend" aria-hidden="true"><span><i style="background:rgba(217,48,37,.35);border-color:#D93025"></i>This lot</span><span><i style="background:rgba(14,158,137,.28);border-color:#0E9E89"></i>Room to build</span><span><i style="background:rgba(200,120,0,.28);border-color:#C87800"></i>Institutional / parking</span><span><i style="background:rgba(90,102,121,.18);border-color:#5A6679"></i>Existing building</span></div>
     </div>
   </div>
@@ -229,31 +229,31 @@ footer a{color:var(--fog)}
 <section id="report">
   <div class="wrap">
     <h2>A dozen city websites, one report.</h2>
-    <p class="intro">Underwriting one Brooklyn lot usually means ZoLa, ACRIS, the Department of Finance, DOB, HPD, FEMA's flood maps and a handful of state databases, each with its own search and its own way of numbering the lot. R Shark pulls them together the moment you type the address.</p>
+    <p class="intro">Underwriting one Brooklyn lot usually means a dozen separate searches, each with its own website and its own way of numbering the lot. R Shark pulls them together the moment you type the address.</p>
     <div class="ledger" role="table" aria-label="Where the data comes from and what R Shark does with it">
-      <div role="row"><div class="head" role="columnheader">Where you'd otherwise look</div><div class="head r" role="columnheader">What R Shark shows you</div></div>
+      <div role="row"><div class="head" role="columnheader">What you'd otherwise dig for</div><div class="head r" role="columnheader">What R Shark shows you</div></div>
       <div role="row">
-      <div class="src" role="cell"><strong>ACRIS</strong>City Register deeds &amp; mortgages</div>
+      <div class="src" role="cell"><strong>Title &amp; liens</strong>Deeds, mortgages, filings</div>
       <div class="what" role="cell">Who owns it, what they paid, every mortgage, lien and lis pendens — and whether the owner just moved it into a trust.</div>
       </div>
       <div role="row">
-      <div class="src" role="cell"><strong>ZoLa &amp; the Zoning Resolution</strong>City Planning</div>
+      <div class="src" role="cell"><strong>Zoning</strong>Districts, rules, bonuses</div>
       <div class="what" role="cell">Each district on the lot explained under City of Yes: FAR standard and with affordable housing, heights, MIH, parking zone, special districts.</div>
       </div>
       <div role="row">
-      <div class="src" role="cell"><strong>Department of Finance</strong>Tax bills, assessments, lien sale list</div>
+      <div class="src" role="cell"><strong>Taxes</strong>Bills, assessments, arrears</div>
       <div class="what" role="cell">The tax actually billed this year and when it's due, the taxable value behind it, and any tax or water arrears.</div>
       </div>
       <div role="row">
-      <div class="src" role="cell"><strong>PLUTO</strong>Lot area, built floor area</div>
+      <div class="src" role="cell"><strong>Development rights</strong>Lot area, built floor area</div>
       <div class="what" role="cell">How much more you can build, as-of-right and with the affordability bonus, against what's already standing.</div>
       </div>
       <div role="row">
-      <div class="src" role="cell"><strong>DOB, ECB, HPD &amp; 311</strong>Permits, violations, complaints</div>
+      <div class="src" role="cell"><strong>Building condition</strong>Permits, violations, complaints</div>
       <div class="what" role="cell">Open violations and penalties, stop-work orders, permits and filings, housing complaints — the building's real condition.</div>
       </div>
       <div role="row">
-      <div class="src" role="cell"><strong>FEMA, NYS DEC, NJDEP, EPA</strong>Flood maps and contamination records</div>
+      <div class="src" role="cell"><strong>Environment</strong>Flood and contamination risk</div>
       <div class="what" role="cell">Flood zone on today's and the preliminary map, E-designations, cleanup sites nearby, Superfund and spills — before you order a Phase I.</div>
       </div>
     </div>
@@ -284,8 +284,8 @@ footer a{color:var(--fog)}
     <h2>Built for how New York actually works.</h2>
     <p class="intro">Generic property databases treat a Brooklyn rowhouse like a lot in Ohio. R Shark is built around the city's own rules and records.</p>
     <div class="anatomy">
-      <div><b>Zoning after City of Yes</b><span>Bonus floor area, UAP vs. MIH, transit-zone parking and qualifying residential sites — read from the current Zoning Resolution.</span></div>
-      <div><b>Taxes that match the bill</b><span>The billed amount from DOF, by installment, checked against taxable value × the class rate, so abatements stand out.</span></div>
+      <div><b>Zoning after City of Yes</b><span>Bonus floor area, UAP vs. MIH, transit-zone parking and qualifying residential sites, under the current rules.</span></div>
+      <div><b>Taxes that match the bill</b><span>The billed amount, by installment, checked against taxable value × the class rate, so abatements stand out.</span></div>
       <div><b>Title in plain words</b><span>Non-sale transfers, trust deeds, open liens and foreclosure filings flagged before you call the owner.</span></div>
       <div><b>Deal-killers first</b><span>Landmark status, E-designations, overbuilt lots, stop-work orders and lien sale notices at the top of every report.</span></div>
       <div><b>Every block on a map</b><span>Click any neighbouring lot to open its report, colour the block by opportunity, distress or zoning, and look around in Street View.</span></div>
@@ -326,8 +326,8 @@ footer a{color:var(--fog)}
 <section>
   <div class="wrap faq">
     <h2>Questions</h2>
-    <details><summary>Where does the data come from?</summary><p>Public government records: NYC Open Data (PLUTO, ACRIS, DOB, HPD, DOF, 311), NYC Planning, New York State and New Jersey parcel and assessment records, FEMA, the EPA and state environmental agencies. Reports are pulled live when you run the address; the off-market lists are rebuilt every day.</p></details>
-    <details><summary>How current is it?</summary><p>As current as the city's own systems. Violations, permits and complaints update daily; ACRIS deed records on NYC Open Data run about a month behind the City Register.</p></details>
+    <details><summary>Where does the data come from?</summary><p>Official public records, refreshed daily or live. R Shark's own analysis engine combines them, checks them against each other and does the math for you.</p></details>
+    <details><summary>How current is it?</summary><p>Very current. Violations, permits and complaints update daily, and deed records typically appear within a few weeks of recording.</p></details>
     <details><summary>What does the free preview include?</summary><p>Every section of the report for any address you run, with the details blurred. Subscribe and the same report unlocks immediately.</p></details>
     <details><summary>Can I cancel or switch plans?</summary><p>Yes, any time from your account page. Cancelling keeps your access to the end of the period you paid for; switching plans is prorated automatically.</p></details>
     <details><summary>Is this legal or investment advice?</summary><p>No. R Shark is a research and screening tool. Confirm zoning, title and environmental findings with your attorney, expediter or consultant before you buy.</p></details>
@@ -370,7 +370,7 @@ for (const id of ['runform', 'runform2']) {
   const map = L.map('heromap', { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false,
     boxZoom: false, keyboard: false, touchZoom: false, zoomSnap: 0.25, attributionControl: true });
   map.attributionControl.setPrefix(false);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap · NYC MapPLUTO' }).addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
   const fmt = n => Number(n).toLocaleString('en-US');
   const title = s => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
   // Callouts: plain public-record facts about specific lots (PLUTO zoning, lot area, built vs allowed FAR).
