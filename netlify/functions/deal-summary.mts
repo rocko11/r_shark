@@ -59,7 +59,9 @@ export default async (req: Request) => {
       const c: any = await store.get("demo", { type: "json" }).catch(() => null);
       if (c) return json(c);
       const d = await fetch(new URL("/api/demo", req.url)).then(r => r.json());
-      const summary = await summarize(JSON.stringify(compact(d)).slice(0, 24000), "nyc");
+      let summary: any = null;
+      try { summary = await summarize(JSON.stringify(compact(d)).slice(0, 24000), "nyc"); }
+      catch (e: any) { return json({ demo: true, error: String(e?.message || e).slice(0, 200) }, 502); }
       const res = { demo: true, model: MODEL, summary };
       if (summary) await store.setJSON("demo", res).catch(() => {});
       return json(res);
@@ -119,7 +121,7 @@ export default async (req: Request) => {
 
 async function summarize(text: string, region: string) {
   const msg = await new Anthropic().messages.create({
-    model: MODEL, max_tokens: 700, temperature: 0.2, system: SYSTEM,
+    model: MODEL, max_tokens: 900, system: SYSTEM,
     messages: [{ role: "user", content: `Region: ${region.slice(0, 8)}\nReport JSON:\n${text}` }],
   }, { timeout: 45_000 });
   const out = msg.content.map((c: any) => c.type === "text" ? c.text : "").join("").trim();
