@@ -7,6 +7,8 @@
 <meta name="description" content="Type any address in NYC, New Jersey or New York State and get the owner, deeds, liens, the real tax bill, zoning, what you can build, environmental risk and violations in one report. Or hunt the city for owners who are about to sell.">
 <meta property="og:title" content="R Shark — every NYC lot, read end to end">
 <meta property="og:description" content="Owner, deeds, liens, taxes, zoning, buildable area and environmental risk for any address — plus lists of owners moving property into trusts, tax liens and pre-foreclosures.">
+<link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+<script src="/vendor/leaflet/leaflet.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62.5..125,400..700&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
@@ -50,30 +52,25 @@ h1{font:700 clamp(38px,4.9vw,62px)/1 var(--display);letter-spacing:-.025em;margi
 .fineprint{font-size:14px;color:var(--fog);margin:12px 0 0}
 .fineprint a{color:var(--chrome)}
 
-/* the block map */
-.mapcard{position:relative;border-radius:22px;background:radial-gradient(120% 90% at 30% 20%,#13243A 0%,var(--water) 55%,#09111C 100%);border:1px solid var(--line);aspect-ratio:1/1.02;overflow:hidden}
-.mapcard svg.block{position:absolute;inset:0;width:100%;height:100%}
-.lot{stroke:#0A0E14;stroke-width:1.6;transition:fill .5s ease, opacity .5s ease}
-.lot.hit{stroke:var(--shark);stroke-width:2.4}
-.street{font:500 11px var(--body);fill:#6E7C8F;letter-spacing:.06em}
-.lotno{font:500 8.5px var(--mono);fill:rgba(10,14,20,.55)}
-.sweep{position:absolute;left:50%;top:50%;width:190%;aspect-ratio:1;translate:-50% -50%;border-radius:50%;pointer-events:none;
-  background:conic-gradient(from 0deg,rgba(47,224,198,0) 0deg,rgba(47,224,198,0) 300deg,rgba(47,224,198,.10) 340deg,rgba(47,224,198,.32) 359deg,rgba(47,224,198,0) 360deg);opacity:0}
-.mapcard.scanning .sweep{animation:sweep 3.6s cubic-bezier(.45,.05,.4,1) forwards}
-@keyframes sweep{0%{opacity:1;rotate:-40deg}92%{opacity:1}100%{opacity:0;rotate:320deg}}
-.ping{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--shark);box-shadow:0 0 0 0 rgba(47,224,198,.6);opacity:0;transform:scale(.4);transition:opacity .25s, transform .35s cubic-bezier(.3,1.6,.5,1)}
-.ping.on{opacity:1;transform:scale(1);animation:ring 1.4s ease-out 1}
-@keyframes ring{0%{box-shadow:0 0 0 0 rgba(47,224,198,.55)}100%{box-shadow:0 0 0 22px rgba(47,224,198,0)}}
-.tag{position:absolute;width:41%;background:rgba(10,14,20,.92);border:1px solid var(--line);border-left:3px solid var(--shark);border-radius:10px;padding:9px 11px;font-size:13px;line-height:1.35;opacity:0;translate:0 6px;transition:opacity .35s, translate .35s;backdrop-filter:blur(4px)}
-.tag.on{opacity:1;translate:0 0}
-.tag b{display:block;font:600 14px var(--display);margin-bottom:2px}
-.tag span{color:var(--fog)}
-.tag.danger{border-left-color:var(--blood)} .tag.warn{border-left-color:var(--res)}
-.maplegend{position:absolute;left:16px;bottom:14px;display:flex;gap:14px;font-size:12px;color:var(--fog);flex-wrap:wrap}
-.maplegend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
-.rescan{position:absolute;right:14px;bottom:12px;background:rgba(10,14,20,.7);border:1px solid var(--line);color:var(--fog);font:500 12px var(--body);border-radius:8px;padding:6px 10px;cursor:pointer}
-.rescan:hover{color:var(--chrome)}
-.illus{position:absolute;right:16px;top:14px;font-size:11.5px;color:#6E7C8F}
+/* the block map: real MapPLUTO lots, styled like the report's block map */
+.mapcard{position:relative;border-radius:22px;border:1px solid var(--line);aspect-ratio:1/1.02;overflow:hidden;background:var(--steel)}
+#heromap{position:absolute;inset:0;background:var(--steel)}
+#heromap .leaflet-tile{filter:grayscale(0.7) sepia(0.18) brightness(1.02) contrast(0.92)}
+#heromap .leaflet-bottom{bottom:34px}
+#heromap .leaflet-control-attribution{background:rgba(10,14,20,.75);color:var(--fog);font-size:10px}
+#heromap .leaflet-control-attribution a{color:var(--fog)}
+.leaflet-tooltip.tag{background:rgba(10,14,20,.94);color:var(--chrome);border:1px solid var(--line);border-left:3px solid var(--shark);border-radius:10px;padding:8px 11px;font:13px/1.35 var(--body);box-shadow:0 8px 24px rgba(0,0,0,.45);white-space:normal;width:200px;opacity:0!important;transition:opacity .4s}
+.leaflet-tooltip.tag.on{opacity:1!important}
+.leaflet-tooltip.tag::before{display:none}
+.leaflet-tooltip.tag b{display:block;font:600 14px var(--display);margin-bottom:2px}
+.leaflet-tooltip.tag span{color:var(--fog)}
+.leaflet-tooltip.tag.self{border-left-color:var(--blood)} .leaflet-tooltip.tag.warn{border-left-color:var(--res)}
+.leaflet-tooltip.hov{background:rgba(10,14,20,.94);color:var(--chrome);border:1px solid var(--line);font:12px var(--body);box-shadow:none}
+.leaflet-tooltip.hov::before{display:none}
+.maplegend{position:absolute;left:0;right:0;bottom:0;z-index:500;display:flex;gap:14px;flex-wrap:wrap;padding:9px 14px;font-size:12px;color:var(--fog);background:rgba(10,14,20,.88);border-top:1px solid var(--line)}
+.maplegend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px;border:1.5px solid}
+@media (max-width:700px){.mapcard{aspect-ratio:auto;height:520px}.leaflet-tooltip.tag{width:168px;font-size:12px;padding:7px 9px}.leaflet-tooltip.tag b{font-size:13px}.maplegend{gap:4px 12px;font-size:11px}#heromap .leaflet-bottom{bottom:50px}.illus{font-size:10.5px}}
+.illus{position:absolute;right:12px;top:12px;z-index:500;font-size:11.5px;color:var(--chrome);background:rgba(10,14,20,.82);border:1px solid var(--line);border-radius:8px;padding:5px 9px}
 
 /* sections */
 section{padding:84px 0;border-top:1px solid var(--line)}
@@ -158,7 +155,6 @@ footer a{color:var(--fog)}
 }
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
-  .mapcard.scanning .sweep{animation:none}
   .ping.on{animation:none}
   .lot,.tag,.ping{transition:none}
 }
@@ -198,13 +194,10 @@ footer a{color:var(--fog)}
       <p class="fineprint">Free preview with Google sign-in — you see the whole report, blurred, before you pay. <a href="#plans">Plans from $49 a month.</a></p>
     </div>
 
-    <div class="mapcard" id="mapcard" aria-label="Illustration: R Shark scanning a city block and flagging lots with seller signals">
-      <svg class="block" id="blocksvg" viewBox="0 0 500 510" aria-hidden="true"></svg>
-      <div class="sweep" aria-hidden="true"></div>
-      <span class="illus">Illustrative block</span>
-      <div id="pins"></div>
-      <div class="maplegend" aria-hidden="true"><span><i style="background:var(--res)"></i>Residential</span><span><i style="background:var(--com)"></i>Commercial</span><span><i style="background:var(--mfg)"></i>Manufacturing</span></div>
-      <button class="rescan" id="rescan" type="button">Scan again</button>
+    <div class="mapcard" id="mapcard" role="img" aria-label="Map of the real tax lots around 819 Bergen Street in Prospect Heights, Brooklyn, coloured the way the R Shark report shows them: the subject lot, lots with room to build, and existing buildings.">
+      <div id="heromap"></div>
+      <span class="illus">819 Bergen St, Brooklyn · real lots from NYC MapPLUTO</span>
+      <div class="maplegend" aria-hidden="true"><span><i style="background:rgba(255,75,62,.4);border-color:#FF4B3E"></i>This lot</span><span><i style="background:rgba(47,224,198,.3);border-color:#2FE0C6"></i>Room to build</span><span><i style="background:rgba(255,176,58,.3);border-color:#FFB03A"></i>Institutional / parking</span><span><i style="background:rgba(138,151,168,.25);border-color:#8A97A8"></i>Existing building</span></div>
     </div>
   </div>
 </div>
@@ -345,66 +338,51 @@ for (const id of ['runform', 'runform2']) {
   });
 }
 
-// The illustrative block: two rows of tax lots either side of a street, in zoning-map colours.
+// The hero block map: the real tax lots around 819 Bergen St (NYC MapPLUTO, baked into
+// /vendor/hero-block.json), coloured with the same categories as the report's block map.
 (function () {
-  const svg = document.getElementById('blocksvg'), NS = 'http://www.w3.org/2000/svg';
-  const el = (t, a) => { const n = document.createElementNS(NS, t); for (const k in a) n.setAttribute(k, a[k]); return n; };
-  const zoneFill = { r: '#E7C35A', c: '#E06C75', m: '#9D8CD9' };
-  // Two blocks separated by a street; lots by frontage (px) and zone. Lot numbers are illustrative.
-  const rows = [
-    { y: 44,  h: 156, lots: [[40,'r'],[34,'r'],[52,'c'],[34,'r'],[30,'r'],[60,'r'],[34,'r'],[40,'c'],[30,'r'],[56,'m']] },
-    { y: 224, h: 106, lots: [[44,'c'],[38,'c'],[60,'r'],[30,'r'],[30,'r'],[46,'r'],[34,'r'],[40,'r'],[52,'m'],[36,'m']] },
-    { y: 354, h: 92,  lots: [[56,'r'],[34,'r'],[34,'r'],[48,'r'],[40,'c'],[36,'r'],[60,'r'],[42,'r'],[60,'r']] },
-  ];
-  const lots = [];
-  let n = 1;
-  rows.forEach((row, ri) => {
-    let x = 30;
-    row.lots.forEach(([w, z]) => {
-      const r = el('rect', { x, y: row.y, width: w - 2, height: row.h, rx: 2, class: 'lot', fill: zoneFill[z], opacity: .32 });
-      svg.appendChild(r);
-      const t = el('text', { x: x + 5, y: row.y + 14, class: 'lotno' }); t.textContent = n++;
-      svg.appendChild(t);
-      lots.push({ r, cx: x + w / 2, cy: row.y + row.h / 2, ri });
-      x += w;
-    });
-  });
-  const st = (x, y, s, rot) => { const t = el('text', { x, y, class: 'street', transform: rot ? `rotate(-90 ${x} ${y})` : '' }); t.textContent = s; svg.appendChild(t); };
-  st(34, 216, 'DEAN STREET'); st(34, 346, 'BERGEN STREET'); st(20, 300, 'VANDERBILT AVE', true);
-
-  // Signals the sonar "finds": lot index, angle-based reveal delay (ms), tag text, tag class and side.
-  // Signals the sonar "finds": lot index, reveal delay (ms) in sweep order, text, colour and a
-  // fixed tag position (% of the card) — one per quarter so callouts never overlap.
-  const hits = [
-    { i: 1,  d: 700,  t: 'Deeded into an irrevocable trust', s: 'Recorded last month · trustee address on file', cls: '', at: [4, 29] },
-    { i: 8,  d: 1500, t: 'Lis pendens filed', s: 'Foreclosure action in Kings County', cls: 'danger', at: [55, 29] },
-    { i: 25, d: 2300, t: 'Built 1.1 of 4.0 FAR', s: '9,400 sf of unused development rights', cls: 'warn', at: [55, 55] },
-    { i: 12, d: 3000, t: 'On the tax lien sale list', s: '90-day notice · owner can still sell', cls: 'danger', at: [4, 68] },
-  ];
-  const card = document.getElementById('mapcard'), pins = document.getElementById('pins');
-  const pct = (v, total) => (v / total * 100) + '%';
-  const nodes = hits.map(h => {
-    const L = lots[h.i];
-    const p = document.createElement('div'); p.className = 'ping'; p.style.left = pct(L.cx, 500); p.style.top = pct(L.cy, 510);
-    const tag = document.createElement('div'); tag.className = 'tag ' + h.cls; tag.innerHTML = `<b>${h.t}</b><span>${h.s}</span>`;
-    tag.style.left = h.at[0] + '%'; tag.style.top = h.at[1] + '%';
-    pins.append(p, tag);
-    return { h, L, p, tag };
-  });
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let timers = [];
-  function scan() {
-    timers.forEach(clearTimeout); timers = [];
-    nodes.forEach(({ L, p, tag }) => { p.classList.remove('on'); tag.classList.remove('on'); L.r.classList.remove('hit'); L.r.setAttribute('opacity', .32); });
-    card.classList.remove('scanning'); void card.offsetWidth; card.classList.add('scanning');
-    nodes.forEach(({ h, L, p, tag }) => {
-      timers.push(setTimeout(() => { L.r.classList.add('hit'); L.r.setAttribute('opacity', .8); p.classList.add('on'); tag.classList.add('on'); }, reduced ? 0 : h.d));
-    });
-  }
-  document.getElementById('rescan').addEventListener('click', scan);
-  // Start when the map is on screen (once).
-  const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { scan(); io.disconnect(); } }, { threshold: .4 });
-  io.observe(card);
+  const COL = { self: '#FF4B3E', opportunity: '#2FE0C6', constrained: '#FFB03A', existing: '#8A97A8' };
+  const FILL = { self: .45, opportunity: .26, constrained: .26, existing: .12 };
+  const map = L.map('heromap', { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false,
+    boxZoom: false, keyboard: false, touchZoom: false, zoomSnap: 0.25, attributionControl: true });
+  map.attributionControl.setPrefix(false);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap · NYC MapPLUTO' }).addTo(map);
+  const fmt = n => Number(n).toLocaleString('en-US');
+  const title = s => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  // Callouts: plain public-record facts about specific lots (PLUTO zoning, lot area, built vs allowed FAR).
+  const CALLOUTS = {
+    '3011410128': { cls: 'self', dir: 'bottom', t: 'This lot: 819 Bergen St', s: d => `${d.z} · ${fmt(d.la)} sf lot · built ${d.fb} of ${d.fm} FAR` },
+    '3011330013': { cls: '', dir: 'top', t: 'Vacant 33,415 sf lot', s: d => `${d.z} · up to ~${fmt(Math.round(d.la * d.fm / 1000) * 1000)} sf buildable at ${d.fm} FAR` },
+    '3011320037': { cls: '', dir: 'bottom', t: 'Parking lot on Grand Ave', s: d => `${fmt(d.la)} sf · ${d.z} · allows ${d.fm} FAR, built 0` },
+  };
+  fetch('/vendor/hero-block.json').then(r => r.json()).then(lots => {
+    const all = L.featureGroup().addTo(map), tips = [];
+    for (const d of lots) {
+      const c = COL[d.c] || COL.existing;
+      const layer = L.geoJSON(d.g, { style: { color: c, weight: d.c === 'self' ? 2 : 1, opacity: .75, fillColor: c, fillOpacity: FILL[d.c] || .12 } }).addTo(all);
+      layer._bbl = d.b;
+      layer.on('mouseover', () => layer.setStyle({ fillOpacity: .55, weight: 2.2 }));
+      layer.on('mouseout', () => layer.setStyle({ fillOpacity: FILL[d.c] || .12, weight: d.c === 'self' ? 2 : 1 }));
+      layer.on('click', () => { location.href = '/?signin=1&bbl=' + d.b; });
+      const co = CALLOUTS[d.b];
+      if (co) {
+        const tip = L.tooltip({ permanent: true, direction: co.dir, className: 'tag ' + co.cls, offset: [0, co.dir === 'top' ? -8 : 8], interactive: false })
+          .setContent(`<b>${co.t}</b><span>${co.s(d)}</span>`);
+        layer.bindTooltip(tip).openTooltip();
+        tips.push(tip);
+      } else {
+        layer.bindTooltip(`${title(d.a) || 'Lot'} · ${d.z || ''}`, { className: 'hov', sticky: true, direction: 'top' });
+      }
+    }
+    // Frame the three called-out lots, leaving room for their callouts.
+    const focus = L.featureGroup(Object.keys(CALLOUTS).map(b => all.getLayers().find(l => l._bbl === b)).filter(Boolean));
+    map.fitBounds(focus.getBounds(), innerWidth < 700 ? { paddingTopLeft: [20, 110], paddingBottomRight: [20, 130], maxZoom: 18 } : { paddingTopLeft: [40, 120], paddingBottomRight: [40, 110], maxZoom: 18 });
+    // One reveal: callouts appear in turn once the map is on screen.
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const show = () => tips.forEach((t, i) => setTimeout(() => t.getElement()?.classList.add('on'), reduced ? 0 : 400 + i * 700));
+    const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { show(); io.disconnect(); } }, { threshold: .4 });
+    io.observe(document.getElementById('mapcard'));
+  }).catch(() => {});
 })();
 </script>
 <script>
