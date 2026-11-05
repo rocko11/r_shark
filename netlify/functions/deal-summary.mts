@@ -49,6 +49,21 @@ Reply with JSON only, exactly this shape:
  "next_steps": ["2-3 short, concrete things to check or do next"]}`;
 
 export default async (req: Request) => {
+  // GET: is the AI gateway wired up? (?probe=1 makes one tiny model call, at most once an hour.)
+  if (req.method === "GET") {
+    const ready = !!(process.env.ANTHROPIC_BASE_URL || process.env.ANTHROPIC_API_KEY);
+    if (!ready || new URL(req.url).searchParams.get("probe") !== "1") return json({ ai_ready: ready, model: MODEL });
+    const store = getStore({ name: "ai-summaries" });
+    const last: any = await store.get("probe", { type: "json" }).catch(() => null);
+    if (last && Date.now() - last.at < 3600e3) return json({ ai_ready: ready, model: MODEL, probe: last });
+    let probe: any;
+    try {
+      const m = await new Anthropic().messages.create({ model: MODEL, max_tokens: 8, messages: [{ role: "user", content: "Reply with the word OK." }] }, { timeout: 20_000 });
+      probe = { ok: true, reply: m.content.map((c: any) => c.text || "").join("").slice(0, 20), at: Date.now() };
+    } catch (e: any) { probe = { ok: false, error: String(e?.status || "") + " " + String(e?.message || e).slice(0, 160), at: Date.now() }; }
+    await store.setJSON("probe", probe).catch(() => {});
+    return json({ ai_ready: ready, model: MODEL, probe });
+  }
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   const ent = await gate(req, "basic", { preview: true });
   if (ent instanceof Response) return ent;
