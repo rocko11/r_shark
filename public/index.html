@@ -4283,7 +4283,7 @@ async function openAccount() {
       ${ME.stripe === 'missing' ? '<p class="hint">Add <code>STRIPE_SECRET_KEY</code> in Netlify → Site configuration → Environment variables, redeploy, then come back here.</p>' : ''}
       <button class="sgo" onclick="setupStripe(this)" ${ME.stripe === 'missing' ? 'disabled' : ''}>Set up Stripe products, webhook &amp; portal</button>
       <pre id="setup-log" class="hint" style="white-space:pre-wrap;margin:8px 0 0"></pre>` : '';
-  modal(`<h2 style="margin:0 0 4px">Your account</h2><p class="hint" style="margin:0 0 12px">${esc(ME.email)}</p>
+  modal(`<h2 style="margin:0 0 4px">Your account</h2><p class="hint" style="margin:0 0 12px">${esc(ME.email)}</p><p class="hint" style="margin:-6px 0 12px"><a href="/terms.html" target="_blank" style="color:var(--shark)">Terms</a> · <a href="/terms.html#privacy" target="_blank" style="color:var(--shark)">Privacy</a> · <a href="/terms.html#t-plans" target="_blank" style="color:var(--shark)">Billing &amp; cancellation</a></p>
     ${ME.active ? `<p style="margin:0 0 8px"><strong>${esc(ME.plan_name || ME.plan)}</strong>${ME.interval ? ' · billed ' + (ME.interval === 'year' ? 'yearly' : 'monthly') : ''}${ME.renews ? ` · ${ME.cancel_at_period_end ? 'ends' : 'renews'} ${esc(String(ME.renews).slice(0, 10))}` : ''}${ME.status === 'past_due' ? ' · <span style="color:var(--iron)">payment past due</span>' : ''}${ME.member_of ? ` · member of ${esc(ME.member_of)}'s team` : ''}</p>
       ${meter(U.reports || 0, L.reports, 'Property reports')}${L.skiptrace ? meter(U.skiptrace || 0, ME.plan === 'owner' ? null : L.skiptrace, 'Owner lookups') : ''}
       ${ME.plan !== 'owner' && !ME.member_of ? '<button class="sgo" onclick="openPortal(this)">Manage billing, change plan or cancel →</button>' : ''}` : '<p>No active plan.</p>'}
@@ -4440,6 +4440,11 @@ if (signOutBtn) signOutBtn.onclick = signOut;
 </div>
 
 <!-- Mobile bottom navigation (hidden on desktop) -->
+<footer class="appfoot no-print">
+  <span>© P National Group LLC</span>
+  <span><a href="/home.html">About R Shark</a> · <a href="/pricing.html">Pricing</a> · <a href="/terms.html">Terms</a> · <a href="/terms.html#privacy">Privacy</a> · <a href="/terms.html#accessibility">Accessibility</a> · <a href="#" onclick="try{localStorage.removeItem('rs_cookie_consent')}catch(e){};location.reload();return false">Cookie settings</a></span>
+</footer>
+<style>.appfoot{max-width:1100px;margin:40px auto 0;padding:20px 16px 90px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--fog)}.appfoot a{color:var(--fog)}.appfoot a:hover{color:var(--shark)}</style>
 <nav id="mobile-nav">
   <button class="mnav-btn active" id="mnav-report" onclick="showTab('report');mnavActive('mnav-report')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
