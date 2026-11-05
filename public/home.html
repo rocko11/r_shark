@@ -11,17 +11,20 @@
 <script src="/vendor/leaflet/leaflet.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62.5..125,400..700&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400..800;1,400&display=swap" rel="stylesheet">
 <style>
 :root{
-  --abyss:#0A0E14; --water:#0E1826; --steel:#141B26; --line:#243042;
-  --chrome:#EAF0F6; --fog:#93A1B3; --shark:#2FE0C6; --shark-deep:#12A896;
-  --res:#E7C35A; --com:#E06C75; --mfg:#9D8CD9; --blood:#FF4B3E;
-  --display:"Space Grotesk",system-ui,sans-serif; --body:"Archivo",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  /* Light, high-contrast palette: white paper, deep navy ink, one teal for action. */
+  --abyss:#FFFFFF; --water:#F3F6F9; --steel:#F6F8FB; --line:#DCE3EA;
+  --chrome:#13263A; --fog:#55667A; --shark:#0B7F73; --shark-deep:#086A60;
+  --res:#B7791F; --com:#C2410C; --mfg:#6D28D9; --blood:#D93025;
+  --text2:#34475B;
+  /* Public Sans: the US government's open typeface for public-information sites — fitting for a product built on public records. */
+  --display:"Public Sans",system-ui,sans-serif; --body:"Public Sans",system-ui,sans-serif; --mono:"Public Sans",system-ui,sans-serif;
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{margin:0;background:var(--abyss);color:var(--chrome);font:400 17px/1.6 var(--body);-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--abyss);color:var(--chrome);font:400 17px/1.65 var(--body);font-feature-settings:"tnum" 0;-webkit-font-smoothing:antialiased}
 a{color:inherit}
 :focus-visible{outline:2px solid var(--shark);outline-offset:3px;border-radius:4px}
 .wrap{max-width:1160px;margin:0 auto;padding:0 24px}
@@ -37,16 +40,16 @@ a{color:inherit}
 
 /* hero */
 .hero{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(0,1fr);gap:48px;align-items:center;padding:34px 0 70px}
-h1{font:700 clamp(38px,4.9vw,62px)/1 var(--display);letter-spacing:-.025em;margin:0 0 22px;max-width:14ch}
-.lede{font-size:19px;color:#C6D1DE;max-width:36em;margin:0 0 28px}
-.runbox{display:flex;gap:8px;max-width:520px;background:var(--steel);border:1px solid var(--line);border-radius:14px;padding:6px}
+h1{font:800 clamp(36px,4.6vw,58px)/1.04 var(--display);letter-spacing:-.03em;margin:0 0 22px;max-width:14ch}
+.lede{font-size:19px;color:var(--text2);max-width:36em;margin:0 0 28px}
+.runbox{display:flex;gap:8px;max-width:520px;background:#fff;box-shadow:0 1px 2px rgba(19,38,58,.06),0 6px 20px rgba(19,38,58,.06);border:1px solid var(--line);border-radius:14px;padding:6px}
 .runbox input{flex:1;min-width:0;background:none;border:none;color:var(--chrome);font:500 16px var(--body);padding:12px 12px}
-.runbox input::placeholder{color:#6E7C8F}
+.runbox input::placeholder{color:#7A8899}
 .runbox input:focus{outline:none}
 .runbox:focus-within{border-color:var(--shark)}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:10px;padding:12px 18px;font:700 15px var(--body);cursor:pointer;text-decoration:none;white-space:nowrap}
-.btn-primary{background:var(--shark);color:#03201C}
-.btn-primary:hover{background:#5BEBD6}
+.btn-primary{background:var(--shark);color:#fff}
+.btn-primary:hover{background:var(--shark-deep)}
 .btn-quiet{background:none;color:var(--chrome);border:1px solid var(--line)}
 .btn-quiet:hover{border-color:var(--fog)}
 .fineprint{font-size:14px;color:var(--fog);margin:12px 0 0}
@@ -57,41 +60,48 @@ h1{font:700 clamp(38px,4.9vw,62px)/1 var(--display);letter-spacing:-.025em;margi
 #heromap{position:absolute;inset:0;background:var(--steel)}
 #heromap .leaflet-tile{filter:grayscale(0.7) sepia(0.18) brightness(1.02) contrast(0.92)}
 #heromap .leaflet-bottom{bottom:34px}
-#heromap .leaflet-control-attribution{background:rgba(10,14,20,.75);color:var(--fog);font-size:10px}
+#heromap .leaflet-control-attribution{background:rgba(255,255,255,.85);color:var(--fog);font-size:10px}
 #heromap .leaflet-control-attribution a{color:var(--fog)}
-.leaflet-tooltip.tag{background:rgba(10,14,20,.94);color:var(--chrome);border:1px solid var(--line);border-left:3px solid var(--shark);border-radius:10px;padding:8px 11px;font:13px/1.35 var(--body);box-shadow:0 8px 24px rgba(0,0,0,.45);white-space:normal;width:200px;opacity:0!important;transition:opacity .4s}
+.leaflet-tooltip.tag{background:#fff;color:var(--chrome);border:1px solid var(--line);border-left:3px solid var(--shark);border-radius:10px;padding:8px 11px;font:13px/1.35 var(--body);box-shadow:0 6px 18px rgba(19,38,58,.14);white-space:normal;width:200px;opacity:0!important;transition:opacity .4s}
 .leaflet-tooltip.tag.on{opacity:1!important}
 .leaflet-tooltip.tag::before{display:none}
 .leaflet-tooltip.tag b{display:block;font:600 14px var(--display);margin-bottom:2px}
 .leaflet-tooltip.tag span{color:var(--fog)}
 .leaflet-tooltip.tag.self{border-left-color:var(--blood)} .leaflet-tooltip.tag.warn{border-left-color:var(--res)}
-.leaflet-tooltip.hov{background:rgba(10,14,20,.94);color:var(--chrome);border:1px solid var(--line);font:12px var(--body);box-shadow:none}
+.leaflet-tooltip.hov{background:#fff;color:var(--chrome);border:1px solid var(--line);font:12px var(--body);box-shadow:none}
 .leaflet-tooltip.hov::before{display:none}
-.maplegend{position:absolute;left:0;right:0;bottom:0;z-index:500;display:flex;gap:14px;flex-wrap:wrap;padding:9px 14px;font-size:12px;color:var(--fog);background:rgba(10,14,20,.88);border-top:1px solid var(--line)}
+.maplegend{position:absolute;left:0;right:0;bottom:0;z-index:500;display:flex;gap:14px;flex-wrap:wrap;padding:9px 14px;font-size:12px;color:var(--fog);background:rgba(255,255,255,.94);border-top:1px solid var(--line)}
 .maplegend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px;border:1.5px solid}
 @media (max-width:700px){.mapcard{aspect-ratio:auto;height:520px}.leaflet-tooltip.tag{width:168px;font-size:12px;padding:7px 9px}.leaflet-tooltip.tag b{font-size:13px}.maplegend{gap:4px 12px;font-size:11px}#heromap .leaflet-bottom{bottom:50px}.illus{font-size:10.5px}}
-.illus{position:absolute;right:12px;top:12px;z-index:500;font-size:11.5px;color:var(--chrome);background:rgba(10,14,20,.82);border:1px solid var(--line);border-radius:8px;padding:5px 9px}
+.illus{position:absolute;right:12px;top:12px;z-index:500;font-size:11.5px;color:var(--chrome);background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:8px;padding:5px 9px}
+
+/* explainer video */
+.video .player{border-radius:20px;overflow:hidden;border:1px solid var(--line);box-shadow:0 16px 48px rgba(19,38,58,.10);background:#fff;max-width:1000px}
+.video video{display:block;width:100%;height:auto;aspect-ratio:16/9;background:#F3F6F9}
+.video video::cue{font-family:"Public Sans",system-ui,sans-serif;font-size:18px;background:rgba(19,38,58,.85);color:#fff}
 
 /* sections */
 section{padding:84px 0;border-top:1px solid var(--line)}
+section:nth-of-type(odd){background:var(--water)}
+section:nth-of-type(odd) .ledger .src,section:nth-of-type(odd) .anatomy div{background:#fff}
 h2{font:700 clamp(30px,3.6vw,46px)/1.05 var(--display);letter-spacing:-.02em;margin:0 0 16px;max-width:20ch}
-.intro{color:#C6D1DE;max-width:40em;margin:0 0 40px;font-size:18px}
+.intro{color:var(--text2);max-width:40em;margin:0 0 40px;font-size:18px}
 
 /* ledger: city sites → R Shark */
 .ledger [role=row]{display:contents}
 .ledger{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);border:1px solid var(--line);border-radius:18px;overflow:hidden}
-.ledger > div{padding:18px 22px;border-top:1px solid var(--line)}
-.ledger > div:nth-child(-n+2){border-top:none}
+.ledger [role=row] > div{padding:18px 22px;border-top:1px solid var(--line)}
+.ledger [role=row]:first-child > div{border-top:none}
 .ledger .src{background:var(--steel);color:var(--fog);font-size:15px}
 .ledger .src strong{display:block;color:var(--chrome);font:600 16px var(--display)}
 .ledger .what{font-size:16px}
-.ledger .head{background:#101826;font:600 14px var(--display);color:var(--fog);padding:12px 22px}
+.ledger .head{background:var(--water);font:600 14px var(--display);color:var(--fog);padding:12px 22px}
 .ledger .head.r{color:var(--shark)}
 
 /* hunt lists */
 .hunt{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:48px;align-items:start}
 .biggie{font:700 clamp(64px,9vw,120px)/.9 var(--display);letter-spacing:-.04em;color:var(--shark);margin:0}
-.biggie-cap{color:#C6D1DE;font-size:18px;margin:10px 0 0;max-width:24em}
+.biggie-cap{color:var(--text2);font-size:18px;margin:10px 0 0;max-width:24em}
 .lists{list-style:none;margin:0;padding:0}
 .lists li{display:grid;grid-template-columns:14px 1fr;gap:16px;padding:18px 0;border-bottom:1px solid var(--line)}
 .lists li:first-child{padding-top:4px}
@@ -109,12 +119,12 @@ h2{font:700 clamp(30px,3.6vw,46px)/1.05 var(--display);letter-spacing:-.02em;mar
 
 /* plans */
 .plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
-.plan{border:1px solid var(--line);border-radius:18px;padding:24px;display:flex;flex-direction:column;gap:12px;background:var(--steel)}
-.plan.pro{border-color:var(--shark);background:linear-gradient(180deg,#10262A 0%,var(--steel) 60%)}
+.plan{border:1px solid var(--line);border-radius:18px;padding:24px;display:flex;flex-direction:column;gap:12px;background:#fff}
+.plan.pro{border-color:var(--shark);box-shadow:0 0 0 1px var(--shark);background:#fff}
 .plan h3{margin:0;font:600 20px var(--display)}
 .plan .price{font:700 42px/1 var(--display);letter-spacing:-.02em}
 .plan .price small{font:400 15px var(--body);color:var(--fog);letter-spacing:0}
-.plan ul{margin:0;padding-left:18px;color:#C6D1DE;font-size:15.5px}
+.plan ul{margin:0;padding-left:18px;color:var(--text2);font-size:15.5px}
 .plan li{margin:5px 0}
 .plan .btn{margin-top:auto}
 .preview-note{margin:22px 0 0;color:var(--fog);font-size:15.5px;max-width:52em}
@@ -126,7 +136,7 @@ h2{font:700 clamp(30px,3.6vw,46px)/1.05 var(--display);letter-spacing:-.02em;mar
 .faq summary::-webkit-details-marker{display:none}
 .faq summary::after{content:"+";color:var(--shark);font-weight:500}
 .faq details[open] summary::after{content:"–"}
-.faq p{color:#C6D1DE;margin:10px 0 0}
+.faq p{color:var(--text2);margin:10px 0 0}
 
 /* final */
 .final{text-align:left;padding:96px 0}
@@ -140,7 +150,6 @@ footer a{color:var(--fog)}
   .anatomy{grid-template-columns:1fr 1fr}
   .plans{grid-template-columns:1fr}
   .ledger{grid-template-columns:1fr}
-  .ledger > div:nth-child(2){border-top:1px solid var(--line)}
   .ledger .head.r{display:none} .ledger .head:first-child{display:none}
   .ledger .src{border-top:1px solid var(--line)}
   .ledger .what{border-top:none;padding-top:0;background:var(--steel)}
@@ -165,8 +174,8 @@ footer a{color:var(--fog)}
   <header class="top">
     <a class="logo" href="/home.html" aria-label="R Shark home">
       <svg viewBox="0 0 110 84" aria-hidden="true">
-        <path d="M72 52 C 56 50, 44 42, 41 14 C 30 30, 22 42, 16 52 C 30 52, 52 52, 72 52 Z" fill="#2FE0C6"/>
-        <path d="M6 60 C 22 56, 44 56, 60 59 C 74 62, 86 60, 102 57" fill="none" stroke="#2FE0C6" stroke-width="3" stroke-linecap="round" opacity=".45"/>
+        <path d="M72 52 C 56 50, 44 42, 41 14 C 30 30, 22 42, 16 52 C 30 52, 52 52, 72 52 Z" fill="#14B8A6"/>
+        <path d="M6 60 C 22 56, 44 56, 60 59 C 74 62, 86 60, 102 57" fill="none" stroke="#14B8A6" stroke-width="3" stroke-linecap="round" opacity=".45"/>
         <path d="M 14 6 C 12 20, 13 38, 12 62" fill="none" stroke="currentColor" stroke-width="8.5" stroke-linecap="round"/>
         <path d="M 14 6 C 26 1, 58 4, 68 20 C 78 36, 66 52, 14 52" fill="none" stroke="currentColor" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
         <path d="M 36 52 C 58 56, 80 60, 98 64" fill="none" stroke="currentColor" stroke-width="7.5" stroke-linecap="round"/>
@@ -175,6 +184,7 @@ footer a{color:var(--fog)}
       SHARK
     </a>
     <nav aria-label="Main">
+      <a href="#video">Watch</a>
       <a href="#report">The report</a>
       <a href="#hunt">Off-market lists</a>
       <a href="#plans">Pricing</a>
@@ -191,16 +201,30 @@ footer a{color:var(--fog)}
         <input id="addr" name="q" autocomplete="street-address" placeholder="e.g. 819 Bergen St, Brooklyn" required>
         <button class="btn btn-primary" type="submit">Run this address free</button>
       </form>
-      <p class="fineprint">Free preview with Google sign-in — you see the whole report, blurred, before you pay. <a href="#plans">Plans from $49 a month.</a></p>
+      <p class="fineprint">Free preview with Google sign-in — you see the whole report, blurred, before you pay. <a href="#plans">Plans from $49 a month.</a> · <a href="#video">Watch the 70-second tour</a></p>
     </div>
 
     <div class="mapcard" id="mapcard" role="img" aria-label="Map of the real tax lots around 819 Bergen Street in Prospect Heights, Brooklyn, coloured the way the R Shark report shows them: the subject lot, lots with room to build, and existing buildings.">
       <div id="heromap"></div>
       <span class="illus">819 Bergen St, Brooklyn · real lots from NYC MapPLUTO</span>
-      <div class="maplegend" aria-hidden="true"><span><i style="background:rgba(255,75,62,.4);border-color:#FF4B3E"></i>This lot</span><span><i style="background:rgba(47,224,198,.3);border-color:#2FE0C6"></i>Room to build</span><span><i style="background:rgba(255,176,58,.3);border-color:#FFB03A"></i>Institutional / parking</span><span><i style="background:rgba(138,151,168,.25);border-color:#8A97A8"></i>Existing building</span></div>
+      <div class="maplegend" aria-hidden="true"><span><i style="background:rgba(217,48,37,.35);border-color:#D93025"></i>This lot</span><span><i style="background:rgba(14,158,137,.28);border-color:#0E9E89"></i>Room to build</span><span><i style="background:rgba(200,120,0,.28);border-color:#C87800"></i>Institutional / parking</span><span><i style="background:rgba(90,102,121,.18);border-color:#5A6679"></i>Existing building</span></div>
     </div>
   </div>
 </div>
+
+<section id="video" class="video">
+  <div class="wrap">
+    <h2>See R Shark in 70 seconds.</h2>
+    <p class="intro">What's in every report, how the off-market lists work, and what it saves you on each deal.</p>
+    <div class="player">
+      <video controls preload="metadata" playsinline poster="/media/rshark-explainer-poster.jpg" aria-label="R Shark explainer video">
+        <source src="/media/rshark-explainer.mp4" type="video/mp4">
+        <track kind="captions" src="/media/rshark-explainer.vtt" srclang="en" label="English" default>
+        Your browser can't play this video. <a href="/media/rshark-explainer.mp4">Download it</a>.
+      </video>
+    </div>
+  </div>
+</section>
 
 <section id="report">
   <div class="wrap">
@@ -341,8 +365,8 @@ for (const id of ['runform', 'runform2']) {
 // The hero block map: the real tax lots around 819 Bergen St (NYC MapPLUTO, baked into
 // /vendor/hero-block.json), coloured with the same categories as the report's block map.
 (function () {
-  const COL = { self: '#FF4B3E', opportunity: '#2FE0C6', constrained: '#FFB03A', existing: '#8A97A8' };
-  const FILL = { self: .45, opportunity: .26, constrained: .26, existing: .12 };
+  const COL = { self: '#D93025', opportunity: '#0E9E89', constrained: '#C87800', existing: '#5A6679' };
+  const FILL = { self: .45, opportunity: .3, constrained: .3, existing: .1 };
   const map = L.map('heromap', { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false,
     boxZoom: false, keyboard: false, touchZoom: false, zoomSnap: 0.25, attributionControl: true });
   map.attributionControl.setPrefix(false);

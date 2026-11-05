@@ -5,24 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R Shark Pricing</title>
 <meta name="description" content="R Shark finds motivated sellers and off-market deals across NYC, New Jersey and New York State — property reports, zoning, taxes, liens, trusts and pre-foreclosures.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400..800&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#0A0E14;--card:#111824;--ink:#E6EDF3;--ink2:#9FB0C3;--line:#223044;--shark:#0ABAB5;--warm:#F2B84B}
-@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--bg:#F4F7FB;--card:#FFFFFF;--ink:#0D1520;--ink2:#4A5A6E;--line:#D9E2EC;--shark:#056F6C;--warm:#8A5A12}}
-@media (prefers-color-scheme: light){:root:not([data-theme="dark"]) .btn:not(.ghost),:root:not([data-theme="dark"]) .toggle .on{color:#fff}}
+:root{--bg:#FFFFFF;--card:#FFFFFF;--ink:#13263A;--ink2:#4B5D70;--line:#DCE3EA;--shark:#0B7F73;--warm:#B7791F}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "Public Sans",system-ui,sans-serif}
 .wrap{max-width:1080px;margin:0 auto;padding:0 16px}
 header{display:flex;justify-content:space-between;align-items:center;padding:20px 0}
 .logo{font-weight:800;letter-spacing:.14em;font-size:18px;text-decoration:none;color:var(--ink)}
 .logo b{color:var(--shark)}
-.btn{display:inline-block;padding:11px 18px;border-radius:9px;background:var(--shark);color:#04141a;font-weight:700;text-decoration:none;border:none;cursor:pointer;font-size:15px}
+.btn{display:inline-block;padding:11px 18px;border-radius:9px;background:var(--shark);color:#fff;font-weight:700;text-decoration:none;border:none;cursor:pointer;font-size:15px}
 .btn.ghost{background:none;color:var(--ink);border:1px solid var(--line)}
 .hero{padding:48px 0 28px;text-align:center}
+section:nth-of-type(odd){background:#F3F6F9;margin:0 -16px;padding-left:16px;padding-right:16px;border-radius:18px}
 .hero h1{font-size:clamp(30px,5vw,50px);line-height:1.08;margin:0 0 14px;letter-spacing:-.01em}
 .hero p{color:var(--ink2);max-width:680px;margin:0 auto 22px;font-size:18px}
 .toggle{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;margin:6px 0 22px}
 .toggle button{background:none;border:none;color:var(--ink);padding:8px 16px;cursor:pointer;font-size:14px}
-.toggle .on{background:var(--shark);color:#04141a;font-weight:700}
+.toggle .on{background:var(--shark);color:#fff;font-weight:700}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
 .plan{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:12px}
 .plan.best{border-color:var(--shark);box-shadow:0 0 0 1px var(--shark)}
