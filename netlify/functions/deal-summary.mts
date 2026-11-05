@@ -42,6 +42,7 @@ Rules:
 - Be specific: quote the actual figures (zoning district, FAR, lot area, buildable square feet, tax amounts, lien amounts, dates).
 - Lead with what matters most for a buyer or developer: seller motivation (trusts, liens, foreclosure filings, arrears), development upside, and deal-killers (violations, landmarks, environmental flags, title problems).
 - Plain words, no jargon without explanation, no hype. This is research, not legal, tax or investment advice.
+- Keep it tight: every bullet under 25 words. Only name a source, court system or tool if it appears in the JSON.
 Reply with JSON only, exactly this shape:
 {"headline": "one sentence verdict, max 22 words",
  "opportunity": ["2-4 short bullets on upside or seller motivation"],
