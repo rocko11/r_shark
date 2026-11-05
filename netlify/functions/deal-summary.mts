@@ -52,7 +52,19 @@ export default async (req: Request) => {
   // GET: is the AI gateway wired up? (?probe=1 makes one tiny model call, at most once an hour.)
   if (req.method === "GET") {
     const ready = !!(process.env.ANTHROPIC_BASE_URL || process.env.ANTHROPIC_API_KEY);
-    if (!ready || new URL(req.url).searchParams.get("probe") !== "1") return json({ ai_ready: ready, model: MODEL });
+    const pr = new URL(req.url).searchParams.get("probe");
+    if (ready && pr === "demo") {
+      // Sample summary of the built-in demo fixture (no user data); generated once, then cached.
+      const store = getStore({ name: "ai-summaries" });
+      const c: any = await store.get("demo", { type: "json" }).catch(() => null);
+      if (c) return json(c);
+      const d = await fetch(new URL("/api/demo", req.url)).then(r => r.json());
+      const summary = await summarize(JSON.stringify(compact(d)).slice(0, 24000), "nyc");
+      const res = { demo: true, model: MODEL, summary };
+      if (summary) await store.setJSON("demo", res).catch(() => {});
+      return json(res);
+    }
+    if (!ready || pr !== "1") return json({ ai_ready: ready, model: MODEL });
     const store = getStore({ name: "ai-summaries" });
     const last: any = await store.get("probe", { type: "json" }).catch(() => null);
     if (last && Date.now() - last.at < 3600e3) return json({ ai_ready: ready, model: MODEL, probe: last });
@@ -94,18 +106,8 @@ export default async (req: Request) => {
   if (used >= DAILY_CAP && ent.plan !== "owner") return json({ error: "You've reached today's limit for AI summaries.", code: "limit_reached" }, 429);
 
   try {
-    const anthropic = new Anthropic();
-    const msg = await anthropic.messages.create({
-      model: MODEL, max_tokens: 700, temperature: 0.2, system: SYSTEM,
-      messages: [{ role: "user", content: `Region: ${String(body.region || "nyc").slice(0, 8)}\nReport JSON:\n${text}` }],
-    }, { timeout: 45_000 });
-    const out = msg.content.map((c: any) => c.type === "text" ? c.text : "").join("").trim();
-    const m = out.match(/\{[\s\S]*\}/);
-    let summary: any = null;
-    try { summary = m ? JSON.parse(m[0]) : null; } catch { summary = null; }
-    if (!summary?.headline) return json({ error: "The AI summary came back empty. Try again." }, 502);
-    const clean = (a: any) => (Array.isArray(a) ? a : []).map((s: any) => String(s).slice(0, 300)).slice(0, 5);
-    summary = { headline: String(summary.headline).slice(0, 240), opportunity: clean(summary.opportunity), risks: clean(summary.risks), next_steps: clean(summary.next_steps) };
+    const summary = await summarize(text, String(body.region || "nyc"));
+    if (!summary) return json({ error: "The AI summary came back empty. Try again." }, 502);
     await store.setJSON(`s:${hash}`, { summary, model: MODEL, at: Date.now() }).catch(() => {});
     await store.set(dayKey, String(used + 1)).catch(() => {});
     return json({ summary, model: MODEL });
@@ -114,5 +116,19 @@ export default async (req: Request) => {
     return json({ error: "R Shark AI is busy right now. Try again in a moment." }, 502);
   }
 };
+
+async function summarize(text: string, region: string) {
+  const msg = await new Anthropic().messages.create({
+    model: MODEL, max_tokens: 700, temperature: 0.2, system: SYSTEM,
+    messages: [{ role: "user", content: `Region: ${region.slice(0, 8)}\nReport JSON:\n${text}` }],
+  }, { timeout: 45_000 });
+  const out = msg.content.map((c: any) => c.type === "text" ? c.text : "").join("").trim();
+  const m = out.match(/\{[\s\S]*\}/);
+  let s: any = null;
+  try { s = m ? JSON.parse(m[0]) : null; } catch { s = null; }
+  if (!s?.headline) return null;
+  const clean = (a: any) => (Array.isArray(a) ? a : []).map((x: any) => String(x).slice(0, 300)).slice(0, 5);
+  return { headline: String(s.headline).slice(0, 240), opportunity: clean(s.opportunity), risks: clean(s.risks), next_steps: clean(s.next_steps) };
+}
 
 export const config: Config = { path: "/api/deal-summary" };
