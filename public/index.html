@@ -240,6 +240,8 @@ section{margin-bottom:34px}
       border-left:4px solid var(--rule);margin-bottom:7px}
 .flag.critical{border-left-color:var(--iron)}
 .flag.warning{border-left-color:var(--ochre)}
+.flag.info{border-left-color:var(--fog)}
+.flag.info .sev{color:var(--fog)}
 .flag .sev{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
            padding-top:3px;white-space:nowrap;color:var(--ink-2)}
 .flag.critical .sev{color:var(--iron)}
@@ -548,6 +550,11 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
 .agree a{color:var(--shark)}
 .agree.need{border-color:#FF4B3E;color:var(--chrome,#EAF0F6)}
 #esection a{color:var(--shark)}
+.ease-card .t .doclink{margin-left:6px;font-weight:400}
+.ease-meta{font-family:var(--mono);font-size:12px}
+.ease-parties{margin:6px 0;border-collapse:collapse;font-size:13px}
+.ease-parties td{padding:3px 12px 3px 0;vertical-align:top;border:none}
+.ease-parties td:first-child{color:var(--fog);white-space:nowrap}
 .ereq-head{font-weight:600;margin:0 0 12px}
 .ereq-des{margin-bottom:14px}
 .ereq-top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:6px 0 8px}
@@ -892,6 +899,39 @@ document.addEventListener('click', e => {
   if (e.target.closest('#lockbar, .leaflet-container, #svsection, .sec-head, #acct-modal, .titleblock h2')) return;
   if (e.target.closest('#out section, #out .titleblock, #out .flag')) { e.preventDefault(); e.stopPropagation(); showPlans(); }
 }, true);
+
+/* ---------- Recorded easements: full detail per document (NYC, ACRIS) ---------- */
+async function loadEasements(bbl) {
+  const box = document.getElementById('easebox'); if (!box || !bbl) return;
+  try {
+    const r = await fetch('/api/easements?bbl=' + encodeURIComponent(bbl));
+    const j = await r.json().catch(() => ({}));
+    if (document.getElementById('easebox') !== box) return;
+    if (!r.ok || j.error) { box.innerHTML = `<p class="hint">${esc(j.error || 'Easement records are unavailable right now.')} <button class="link no-print" onclick="loadEasements('${esc(bbl)}')">Try again</button></p>`; return; }
+    box.innerHTML = easeHtml(j);
+    const c = document.getElementById('easecount'); if (c) c.textContent = j.count || '0';
+  } catch (e) { box.innerHTML = `<p class="hint">Easement records are unavailable right now.</p>`; }
+}
+function easeHtml(j) {
+  const survey = `<p class="ownnote">Recorded documents only. Easements written into a deed or visible only on a survey won't appear here, so order a survey and title report before you close.</p>`;
+  if (j.available === false) return `<p class="hint">${esc(j.reason || '')}</p>`;
+  if (!j.count) return `<p class="ownnote" style="margin-top:6px">No separately recorded easements, declarations, light-and-air, air-rights or license agreements found on this lot.</p>` + survey;
+  const lotLink = l => `<a href="#" onclick="loadBBL('${esc(l.bbl)}');return false">${esc(l.address || l.bbl)}</a>`;
+  const cards = j.easements.map(e => `
+    <div class="flag ${e.status === 'of record' ? (/(light_air|air_rights|utility|public|restrictive)/.test(e.kind) ? 'critical' : 'warning') : 'info'} ease-card">
+      <span class="sev">${esc(e.kind_label)}</span>
+      <div>
+        <div class="t">${esc(e.doc_label)} · ${esc(e.document_date || '')}${e.status !== 'of record' ? ' · <span class="neg">possibly terminated</span>' : ''} ${acrisLink(e.document_id)}</div>
+        <div class="d ease-meta">Recorded ${esc(e.recorded || '—')}${e.crfn ? ` · CRFN ${esc(e.crfn)}` : ''}${e.amount ? ` · $${Number(e.amount).toLocaleString()}` : ''}${e.scope ? ` · ${esc(e.scope)}` : ''}</div>
+        ${e.parties.length ? `<table class="ease-parties"><tbody>${e.parties.map(p => `<tr><td>${esc(p.role === 'grantor' ? 'Grants the right' : p.role === 'grantee' ? 'Receives the right' : 'Party')}</td><td><strong>${esc(p.name)}</strong>${p.address ? `<div class="hint" style="margin:0">${esc(p.address)}</div>` : ''}</td></tr>`).join('')}</tbody></table>` : ''}
+        ${e.other_lot_count ? `<div class="d"><strong>Also covers ${e.other_lot_count} other lot${e.other_lot_count > 1 ? 's' : ''}:</strong> ${e.other_lots.map(lotLink).join(' · ')}${e.other_lot_count > e.other_lots.length ? ' …' : ''}</div>` : ''}
+        ${e.remarks.length ? `<div class="d"><strong>Recorded remarks:</strong> ${esc(e.remarks.join(' '))}</div>` : ''}
+        ${e.terminated_by ? `<div class="d"><strong>Later document:</strong> ${esc(e.terminated_by.doc_type)} ${esc(e.terminated_by.date || '')} ${acrisLink(e.terminated_by.document_id)}. Confirm it ends this easement.</div>` : ''}
+        <div class="d"><strong>What it means:</strong> ${esc(e.underwriting)}</div>
+      </div>
+    </div>`).join('');
+  return `<p class="ereq-head" style="margin:6px 0 10px">${esc(j.headline)}</p>${cards}${survey}`;
+}
 
 /* ---------- (E) designation requirements: everything OER will ask for (NYC) ---------- */
 function eReqHtml(E) {
@@ -1756,13 +1796,8 @@ function render(d) {
     <p class="ownnote">"Open" means no matching discharge was found in ACRIS — not a guarantee the lien is live, nor that others don't exist. Mortgages are normal and expected. Only a title search is definitive.</p>`
     : `<p class="hint">No mortgages, mechanic's, tax, judgment or UCC liens found recorded for this lot.</p>`}
 
-    ${eases.length?`
-    <div class="sec-head" style="margin-top:18px"><h3 style="font-family:var(--display);font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:0">Recorded easements</h3><span class="count">${eases.length}</span></div>
-    <table class="stack"><tbody>
-    ${eases.map(e=>`<tr><td><strong>${esc(e.doc_type||"Easement")}</strong></td><td style="font-family:var(--mono);font-size:12px">${esc((e.date||"").slice(0,10)||e.year||"—")}</td><td style="font-size:12.5px">${esc((e.parties||[]).join(", ").slice(0,50)||"—")}</td></tr>`).join("")}
-    </tbody></table>
-    <p class="ownnote">Recorded easements only. Many easements live in the deed language or survey and never appear as a separate ACRIS document — a survey is the only way to be sure.</p>`
-    :`<p class="ownnote" style="margin-top:14px">No separately-recorded easements found. This does not rule out easements described in the deed or shown only on a survey.</p>`}
+    <div class="sec-head" style="margin-top:18px"><h3 style="font-family:var(--display);font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:0">Recorded easements &amp; encumbrances</h3><span class="count" id="easecount">${eases.length || ''}</span></div>
+    <div id="easebox"><p class="hint">Reading every recorded easement on this lot…</p></div>
     `;
 
   // Coordinates come from PLUTO (identity) or, on an address search, the resolved
@@ -2121,6 +2156,7 @@ function render(d) {
   lastReport = d; lastRenderer = render;
   if (hasGeo && window.L) initBlockMap(lat, lng, d.bbl);
   loadDealSummary(d, 'nyc');
+  loadEasements(d.bbl);
   loadEnvironment({ lat, lon: lng, region: 'nyc', bbl: d.bbl, address: id.address || '' });
 }
 
