@@ -407,5 +407,9 @@ for (const id of ['runform', 'runform2']) {
   io.observe(card);
 })();
 </script>
+<script>
+// Already signed in? Point the header button straight into the app.
+if (/(?:^|;\s*)rs_token=/.test(document.cookie)) { const a = document.querySelector('a.signin'); if (a) { a.textContent = 'Open R Shark'; a.href = '/'; } }
+</script>
 </body>
 </html>

@@ -4316,8 +4316,8 @@ if (signOutBtn) signOutBtn.onclick = signOut;
   const user = callbackUser || getStoredUser();
   const qs = new URLSearchParams(location.search);
   // First-time visitors (never signed in here) see the homepage; ?signin=1 comes from its buttons.
-  let seen = false; try { seen = !!localStorage.getItem('rshark_seen'); } catch (e) {}
-  if (!user && !seen && !qs.has('signin') && !qs.has('billing')) { location.replace('/home.html'); return; }
+  // Signed-out visitors always land on the homepage; sign-in links (?signin=1) and deep links still work.
+  if (!user && !['signin', 'billing', 'q', 'bbl', 'at', 'plan'].some(k => qs.has(k))) { location.replace('/home.html'); return; }
   if (user) { try { localStorage.setItem('rshark_seen', '1'); } catch (e) {} await freshToken(); }
   applyAuthState(user);
   if (user) {
