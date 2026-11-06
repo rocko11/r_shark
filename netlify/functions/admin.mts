@@ -35,6 +35,15 @@ async function readAll(prefix: string) {
 }
 
 export const handler = async (event: any, context: any) => {
+  try { return await run(event, context); }
+  catch (e: any) {
+    console.error("admin failed", e?.stack || e);
+    return out(500, { error: "Admin error: " + String(e?.message || e).slice(0, 300) });
+  }
+};
+
+async function run(event: any, context: any) {
+  process.env.RSHARK_LAMBDA = "1";
   connectLambda(event);
   const req = new Request(event.rawUrl || "https://rshark.net/.netlify/functions/admin", { headers: event.headers });
   const me = await getUser(req);
@@ -123,4 +132,4 @@ export const handler = async (event: any, context: any) => {
   }
   const usage = await getUsage(email).catch(() => null);
   return out(200, { ok: true, action: body.action, email, usage });
-};
+}

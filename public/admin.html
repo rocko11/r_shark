@@ -266,9 +266,10 @@ async function load(quiet) {
     document.getElementById('as').textContent = (stored() || {}).email || '';
     render();
   } catch (e) {
-    document.getElementById('main').innerHTML = `<div class="gate"><h2 style="margin-top:0">${e.status === 403 ? 'Admins only' : 'Sign in to continue'}</h2>
-      <p class="muted">${e.status === 403 ? 'This page is only for the R Shark owner account.' : 'Sign in with your owner Google account, then come back to this page.'}</p>
-      <a class="btn primary" href="/?signin=1">Sign in to R Shark</a></div>`;
+    const signin = e.status === 401;
+    document.getElementById('main').innerHTML = `<div class="gate"><h2 style="margin-top:0">${e.status === 403 ? 'Admins only' : signin ? 'Sign in to continue' : 'The admin page couldn\'t load'}</h2>
+      <p class="muted">${e.status === 403 ? 'This page is only for the R Shark owner account.' : signin ? 'Sign in with your owner Google account, then come back to this page.' : esc(e.message)}</p>
+      ${signin ? '<a class="btn primary" href="/?signin=1">Sign in to R Shark</a>' : '<button class="btn primary" onclick="load()">Try again</button>'}</div>`;
   }
 }
 load();

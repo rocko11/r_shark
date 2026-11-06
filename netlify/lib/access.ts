@@ -27,7 +27,9 @@ export const PLANS: Record<Exclude<Plan, "owner">, PlanDef> = {
 const OWNER_DEF: PlanDef = { name: "Owner", price_m: 0, price_y: 0, reports: null, skiptrace: 100000, seats: 99,
   features: { hunt: true, lists: true, csv: true, pdf: true, skiptrace: true, pacer: true } };
 
-export const billing = () => getStore({ name: "billing", consistency: "strong" });
+// Strong consistency needs the edge URL that only modern functions get; Lambda-style functions
+// (admin) set RSHARK_LAMBDA and use the default (eventual, ~seconds) consistency instead.
+export const billing = () => process.env.RSHARK_LAMBDA ? getStore({ name: "billing" }) : getStore({ name: "billing", consistency: "strong" });
 const month = () => new Date().toISOString().slice(0, 7);
 const norm = (e: string) => String(e || "").trim().toLowerCase();
 
