@@ -20,6 +20,7 @@ export default async (req: Request) => {
     usage: { month: usage.month, reports: usage.reports, skiptrace: usage.skiptrace },
     renews: ent.sub?.current_period_end || null, cancel_at_period_end: !!ent.sub?.cancel_at_period_end,
     interval: ent.sub?.interval || null, member_of: ent.member_of || null,
+    comp: ent.grant ? { expires: ent.grant.expires || null, note: ent.grant.note || null } : null,
     members: ent.plan === "team" && !ent.member_of ? (ent.sub?.members || []) : undefined,
     plans, stripe: stripeMode(), terms_version: TERMS_VERSION,
   });

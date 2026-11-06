@@ -561,6 +561,11 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
 .ereq-list{margin:6px 0 6px;padding-left:18px;font-size:13.5px;line-height:1.5}
 .ereq-h3{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--fog);margin:16px 0 6px}
 .ereq-steps{margin:0;padding-left:20px;font-size:14px;line-height:1.55}
+.grant-form{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.grant-form input,.grant-form select{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--paper-2,transparent);color:inherit;font:inherit;font-size:13.5px}
+.grant-form #g-email,.grant-form #g-note{grid-column:1/-1}
+.grant-form .sgo{grid-column:1/-1}
+.grant-table td,.grant-table th{font-size:13px}
 .aisum{border:1.5px solid var(--shark);border-radius:12px;padding:16px 18px 12px;margin-bottom:26px;background:linear-gradient(180deg,rgba(47,224,198,.07),transparent 70%)}
 .aisum .sec-head{margin-bottom:6px}
 .aisum .ai-head{font-size:17px;font-weight:600;line-height:1.45;margin:4px 0 12px}
@@ -4412,14 +4417,44 @@ async function openAccount() {
   const owner = ME.is_owner ? `<h3 class="subh">Owner — Stripe (${esc(ME.stripe)} mode)</h3>
       ${ME.stripe === 'missing' ? '<p class="hint">Add <code>STRIPE_SECRET_KEY</code> in Netlify → Site configuration → Environment variables, redeploy, then come back here.</p>' : ''}
       <button class="sgo" onclick="setupStripe(this)" ${ME.stripe === 'missing' ? 'disabled' : ''}>Set up Stripe products, webhook &amp; portal</button>
-      <pre id="setup-log" class="hint" style="white-space:pre-wrap;margin:8px 0 0"></pre>` : '';
+      <pre id="setup-log" class="hint" style="white-space:pre-wrap;margin:8px 0 0"></pre>
+      <h3 class="subh">Free access</h3>
+      <p class="hint" style="margin:0 0 8px">Give chosen people free monthly use of R Shark, no card needed. They sign in with Google using that email.</p>
+      <div class="grant-form">
+        <input id="g-email" type="email" placeholder="person@email.com" aria-label="Email">
+        <select id="g-plan" aria-label="Plan"><option value="pro">Pro features</option><option value="starter">Starter features</option></select>
+        <select id="g-reports" aria-label="Reports per month"><option value="">Plan default reports</option><option value="5">5 reports / month</option><option value="10">10 reports / month</option><option value="25">25 reports / month</option><option value="50">50 reports / month</option><option value="100">100 reports / month</option><option value="unlimited">Unlimited reports</option></select>
+        <select id="g-months" aria-label="How long"><option value="0">Until I remove it</option><option value="1">1 month</option><option value="3">3 months</option><option value="6">6 months</option><option value="12">12 months</option></select>
+        <input id="g-note" placeholder="Note (optional), e.g. broker partner" aria-label="Note">
+        <button class="sgo" onclick="grantEdit('grant-add')">Give free access</button>
+      </div>
+      <div id="grant-list" class="hint">Loading…</div>` : '';
   modal(`<h2 style="margin:0 0 4px">Your account</h2><p class="hint" style="margin:0 0 12px">${esc(ME.email)}</p><p class="hint" style="margin:-6px 0 12px"><a href="/terms.html" target="_blank" style="color:var(--shark)">Terms</a> · <a href="/terms.html#privacy" target="_blank" style="color:var(--shark)">Privacy</a> · <a href="/terms.html#t-plans" target="_blank" style="color:var(--shark)">Billing &amp; cancellation</a></p>
     ${ME.active ? `<p style="margin:0 0 8px"><strong>${esc(ME.plan_name || ME.plan)}</strong>${ME.interval ? ' · billed ' + (ME.interval === 'year' ? 'yearly' : 'monthly') : ''}${ME.renews ? ` · ${ME.cancel_at_period_end ? 'ends' : 'renews'} ${esc(String(ME.renews).slice(0, 10))}` : ''}${ME.status === 'past_due' ? ' · <span style="color:var(--iron)">payment past due</span>' : ''}${ME.member_of ? ` · member of ${esc(ME.member_of)}'s team` : ''}</p>
       ${meter(U.reports || 0, L.reports, 'Property reports')}${L.skiptrace ? meter(U.skiptrace || 0, ME.plan === 'owner' ? null : L.skiptrace, 'Owner lookups') : ''}
-      ${ME.plan !== 'owner' && !ME.member_of ? '<button class="sgo" onclick="openPortal(this)">Manage billing, change plan or cancel →</button>' : ''}` : '<p>No active plan.</p>'}
+      ${ME.comp ? `<p class="hint">Complimentary access from R Shark${ME.comp.expires ? ' until ' + esc(String(ME.comp.expires).slice(0, 10)) : ''}. No card needed.</p>` : ''}
+      ${ME.plan !== 'owner' && !ME.member_of && !ME.comp ? '<button class="sgo" onclick="openPortal(this)">Manage billing, change plan or cancel →</button>' : ''}` : '<p>No active plan.</p>'}
     ${ME.plan === 'starter' ? '<p class="hint">Need unlimited reports and the trust / lien / foreclosure lists? <button class="link" onclick="showUpgrade(\'Upgrade to Pro for unlimited reports and every Hunt list.\')">See Pro →</button></p>' : ''}
     ${team}${owner}
     <p style="margin:16px 0 0"><button class="link" onclick="signOut()">Sign out</button></p>`);
+  if (ME.is_owner) grantEdit('grant-list');
+}
+async function grantEdit(action, email) {
+  const body = { action };
+  if (action === 'grant-add') Object.assign(body, { email: document.getElementById('g-email').value, plan: document.getElementById('g-plan').value,
+    reports: document.getElementById('g-reports').value, months: document.getElementById('g-months').value, note: document.getElementById('g-note').value });
+  else if (email) body.email = email;
+  const box = document.getElementById('grant-list'); if (!box) return;
+  const r = await fetch('/api/billing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (j.error) { box.innerHTML = `<span style="color:var(--iron)">${esc(j.error)}</span>`; return; }
+  if (action === 'grant-add') { document.getElementById('g-email').value = ''; document.getElementById('g-note').value = ''; }
+  const g = j.grants || [];
+  box.innerHTML = !g.length ? 'No one has free access yet.' : `<table class="stack grant-table"><thead><tr><th>Person</th><th>Access</th><th>This month</th><th></th></tr></thead><tbody>${g.map(x => `
+    <tr${x.expired ? ' style="opacity:.55"' : ''}><td data-l="Person"><strong>${esc(x.email)}</strong>${x.note ? `<div class="hint" style="margin:0">${esc(x.note)}</div>` : ''}</td>
+    <td data-l="Access">${esc(x.plan === 'pro' ? 'Pro' : 'Starter')} · ${x.reports === null ? 'unlimited' : x.reports === undefined ? (x.plan === 'pro' ? 'unlimited' : '25') : x.reports} reports/mo · ${x.expired ? 'expired' : x.expires ? 'until ' + esc(String(x.expires).slice(0, 10)) : 'no end date'}</td>
+    <td data-l="This month">${x.usage ? x.usage.reports + ' reports' : '—'}</td>
+    <td><button class="link" onclick="grantEdit('grant-remove','${esc(x.email)}')">remove</button></td></tr>`).join('')}</tbody></table>`;
 }
 async function teamEdit(action, email) {
   const r = await fetch('/api/billing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, email }) });

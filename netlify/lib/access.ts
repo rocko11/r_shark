@@ -71,6 +71,7 @@ export interface Entitlement {
   account: string;           // whose subscription pays (team owner for members)
   sub?: any; member_of?: string | null;
   teaser?: boolean;          // signed in, no plan: gets a scrambled, blurred preview
+  grant?: any;               // complimentary access from the owner
 }
 const ACTIVE = new Set(["active", "trialing", "past_due"]); // past_due: Stripe is retrying — keep access during dunning
 export async function entitlement(email: string): Promise<Entitlement> {
@@ -88,8 +89,36 @@ export async function entitlement(email: string): Promise<Entitlement> {
   }
   const plan = (sub?.plan as Plan) || null;
   const active = !!sub && ACTIVE.has(sub.status) && !!plan && plan in PLANS;
+  if (!active) {
+    // Complimentary access granted by the owner (grant:<email>) — free monthly usage, no Stripe.
+    const g = await getGrant(e);
+    if (g) {
+      const base = PLANS[g.plan as keyof typeof PLANS];
+      const def: PlanDef = { ...base, name: `${base.name} (complimentary)`,
+        reports: g.reports === undefined ? base.reports : g.reports, skiptrace: g.skiptrace ?? base.skiptrace };
+      return { email: e, plan: g.plan as Plan, status: "comp", active: true, def, account: e, sub: null, member_of: null, grant: g };
+    }
+  }
   return { email: e, plan: active ? plan : null, status: sub?.status || "none", active, def: active ? PLANS[plan as keyof typeof PLANS] : null, account, sub, member_of };
 }
+
+/* ---------------- complimentary grants (owner-managed) ---------------- */
+// grant:<email> { plan, reports (null = unlimited, undefined = plan default), skiptrace?, expires? (ISO), note?, by, at }
+export interface Grant { email: string; plan: Exclude<Plan, "owner">; reports?: number | null; skiptrace?: number; expires?: string | null; note?: string; by: string; at: string }
+export async function getGrant(email: string): Promise<Grant | null> {
+  const g: any = await billing().get(`grant:${norm(email)}`, { type: "json" }).catch(() => null);
+  if (!g || !(g.plan in PLANS)) return null;
+  if (g.expires && new Date(g.expires).getTime() < Date.now()) return null;
+  return g;
+}
+export async function listGrants(): Promise<(Grant & { expired: boolean })[]> {
+  const store = billing(); const { blobs } = await store.list({ prefix: "grant:" });
+  const rows = await Promise.all(blobs.map(b => store.get(b.key, { type: "json" }).catch(() => null)));
+  return (rows.filter(Boolean) as Grant[]).map(g => ({ ...g, expired: !!g.expires && new Date(g.expires).getTime() < Date.now() }))
+    .sort((a, b) => a.email.localeCompare(b.email));
+}
+export async function saveGrant(g: Grant) { await billing().setJSON(`grant:${norm(g.email)}`, { ...g, email: norm(g.email) }); }
+export async function deleteGrant(email: string) { await billing().delete(`grant:${norm(email)}`); }
 
 /* ---------------- usage ---------------- */
 export async function getUsage(account: string) {

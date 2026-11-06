@@ -1,5 +1,5 @@
 import type { Config } from "@netlify/functions";
-import { getUser, entitlement, billing, PLANS, OWNER_EMAILS } from "../lib/access.ts";
+import { getUser, entitlement, billing, PLANS, OWNER_EMAILS, listGrants, saveGrant, deleteGrant, getUsage } from "../lib/access.ts";
 import { stripe, priceFor, setupStripe, stripeMode } from "../lib/stripe.ts";
 import { recordConsent, TERMS_VERSION } from "../lib/consent.ts";
 
@@ -18,6 +18,27 @@ export default async (req: Request) => {
     if (body.action === "setup") {
       if (!OWNER_EMAILS.has(user.email)) return json({ error: "Only the site owner can set up Stripe." }, 403);
       return json(await setupStripe(origin));
+    }
+    // Owner: give chosen people free monthly usage (no Stripe).
+    if (body.action === "grant-list" || body.action === "grant-add" || body.action === "grant-remove") {
+      if (!OWNER_EMAILS.has(user.email)) return json({ error: "Only the site owner can manage free access." }, 403);
+      const email = String(body.email || "").trim().toLowerCase();
+      if (body.action !== "grant-list" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: "Enter a valid email." }, 400);
+      if (body.action === "grant-add") {
+        const plan = String(body.plan || "pro");
+        if (plan !== "starter" && plan !== "pro") return json({ error: "Free access can be Starter or Pro." }, 400);
+        const reports = body.reports === "" || body.reports == null ? undefined : body.reports === "unlimited" ? null : Math.max(0, Math.min(10000, Math.round(Number(body.reports))));
+        if (reports !== undefined && reports !== null && !Number.isFinite(reports)) return json({ error: "Reports per month must be a number or unlimited." }, 400);
+        const months = Number(body.months || 0);
+        const expires = months > 0 ? new Date(Date.now() + months * 30.44 * 864e5).toISOString() : null;
+        const skip = body.skiptrace === "" || body.skiptrace == null ? undefined : Math.max(0, Math.min(5000, Math.round(Number(body.skiptrace))));
+        await saveGrant({ email, plan: plan as any, ...(reports !== undefined ? { reports } : {}), ...(skip !== undefined ? { skiptrace: skip } : {}),
+          expires, note: String(body.note || "").slice(0, 120), by: user.email, at: new Date().toISOString() });
+      }
+      if (body.action === "grant-remove") await deleteGrant(email);
+      const grants = await listGrants();
+      const withUse = await Promise.all(grants.map(async g => ({ ...g, usage: await getUsage(g.email).then(u => ({ reports: u.reports, skiptrace: u.skiptrace })).catch(() => null) })));
+      return json({ grants: withUse });
     }
     if (body.action === "ack-outreach") {
       if (body.agree !== TERMS_VERSION) return json({ error: "Consent required." }, 400);
