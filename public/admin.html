@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>R Shark Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400..800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F3F6F9;--card:#fff;--ink:#13263A;--ink2:#4B5D70;--fog:#6B7A8C;--line:#DCE3EA;--teal:#0B7F73;--teal-bg:#E6F4F2;--red:#C62828;--red-bg:#FDECEC;--amber:#9A6200;--amber-bg:#FFF4DD;--violet:#5B3FC4;--violet-bg:#EFEBFC}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Public Sans",system-ui,sans-serif}
+a{color:var(--teal)}
+:focus-visible{outline:2px solid var(--teal);outline-offset:2px;border-radius:4px}
+.wrap{max-width:1280px;margin:0 auto;padding:0 20px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 0}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;color:var(--ink);text-decoration:none}
+.logo svg{width:40px;height:31px}
+.logo small{font-weight:600;font-size:13px;color:var(--fog);border-left:1px solid var(--line);padding-left:10px;margin-left:2px}
+.hdr-r{display:flex;gap:10px;align-items:center;font-size:13.5px;color:var(--fog)}
+.btn{font:600 13.5px "Public Sans",sans-serif;border-radius:8px;padding:8px 13px;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--ink)}
+.btn:hover{border-color:#B9C5D1}
+.btn.primary{background:var(--teal);border-color:var(--teal);color:#fff}
+.btn.danger{color:var(--red);border-color:#F1C4C4}
+.btn.danger.armed{background:var(--red);border-color:var(--red);color:#fff}
+.btn:disabled{opacity:.5;cursor:default}
+.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin:4px 0 18px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.stat b{display:block;font-size:26px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat span{color:var(--fog);font-size:13px}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.bar input[type=search]{flex:1 1 260px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font:inherit;background:#fff}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font:600 13px "Public Sans";cursor:pointer;color:var(--ink2)}
+.chip[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:#fff}
+.tablecard{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:14px}
+th{font-size:12.5px;color:var(--fog);font-weight:600;background:#FAFBFC;cursor:pointer;user-select:none;white-space:nowrap}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:#F8FAFB}
+tbody tr:last-child td{border-bottom:none}
+.who{display:flex;gap:10px;align-items:center;min-width:0}
+.av{width:32px;height:32px;border-radius:50%;background:var(--teal-bg);color:var(--teal);display:grid;place-items:center;font-weight:700;font-size:13px;flex:none;overflow:hidden}
+.av img{width:100%;height:100%;object-fit:cover}
+.who .n{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who .e{color:var(--fog);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{display:inline-block;border-radius:999px;padding:3px 10px;font-size:12.5px;font-weight:700;white-space:nowrap}
+.p-owner{background:var(--ink);color:#fff}.p-paid{background:var(--teal-bg);color:var(--teal)}.p-free{background:var(--violet-bg);color:var(--violet)}
+.p-preview{background:#EEF2F6;color:var(--ink2)}.p-blocked{background:var(--red-bg);color:var(--red)}.p-warn{background:var(--amber-bg);color:var(--amber)}
+.num{font-variant-numeric:tabular-nums}
+.muted{color:var(--fog)}
+.empty{padding:40px;text-align:center;color:var(--fog)}
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(19,38,58,.28);opacity:0;pointer-events:none;transition:opacity .18s}
+.scrim.on{opacity:1;pointer-events:auto}
+aside{position:fixed;top:0;right:0;bottom:0;width:min(520px,100vw);background:#fff;border-left:1px solid var(--line);box-shadow:-12px 0 40px rgba(19,38,58,.12);transform:translateX(100%);transition:transform .2s ease;overflow-y:auto;z-index:10}
+aside.on{transform:none}
+@media (prefers-reduced-motion:reduce){aside,.scrim{transition:none}}
+.dr-h{display:flex;gap:12px;align-items:center;padding:20px 22px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:1}
+.dr-h .av{width:44px;height:44px;font-size:16px}
+.dr-h h2{margin:0;font-size:18px}
+.dr-h .x{margin-left:auto}
+.dr-b{padding:6px 22px 30px}
+.dr-b h3{font-size:13px;color:var(--fog);font-weight:700;margin:22px 0 8px}
+dl{display:grid;grid-template-columns:140px 1fr;gap:6px 12px;margin:0;font-size:14px}
+dt{color:var(--fog)}dd{margin:0}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.form select,.form input{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;background:#fff}
+.form .full{grid-column:1/-1}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.note{font-size:13px;color:var(--fog);margin:6px 0 0}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;border-radius:10px;padding:10px 16px;font-size:14px;z-index:20}
+.gate{max-width:440px;margin:12vh auto;background:#fff;border:1px solid var(--line);border-radius:14px;padding:28px;text-align:center}
+@media (max-width:980px){.stats{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:720px){.stats{grid-template-columns:repeat(2,1fr)}
+  thead{display:none}table,tbody,tr,td{display:block}tr{border-bottom:1px solid var(--line);padding:8px 0}td{border:none;padding:4px 14px}
+  td[data-l]::before{content:attr(data-l) ": ";color:var(--fog);font-size:12.5px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="logo" href="/" aria-label="Back to R Shark">
+      <svg viewBox="0 0 110 84" aria-hidden="true"><path d="M72 52 C 56 50, 44 42, 41 14 C 30 30, 22 42, 16 52 C 30 52, 52 52, 72 52 Z" fill="#14B8A6"/><path d="M 14 6 C 12 20, 13 38, 12 62" fill="none" stroke="#13263A" stroke-width="8.5" stroke-linecap="round"/><path d="M 14 6 C 26 1, 58 4, 68 20 C 78 36, 66 52, 14 52" fill="none" stroke="#13263A" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M 36 52 C 58 56, 80 60, 98 64" fill="none" stroke="#13263A" stroke-width="7.5" stroke-linecap="round"/><path d="M 98 64 C 103 60, 104 54, 100 50" fill="none" stroke="#13263A" stroke-width="5.5" stroke-linecap="round"/></svg>
+      SHARK <small>Admin</small>
+    </a>
+    <div class="hdr-r"><span id="as"></span><button class="btn" id="reload">Refresh</button><button class="btn" id="csv">Export CSV</button><a class="btn" href="/">Open app</a></div>
+  </header>
+  <main id="main"><p class="muted">Loading users…</p></main>
+</div>
+<div class="scrim" id="scrim"></div>
+<aside id="drawer" aria-label="User details" aria-hidden="true"></aside>
+
+<script>
+const IDENTITY = 'https://rshark.netlify.app/.netlify/identity', STORE_KEY = 'rshark_user';
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const jwtExp = t => { try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp * 1000; } catch (e) { return 0; } };
+const stored = () => { try { const u = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); return u && u.email ? u : null; } catch (e) { return null; } };
+function setCookie(t) { document.cookie = `rs_token=${encodeURIComponent(t)}; path=/; max-age=3600; SameSite=Lax; Secure`; }
+async function token() {
+  const u = stored(); if (!u || !u._token) return null;
+  if (jwtExp(u._token) - Date.now() > 5 * 60e3) { setCookie(u._token); return u._token; }
+  if (!u._refresh) return null;
+  const r = await fetch(IDENTITY + '/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(u._refresh) }).catch(() => null);
+  if (!r || !r.ok) return null;
+  const t = await r.json(); u._token = t.access_token; u._refresh = t.refresh_token || u._refresh;
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(u)); } catch (e) {}
+  setCookie(u._token); return u._token;
+}
+async function api(method, body) {
+  const t = await token();
+  const r = await fetch('/.netlify/functions/admin', { method, headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: 'Bearer ' + t } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({ error: 'Bad response' }));
+  if (!r.ok) throw Object.assign(new Error(j.error || r.status), { status: r.status });
+  return j;
+}
+const toast = m => { const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 3200); };
+const day = s => s ? new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+const ago = s => { if (!s) return '—'; const d = (Date.now() - new Date(s).getTime()) / 864e5; return d < 1 ? 'today' : d < 2 ? 'yesterday' : d < 31 ? Math.floor(d) + ' days ago' : day(s); };
+const money = n => '$' + Number(n || 0).toLocaleString('en-US');
+
+let DATA = null, FILTER = 'all', QUERY = '', SORT = { k: 'last', dir: -1 }, OPEN = null;
+const kind = u => u.access === 'owner' ? 'owner' : u.blocked ? 'blocked' : u.sub && ['active', 'trialing', 'past_due'].includes(u.sub.status) ? 'paid' : u.grant_active ? 'free' : u.team_owner ? 'paid' : 'preview';
+function pill(u) {
+  const k = kind(u);
+  const label = k === 'owner' ? 'Owner' : k === 'blocked' ? 'Suspended' : k === 'paid' ? (u.team_owner && !u.sub ? 'Team member' : cap(u.sub.plan) + (u.sub.interval === 'year' ? ' · yearly' : '')) : k === 'free' ? cap(u.grant.plan) + ' · free' : 'Preview';
+  const warn = u.sub && u.sub.status === 'past_due' ? ' <span class="pill p-warn">past due</span>' : u.sub && u.sub.cancel_at_period_end && k === 'paid' ? ' <span class="pill p-warn">cancelling</span>' : '';
+  return `<span class="pill p-${k}">${esc(label)}</span>${warn}`;
+}
+const cap = s => s ? s[0].toUpperCase() + s.slice(1) : '';
+const avatar = u => `<span class="av">${u.avatar ? `<img src="${esc(u.avatar)}" alt="" referrerpolicy="no-referrer">` : esc((u.name || u.email)[0].toUpperCase())}</span>`;
+
+function rows() {
+  let r = DATA.users.filter(u => FILTER === 'all' || kind(u) === FILTER);
+  if (QUERY) r = r.filter(u => (u.email + ' ' + (u.name || '') + ' ' + (u.grant?.note || '')).toLowerCase().includes(QUERY));
+  const key = { user: u => (u.name || u.email).toLowerCase(), access: u => kind(u), reports: u => u.usage.reports, created: u => u.created || '', last: u => u.last_seen || '', mrr: u => u.mrr };
+  const f = key[SORT.k] || key.last;
+  return r.sort((a, b) => (f(a) > f(b) ? 1 : f(a) < f(b) ? -1 : 0) * SORT.dir);
+}
+function render() {
+  const T = DATA.totals, list = rows();
+  const counts = { all: DATA.users.length }; DATA.users.forEach(u => { counts[kind(u)] = (counts[kind(u)] || 0) + 1; });
+  const chip = (k, l) => `<button class="chip" data-f="${k}" aria-pressed="${FILTER === k}">${l} ${counts[k] || 0}</button>`;
+  const th = (k, l) => `<th data-s="${k}" aria-sort="${SORT.k === k ? (SORT.dir > 0 ? 'ascending' : 'descending') : 'none'}">${l}${SORT.k === k ? (SORT.dir > 0 ? ' ↑' : ' ↓') : ''}</th>`;
+  document.getElementById('main').innerHTML = `
+    ${DATA.identity_error ? `<p class="note" style="color:var(--amber)">Sign-in list incomplete: ${esc(DATA.identity_error)}. Showing everyone with activity or billing on file.</p>` : ''}
+    <div class="stats">
+      <div class="stat"><b>${T.users}</b><span>Registered users</span></div>
+      <div class="stat"><b>${T.paying}</b><span>Paying</span></div>
+      <div class="stat"><b>${money(T.mrr)}</b><span>Monthly recurring revenue</span></div>
+      <div class="stat"><b>${T.free}</b><span>Free access</span></div>
+      <div class="stat"><b>${T.active_30d}</b><span>Active, last 30 days</span></div>
+      <div class="stat"><b>${T.reports_this_month}</b><span>Reports this month</span></div>
+    </div>
+    <div class="bar">
+      <input type="search" id="q" placeholder="Search name, email or note" value="${esc(QUERY)}" aria-label="Search users">
+      <div class="chips">${chip('all', 'All')}${chip('paid', 'Paying')}${chip('free', 'Free access')}${chip('preview', 'Preview')}${chip('blocked', 'Suspended')}</div>
+    </div>
+    <div class="tablecard">${list.length ? `<table><thead><tr>${th('user', 'User')}${th('access', 'Access')}${th('reports', 'Reports this month')}${th('mrr', 'Pays / mo')}${th('created', 'Signed up')}${th('last', 'Last seen')}</tr></thead><tbody>
+      ${list.map(u => `<tr data-e="${esc(u.email)}" tabindex="0">
+        <td><div class="who">${avatar(u)}<div style="min-width:0"><div class="n">${esc(u.name || u.email.split('@')[0])}</div><div class="e">${esc(u.email)}</div></div></div></td>
+        <td data-l="Access">${pill(u)}</td>
+        <td data-l="Reports" class="num">${u.usage.reports}${u.usage.skiptrace ? ` <span class="muted">· ${u.usage.skiptrace} lookups</span>` : ''}</td>
+        <td data-l="Pays" class="num">${u.mrr ? money(u.mrr) : '<span class="muted">—</span>'}</td>
+        <td data-l="Signed up">${day(u.created)}</td>
+        <td data-l="Last seen">${ago(u.last_seen)}</td></tr>`).join('')}</tbody></table>`
+      : `<div class="empty">No users match.</div>`}</div>`;
+  document.getElementById('q').oninput = e => { QUERY = e.target.value.trim().toLowerCase(); const pos = e.target.selectionStart; render(); const q = document.getElementById('q'); q.focus(); q.setSelectionRange(pos, pos); };
+  document.querySelectorAll('.chip').forEach(c => c.onclick = () => { FILTER = c.dataset.f; render(); });
+  document.querySelectorAll('th[data-s]').forEach(h => h.onclick = () => { SORT = { k: h.dataset.s, dir: SORT.k === h.dataset.s ? -SORT.dir : -1 }; render(); });
+  document.querySelectorAll('tbody tr').forEach(r => { r.onclick = () => openUser(r.dataset.e); r.onkeydown = e => { if (e.key === 'Enter') openUser(r.dataset.e); }; });
+}
+
+function openUser(email) {
+  const u = DATA.users.find(x => x.email === email); if (!u) return;
+  OPEN = email;
+  const s = u.sub, g = u.grant, k = kind(u), isOwner = u.access === 'owner';
+  const stripeBase = DATA.stripe === 'test' ? 'https://dashboard.stripe.com/test' : 'https://dashboard.stripe.com';
+  const d = document.getElementById('drawer');
+  d.innerHTML = `
+    <div class="dr-h">${avatar(u)}<div style="min-width:0"><h2>${esc(u.name || u.email.split('@')[0])}</h2><div class="muted" style="font-size:13.5px">${esc(u.email)}</div></div><button class="btn x" id="close" aria-label="Close">Close</button></div>
+    <div class="dr-b">
+      <h3>Overview</h3>
+      <dl>
+        <dt>Access</dt><dd>${pill(u)}</dd>
+        <dt>Signed up</dt><dd>${day(u.created)}${u.provider ? ` · ${esc(cap(u.provider))}` : ''}${u.identity ? '' : ' · <span class="muted">no sign-in on file</span>'}</dd>
+        <dt>Last seen</dt><dd>${ago(u.last_seen)}${u.visits ? ` · ${u.visits} visits` : ''}</dd>
+        <dt>This month</dt><dd class="num">${u.usage.reports} reports · ${u.usage.skiptrace} owner lookups</dd>
+        ${u.team_owner ? `<dt>Team</dt><dd>Member of ${esc(u.team_owner)}'s team</dd>` : ''}
+        ${u.blocked ? `<dt>Suspended</dt><dd>${day(u.block?.at)}${u.block?.reason ? ' · ' + esc(u.block.reason) : ''}</dd>` : ''}
+      </dl>
+
+      ${s ? `<h3>Subscription</h3><dl>
+        <dt>Plan</dt><dd>${esc(cap(s.plan))} · ${s.interval === 'year' ? 'yearly' : 'monthly'} · ${money(u.mrr)}/mo</dd>
+        <dt>Status</dt><dd>${esc(s.status)}${s.cancel_at_period_end ? ' · cancels at period end' : ''}</dd>
+        <dt>${s.cancel_at_period_end ? 'Ends' : 'Renews'}</dt><dd>${day(s.current_period_end)}</dd>
+        <dt>Stripe</dt><dd><a href="${stripeBase}/customers/${esc(s.customer)}" target="_blank" rel="noopener">Open customer in Stripe</a></dd>
+      </dl>
+      ${['active', 'trialing', 'past_due'].includes(s.status) ? `<div class="actions" style="margin-top:10px">
+        ${s.cancel_at_period_end ? `<button class="btn" data-a="resume">Resume subscription</button>` : `<button class="btn" data-a="cancel-at-period-end">Cancel at period end</button>`}
+        <button class="btn danger" data-a="cancel-now" data-confirm="Cancel now and end access?">Cancel immediately</button></div>
+        <p class="note">Refunds are issued from the customer page in Stripe.</p>` : ''}` : ''}
+
+      ${isOwner ? '' : `<h3>Free access</h3>
+      ${u.grant_active ? `<p style="margin:0 0 8px">${esc(cap(g.plan))} features · ${g.reports === null ? 'unlimited' : g.reports ?? (g.plan === 'pro' ? 'unlimited' : 25)} reports a month · ${g.expires ? 'until ' + day(g.expires) : 'no end date'}${g.note ? ` · ${esc(g.note)}` : ''}</p>`
+        : g ? `<p class="note" style="margin:0 0 8px">Free access expired ${day(g.expires)}.</p>` : `<p class="note" style="margin:0 0 8px">None. Give them free monthly use without a card:</p>`}
+      <div class="form">
+        <select id="f-plan" aria-label="Features"><option value="pro" ${g?.plan !== 'starter' ? 'selected' : ''}>Pro features</option><option value="starter" ${g?.plan === 'starter' ? 'selected' : ''}>Starter features</option></select>
+        <select id="f-reports" aria-label="Reports per month">${[['', 'Plan default reports'], ['5', '5 reports / month'], ['10', '10 reports / month'], ['25', '25 reports / month'], ['50', '50 reports / month'], ['100', '100 reports / month'], ['unlimited', 'Unlimited reports']].map(([v, l]) => `<option value="${v}" ${String(g?.reports === null ? 'unlimited' : g?.reports ?? '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <select id="f-months" aria-label="Duration" class="full"><option value="0">Until I remove it</option><option value="1">1 month</option><option value="3">3 months</option><option value="6">6 months</option><option value="12">12 months</option></select>
+        <input id="f-note" class="full" placeholder="Note (optional)" value="${esc(g?.note || '')}" aria-label="Note">
+      </div>
+      <div class="actions" style="margin-top:8px"><button class="btn primary" data-a="grant">${u.grant_active ? 'Update free access' : 'Give free access'}</button>${g ? `<button class="btn" data-a="ungrant">Remove free access</button>` : ''}</div>
+
+      <h3>Account controls</h3>
+      <div class="actions">
+        <button class="btn" data-a="reset-usage" ${u.usage.reports || u.usage.skiptrace ? '' : 'disabled'}>Reset this month's usage</button>
+        ${u.blocked ? `<button class="btn" data-a="unblock">Restore access</button>` : `<button class="btn danger" data-a="block" data-confirm="Suspend this account?">Suspend account</button>`}
+        <button class="btn danger" data-a="delete" data-confirm="Delete permanently?" ${s && ['active', 'trialing', 'past_due'].includes(s.status) ? 'disabled title="Cancel the subscription first"' : ''}>Delete user</button>
+      </div>
+      <p class="note">Suspending blocks every report and list right away; restore any time. Deleting removes their sign-in and free access; billing history stays in Stripe.</p>
+      <p class="note"><a href="mailto:${esc(u.email)}">Email ${esc(u.email)}</a></p>`}
+    </div>`;
+  d.classList.add('on'); d.setAttribute('aria-hidden', 'false'); document.getElementById('scrim').classList.add('on');
+  document.getElementById('close').onclick = closeUser;
+  d.querySelectorAll('[data-a]').forEach(b => b.onclick = () => act(b, u));
+  document.getElementById('close').focus();
+}
+function closeUser() { OPEN = null; const d = document.getElementById('drawer'); d.classList.remove('on'); d.setAttribute('aria-hidden', 'true'); document.getElementById('scrim').classList.remove('on'); }
+document.getElementById('scrim').onclick = closeUser;
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && OPEN) closeUser(); });
+
+async function act(btn, u) {
+  // Destructive actions need a second click on the same button (no browser pop-ups).
+  if (btn.dataset.confirm && !btn.classList.contains('armed')) {
+    btn.classList.add('armed'); btn.dataset.label = btn.textContent; btn.textContent = btn.dataset.confirm + ' Click again';
+    setTimeout(() => { if (btn.isConnected && btn.classList.contains('armed')) { btn.classList.remove('armed'); btn.textContent = btn.dataset.label; } }, 5000);
+    return;
+  }
+  const a = btn.dataset.a, body = { action: a, email: u.email };
+  if (a === 'grant') Object.assign(body, { plan: document.getElementById('f-plan').value, reports: document.getElementById('f-reports').value, months: document.getElementById('f-months').value, note: document.getElementById('f-note').value });
+  if (a === 'block') body.reason = 'Suspended by admin';
+  btn.disabled = true;
+  try {
+    await api('POST', body);
+    toast({ grant: 'Free access saved', ungrant: 'Free access removed', block: 'Account suspended', unblock: 'Access restored', 'reset-usage': 'Usage reset', 'cancel-at-period-end': 'Will cancel at period end', resume: 'Subscription resumed', 'cancel-now': 'Subscription cancelled', delete: 'User deleted' }[a] || 'Done');
+    await load(true);
+    if (a === 'delete' || !DATA.users.find(x => x.email === u.email)) closeUser(); else openUser(u.email);
+  } catch (e) { toast(e.message); btn.disabled = false; }
+}
+
+function exportCsv() {
+  const head = ['email', 'name', 'access', 'plan', 'interval', 'status', 'mrr', 'free_plan', 'free_until', 'reports_this_month', 'lookups_this_month', 'signed_up', 'last_seen', 'suspended'];
+  const lines = [head.join(',')].concat(DATA.users.map(u => [u.email, u.name || '', kind(u), u.sub?.plan || '', u.sub?.interval || '', u.sub?.status || '', u.mrr, u.grant_active ? u.grant.plan : '', u.grant_active ? (u.grant.expires || 'none') : '', u.usage.reports, u.usage.skiptrace, u.created || '', u.last_seen || '', u.blocked ? 'yes' : ''].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' })); a.download = `rshark-users-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+}
+document.getElementById('csv').onclick = () => DATA && exportCsv();
+document.getElementById('reload').onclick = () => load();
+
+async function load(quiet) {
+  if (!quiet) document.getElementById('main').innerHTML = '<p class="muted">Loading users…</p>';
+  try {
+    DATA = await api('GET');
+    document.getElementById('as').textContent = (stored() || {}).email || '';
+    render();
+  } catch (e) {
+    document.getElementById('main').innerHTML = `<div class="gate"><h2 style="margin-top:0">${e.status === 403 ? 'Admins only' : 'Sign in to continue'}</h2>
+      <p class="muted">${e.status === 403 ? 'This page is only for the R Shark owner account.' : 'Sign in with your owner Google account, then come back to this page.'}</p>
+      <a class="btn primary" href="/?signin=1">Sign in to R Shark</a></div>`;
+  }
+}
+load();
+</script>
+</body>
+</html>

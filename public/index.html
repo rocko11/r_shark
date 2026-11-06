@@ -4418,6 +4418,7 @@ async function openAccount() {
       ${ME.stripe === 'missing' ? '<p class="hint">Add <code>STRIPE_SECRET_KEY</code> in Netlify → Site configuration → Environment variables, redeploy, then come back here.</p>' : ''}
       <button class="sgo" onclick="setupStripe(this)" ${ME.stripe === 'missing' ? 'disabled' : ''}>Set up Stripe products, webhook &amp; portal</button>
       <pre id="setup-log" class="hint" style="white-space:pre-wrap;margin:8px 0 0"></pre>
+      <p style="margin:12px 0 0"><a class="sgo" style="display:inline-block;text-decoration:none" href="/admin.html" target="_blank">Open admin: all users &amp; controls</a></p>
       <h3 class="subh">Free access</h3>
       <p class="hint" style="margin:0 0 8px">Give chosen people free monthly use of R Shark, no card needed. They sign in with Google using that email.</p>
       <div class="grant-form">

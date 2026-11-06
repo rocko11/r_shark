@@ -102,6 +102,20 @@ export async function entitlement(email: string): Promise<Entitlement> {
   return { email: e, plan: active ? plan : null, status: sub?.status || "none", active, def: active ? PLANS[plan as keyof typeof PLANS] : null, account, sub, member_of };
 }
 
+/* ---------------- suspended accounts (owner-managed) ---------------- */
+export async function isBlocked(email: string) {
+  if (OWNER_EMAILS.has(norm(email))) return false;
+  return !!(await billing().get(`block:${norm(email)}`).catch(() => null));
+}
+// Who has signed in, and when (written by /api/me).
+export async function touchSeen(email: string, name?: string) {
+  const store = billing(), k = `seen:${norm(email)}`;
+  const s: any = (await store.get(k, { type: "json" }).catch(() => null)) || { first: new Date().toISOString(), visits: 0 };
+  // Write at most every 10 minutes per person.
+  if (s.last && Date.now() - new Date(s.last).getTime() < 600e3) return;
+  await store.setJSON(k, { ...s, last: new Date().toISOString(), visits: (s.visits || 0) + 1, ...(name ? { name } : {}) });
+}
+
 /* ---------------- complimentary grants (owner-managed) ---------------- */
 // grant:<email> { plan, reports (null = unlimited, undefined = plan default), skiptrace?, expires? (ISO), note?, by, at }
 export interface Grant { email: string; plan: Exclude<Plan, "owner">; reports?: number | null; skiptrace?: number; expires?: string | null; note?: string; by: string; at: string }
@@ -144,6 +158,7 @@ export const FREE_PREVIEW_REPORTS = 100;
 export async function gate(req: Request, feature: Feature, opts: { reportKey?: string; credits?: number; preview?: boolean } = {}): Promise<Entitlement | Response> {
   const user = await getUser(req);
   if (!user) return json({ error: "Sign in to use R Shark.", code: "auth_required" }, 401);
+  if (await isBlocked(user.email)) return json({ error: "This account has been suspended. Contact info@p-national.com.", code: "blocked" }, 403);
   const ent = await entitlement(user.email);
   if (!ent.active || !ent.def) {
     if (opts.preview) {

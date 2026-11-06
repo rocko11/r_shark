@@ -1,5 +1,5 @@
 import type { Config } from "@netlify/functions";
-import { getUser, entitlement, getUsage, PLANS, OWNER_EMAILS } from "../lib/access.ts";
+import { getUser, entitlement, getUsage, PLANS, OWNER_EMAILS, isBlocked, touchSeen } from "../lib/access.ts";
 import { stripeMode } from "../lib/stripe.ts";
 import { recordConsent, TERMS_VERSION } from "../lib/consent.ts";
 
@@ -11,6 +11,8 @@ export default async (req: Request) => {
   if (!user) return json({ signed_in: false, plans, stripe: stripeMode() });
   // Sign-in screen says "By continuing you agree to the Terms" — log that assent once per version.
   await recordConsent(req, user.email, "signin").catch(() => {});
+  await touchSeen(user.email).catch(() => {});
+  if (await isBlocked(user.email)) return json({ signed_in: true, email: user.email, blocked: true, active: false, plan: null, plans, stripe: stripeMode(), terms_version: TERMS_VERSION });
   const ent = await entitlement(user.email);
   const usage = await getUsage(ent.account);
   return json({
