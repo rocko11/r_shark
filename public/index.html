@@ -566,6 +566,20 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
 .grant-form #g-email,.grant-form #g-note{grid-column:1/-1}
 .grant-form .sgo{grid-column:1/-1}
 .grant-table td,.grant-table th{font-size:13px}
+.gate-or{display:flex;align-items:center;gap:10px;margin:16px 0 12px;color:var(--fog);font-size:12px}
+.gate-or::before,.gate-or::after{content:"";flex:1;height:1px;background:var(--line)}
+.email-auth{display:flex;flex-direction:column;gap:9px;text-align:left}
+.ea-tabs{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:4px}
+.ea-tabs button{background:none;border:none;color:var(--fog);padding:8px;font:inherit;font-size:13px;cursor:pointer}
+.ea-tabs button[aria-selected=true]{background:var(--shark);color:#04141a;font-weight:700}
+.email-auth label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--fog)}
+.email-auth input{padding:10px 12px;border-radius:9px;border:1px solid var(--line);background:transparent;color:inherit;font:inherit;font-size:14.5px}
+.email-auth input:focus{outline:2px solid var(--shark);outline-offset:1px}
+.ea-msg{margin:0;font-size:13px;min-height:0}
+.ea-msg.err{color:var(--iron,#FF4B3E)}.ea-msg.ok{color:var(--shark)}
+.ea-go{margin-top:2px;justify-content:center}
+.ea-forgot{align-self:center;font-size:12.5px;margin-top:2px}
+.email-auth [hidden]{display:none!important}
 .aisum{border:1.5px solid var(--shark);border-radius:12px;padding:16px 18px 12px;margin-bottom:26px;background:linear-gradient(180deg,rgba(47,224,198,.07),transparent 70%)}
 .aisum .sec-head{margin-bottom:6px}
 .aisum .ai-head{font-size:17px;font-weight:600;line-height:1.45;margin:4px 0 12px}
@@ -611,6 +625,19 @@ button.link{background:none;border:none;font-family:var(--mono);font-size:12px;
         </svg>
         Continue with Google
       </button>
+      <div class="gate-or"><span>or use any email</span></div>
+      <form id="email-auth" class="email-auth" novalidate>
+        <div class="ea-tabs" role="tablist">
+          <button type="button" role="tab" data-m="signin" aria-selected="true">Sign in</button>
+          <button type="button" role="tab" data-m="signup" aria-selected="false">Create account</button>
+        </div>
+        <label class="ea-name" hidden>Full name<input id="ea-name" autocomplete="name" placeholder="Your name"></label>
+        <label>Email<input id="ea-email" type="email" autocomplete="email" placeholder="you@company.com" required></label>
+        <label class="ea-pass">Password<input id="ea-pass" type="password" autocomplete="current-password" placeholder="At least 8 characters" minlength="8" required></label>
+        <p class="ea-msg" id="ea-msg" role="status" aria-live="polite"></p>
+        <button type="submit" class="gate-btn ea-go" id="ea-go">Sign in</button>
+        <button type="button" class="link ea-forgot" id="ea-forgot">Forgot password?</button>
+      </form>
       <p class="hint" style="margin:14px 0 0;font-size:12px">By continuing you agree to the <a href="/terms.html" target="_blank" style="color:var(--shark)">Terms</a> and <a href="/terms.html#privacy" target="_blank" style="color:var(--shark)">Privacy Policy</a>.</p>
     </div>
     <!-- Signed in but no active subscription: choose a plan -->
@@ -4283,7 +4310,91 @@ function signInWithGoogle() {
   const returnTo = encodeURIComponent(location.origin + location.pathname + location.search);
   location.href = IDENTITY + '/authorize?provider=google&redirect_to=' + returnTo;
 }
+// Email links from Netlify Identity: #confirmation_token (new account), #recovery_token (reset password).
+async function handleEmailTokens() {
+  window.__authHash = true;
+  const m = location.hash.match(/(confirmation|recovery|invite)_token=([^&]+)/);
+  if (!m) { const e = location.hash.match(/error_description=([^&]+)/); if (e) setTimeout(() => eaSay(decodeURIComponent(e[1].replace(/\+/g, ' ')), 'err'), 300); return null; }
+  const type = m[1] === 'confirmation' ? 'signup' : m[1];
+  history.replaceState(null, '', location.pathname + location.search);
+  try {
+    const r = await _fetch(IDENTITY + '/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: decodeURIComponent(m[2]), type }) });
+    const t = await r.json().catch(() => ({}));
+    if (!r.ok || !t.access_token) { setTimeout(() => eaSay(type === 'recovery' ? 'That reset link has expired. Ask for a new one.' : 'That confirmation link has expired or was already used. Try signing in.', 'err'), 300); return null; }
+    const user = await sessionFromTokens(t);
+    if (user && type === 'recovery') setTimeout(promptNewPassword, 600);
+    return user;
+  } catch (e) { return null; }
+}
+async function sessionFromTokens(t) {
+  const r = await _fetch(IDENTITY + '/user', { headers: { Authorization: 'Bearer ' + t.access_token } });
+  if (!r.ok) return null;
+  const user = await r.json();
+  user._token = t.access_token; user._refresh = t.refresh_token || null;
+  saveUser(user);
+  return user;
+}
+function eaSay(msg, kind) { const el = document.getElementById('ea-msg'); if (el) { el.textContent = msg; el.className = 'ea-msg ' + (kind || ''); } }
+let eaMode = 'signin';
+function eaSetMode(m) {
+  eaMode = m;
+  document.querySelectorAll('.ea-tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.m === m)));
+  document.querySelector('.ea-name').hidden = m !== 'signup';
+  document.querySelector('.ea-pass').hidden = m === 'forgot';
+  document.getElementById('ea-pass').autocomplete = m === 'signup' ? 'new-password' : 'current-password';
+  document.getElementById('ea-go').textContent = m === 'signup' ? 'Create account' : m === 'forgot' ? 'Email me a reset link' : 'Sign in';
+  document.getElementById('ea-forgot').textContent = m === 'forgot' ? 'Back to sign in' : 'Forgot password?';
+  document.getElementById('ea-forgot').hidden = m === 'signup';
+  eaSay('');
+}
+async function eaSubmit(ev) {
+  ev.preventDefault();
+  const email = document.getElementById('ea-email').value.trim(), pass = document.getElementById('ea-pass').value, name = document.getElementById('ea-name').value.trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return eaSay('Enter a valid email address.', 'err');
+  if (eaMode !== 'forgot' && pass.length < 8) return eaSay('Password must be at least 8 characters.', 'err');
+  const go = document.getElementById('ea-go'); go.disabled = true;
+  try {
+    if (eaMode === 'signup') {
+      const r = await _fetch(IDENTITY + '/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: pass, data: { full_name: name } }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return eaSay(/already/i.test(j.msg || j.error_description || '') ? 'An account with this email already exists. Sign in instead.' : (j.msg || j.error_description || 'Could not create the account.'), 'err');
+      if (j.confirmed_at) return eaLogin(email, pass);
+      eaSay(`Almost done. We sent a confirmation link to ${email}. Open it to finish creating your account (check spam if you don't see it).`, 'ok');
+    } else if (eaMode === 'forgot') {
+      await _fetch(IDENTITY + '/recover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+      eaSay(`If ${email} has an account, a reset link is on its way.`, 'ok');
+    } else await eaLogin(email, pass);
+  } catch (e) { eaSay('Network problem. Try again.', 'err'); }
+  finally { go.disabled = false; }
+}
+async function eaLogin(email, pass) {
+  const r = await _fetch(IDENTITY + '/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'grant_type=password&username=' + encodeURIComponent(email) + '&password=' + encodeURIComponent(pass) });
+  const t = await r.json().catch(() => ({}));
+  if (!r.ok) return eaSay(/confirm/i.test(t.error_description || '') ? 'Please confirm your email first. Check your inbox for the link.' : 'Wrong email or password.', 'err');
+  const user = await sessionFromTokens(t);
+  if (!user) return eaSay('Could not sign in. Try again.', 'err');
+  await freshToken(); applyAuthState(user);
+  window.__loadFromUrlWhenReady && window.__loadFromUrlWhenReady();
+}
+function promptNewPassword() {
+  modal(`<h2 style="margin:0 0 6px">Choose a new password</h2><p class="hint">You're signed in. Set a new password for next time.</p>
+    <form id="np-form" class="email-auth"><label>New password<input id="np-pass" type="password" autocomplete="new-password" minlength="8" required></label>
+    <p class="ea-msg" id="np-msg" role="status"></p><button class="gate-btn ea-go" type="submit">Save password</button></form>`);
+  document.getElementById('np-form').onsubmit = async e => {
+    e.preventDefault();
+    const pw = document.getElementById('np-pass').value, msg = document.getElementById('np-msg');
+    if (pw.length < 8) { msg.textContent = 'At least 8 characters.'; msg.className = 'ea-msg err'; return; }
+    const r = await _fetch(IDENTITY + '/user', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (await freshToken()) }, body: JSON.stringify({ password: pw }) });
+    if (r.ok) { closeModal(); alertToast('Password updated.'); } else { msg.textContent = 'Could not save. Try again.'; msg.className = 'ea-msg err'; }
+  };
+}
+document.querySelectorAll('.ea-tabs button').forEach(b => b.onclick = () => eaSetMode(b.dataset.m));
+document.getElementById('ea-forgot').onclick = () => eaSetMode(eaMode === 'forgot' ? 'signin' : 'forgot');
+document.getElementById('email-auth').onsubmit = eaSubmit;
+
 async function handleOAuthCallback() {
+  if (/(confirmation|recovery|invite)_token=|error_description=/.test(location.hash)) return handleEmailTokens();
   if (!location.hash.includes('access_token')) return null;
   const params = {};
   location.hash.slice(1).split('&').forEach(p => { const [k, v] = p.split('='); params[decodeURIComponent(k)] = decodeURIComponent(v || ''); });
@@ -4413,14 +4524,14 @@ async function openAccount() {
   const team = ME.plan === 'team' && ME.members ? `<h3 class="subh">Team seats (${ME.members.length + 1} of ${L.seats})</h3>
       <ul style="margin:0 0 8px;padding-left:18px">${['<li>' + esc(ME.email) + ' (you)</li>'].concat(ME.members.map(m => `<li>${esc(m)} <button class="link" onclick="teamEdit('team-remove','${esc(m)}')">remove</button></li>`)).join('')}</ul>
       <div style="display:flex;gap:8px"><input id="team-email" placeholder="teammate@email.com" style="flex:1"><button class="sgo" onclick="teamEdit('team-add', document.getElementById('team-email').value)">Add</button></div>
-      <p class="hint" style="margin:6px 0 0">Teammates sign in with Google using that email.</p>` : '';
+      <p class="hint" style="margin:6px 0 0">Teammates sign in with Google or create an account with that email.</p>` : '';
   const owner = ME.is_owner ? `<h3 class="subh">Owner — Stripe (${esc(ME.stripe)} mode)</h3>
       ${ME.stripe === 'missing' ? '<p class="hint">Add <code>STRIPE_SECRET_KEY</code> in Netlify → Site configuration → Environment variables, redeploy, then come back here.</p>' : ''}
       <button class="sgo" onclick="setupStripe(this)" ${ME.stripe === 'missing' ? 'disabled' : ''}>Set up Stripe products, webhook &amp; portal</button>
       <pre id="setup-log" class="hint" style="white-space:pre-wrap;margin:8px 0 0"></pre>
       <p style="margin:12px 0 0"><a class="sgo" style="display:inline-block;text-decoration:none" href="/admin.html" target="_blank">Open admin: all users &amp; controls</a></p>
       <h3 class="subh">Free access</h3>
-      <p class="hint" style="margin:0 0 8px">Give chosen people free monthly use of R Shark, no card needed. They sign in with Google using that email.</p>
+      <p class="hint" style="margin:0 0 8px">Give chosen people free monthly use of R Shark, no card needed. They sign in with Google or create an account with that email.</p>
       <div class="grant-form">
         <input id="g-email" type="email" placeholder="person@email.com" aria-label="Email">
         <select id="g-plan" aria-label="Plan"><option value="pro">Pro features</option><option value="starter">Starter features</option></select>
@@ -4483,7 +4594,7 @@ if (signOutBtn) signOutBtn.onclick = signOut;
   const qs = new URLSearchParams(location.search);
   // First-time visitors (never signed in here) see the homepage; ?signin=1 comes from its buttons.
   // Signed-out visitors always land on the homepage; sign-in links (?signin=1) and deep links still work.
-  if (!user && !['signin', 'billing', 'q', 'bbl', 'at', 'plan'].some(k => qs.has(k))) { location.replace('/home.html'); return; }
+  if (!user && !window.__authHash && !['signin', 'billing', 'q', 'bbl', 'at', 'plan'].some(k => qs.has(k))) { location.replace('/home.html'); return; }
   if (user) { try { localStorage.setItem('rshark_seen', '1'); } catch (e) {} await freshToken(); }
   applyAuthState(user);
   if (user) {
